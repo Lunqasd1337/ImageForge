@@ -8,6 +8,8 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- The analyzer pulls Microsoft.NET.ILLink.Tasks pinned to the SDK runtime patch, which breaks locked restore across SDKs. -->
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>

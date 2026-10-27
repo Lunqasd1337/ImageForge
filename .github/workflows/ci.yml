@@ -25,6 +25,7 @@ jobs:
       - run: dotnet test --project tests/ImageForge.Core.Tests --no-restore -c Release
       # Windows-targeted engine projects compile on Linux; they are not run here.
       - run: dotnet build src/ImageForge.Engine.Host -c Release
+      - run: dotnet build tools/ImageForge.Experiments -c Release
 
   windows-build:
     name: Build all (Windows)
@@ -38,3 +39,20 @@ jobs:
       - run: dotnet build ImageForge.slnx --no-restore -c Release
       # Only pure tests run in CI. Engine integration checks run manually in a VM (plan, section 16).
       - run: dotnet test --project tests/ImageForge.Core.Tests --no-build -c Release
+      # Self-contained experiment tool for the manual VM checks; its SHA-256 identifies the build in the test package.
+      - run: dotnet publish tools/ImageForge.Experiments -c Release -o artifacts/experiments
+      - name: Hash experiment tool
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash artifacts/experiments/ImageForge.Experiments.exe -Algorithm SHA256).Hash
+          "$hash  ImageForge.Experiments.exe" | Out-File -Encoding ascii artifacts/experiments/SHA256.txt
+          "BuildId: ${{ github.sha }} (run ${{ github.run_number }})" | Out-File -Encoding ascii -Append artifacts/experiments/SHA256.txt
+          Get-Content artifacts/experiments/SHA256.txt
+          "### ImageForge.Experiments`n``$hash``" | Out-File -Encoding utf8 -Append $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageForge.Experiments-${{ github.sha }}
+          path: |
+            artifacts/experiments/ImageForge.Experiments.exe
+            artifacts/experiments/SHA256.txt
+          retention-days: 30

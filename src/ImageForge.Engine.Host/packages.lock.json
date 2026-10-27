@@ -392,8 +392,15 @@
       "imageforge.engine": {
         "type": "Project",
         "dependencies": {
-          "ImageForge.Core": "[1.0.0, )"
+          "ImageForge.Core": "[1.0.0, )",
+          "Microsoft.Dism": "[6.1.0, )"
         }
+      },
+      "Microsoft.Dism": {
+        "type": "CentralTransitive",
+        "requested": "[6.1.0, )",
+        "resolved": "6.1.0",
+        "contentHash": "XuDzqM+PW+k1Jw0X78HvtQ11qsrIqiSUm7eYDKNxbF3V8K4csBQINCaQ1RsnlOme9tyMjKsdwnDWoWbaMT+Z0g=="
       },
       "Nerdbank.Streams": {
         "type": "CentralTransitive",

@@ -2,6 +2,12 @@
   "version": 2,
   "dependencies": {
     "net10.0-windows7.0": {
+      "Microsoft.Dism": {
+        "type": "Direct",
+        "requested": "[6.1.0, )",
+        "resolved": "6.1.0",
+        "contentHash": "XuDzqM+PW+k1Jw0X78HvtQ11qsrIqiSUm7eYDKNxbF3V8K4csBQINCaQ1RsnlOme9tyMjKsdwnDWoWbaMT+Z0g=="
+      },
       "Microsoft.Windows.CsWin32": {
         "type": "Direct",
         "requested": "[0.3.367, )",

@@ -73,3 +73,24 @@ jobs:
             artifacts/experiments/ImageForge.Experiments.exe
             artifacts/experiments/SHA256.txt
           retention-days: 30
+      # Smoke test: the published app must start and keep its window open. Runs after upload so a broken bundle can still be inspected.
+      - name: Start published app
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts/app -File | Where-Object { $_.Extension -in '.pri', '.xbf' -or $_.Name -like 'Microsoft.UI.Xaml*' -or $_.Name -like 'Microsoft.WindowsAppRuntime*' } | Select-Object Name, Length | Format-Table -AutoSize
+          $start = Get-Date
+          $p = Start-Process artifacts/app/ImageForge.App.exe -PassThru
+          Start-Sleep -Seconds 20
+          if (-not $p.HasExited) {
+            $p.Refresh()
+            "App is running, main window handle: $($p.MainWindowHandle)"
+            Stop-Process -Id $p.Id -Force
+            exit 0
+          }
+          "App exited with code 0x{0:X8}" -f $p.ExitCode
+          $crash = Join-Path $env:LOCALAPPDATA 'ImageForge\logs\app-crash.log'
+          if (Test-Path $crash) { Get-Content $crash }
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $start } -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -in 'Application Error', '.NET Runtime', 'Windows Error Reporting' } |
+            Format-List TimeCreated, ProviderName, Message
+          exit 1

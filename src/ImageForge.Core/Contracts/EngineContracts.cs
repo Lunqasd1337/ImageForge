@@ -1,3 +1,5 @@
+using StreamJsonRpc;
+
 namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
@@ -23,7 +25,8 @@ public static class ProtocolHandshake
 }
 
 /// <summary>RPC surface of the elevated engine. Only a closed set of typed operations is exposed.</summary>
-public interface IEngineService
+[JsonRpcContract]
+public partial interface IEngineService
 {
     Task<EngineInfo> GetInfoAsync(CancellationToken ct);
 

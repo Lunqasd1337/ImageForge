@@ -2,7 +2,6 @@
   <!-- Pure logic: no P/Invoke, no network clients, no WinUI (plan, section 13). -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ImageForge.Core.Tests" />

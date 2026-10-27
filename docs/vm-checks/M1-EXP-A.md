@@ -23,7 +23,7 @@
 
 ## Шаги
 
-Обозначения: `$X = "C:\IF\ImageForge.Experiments.exe"`. Каждая команда утилиты заканчивается строкой `RESULT: OK` или `RESULT: FAIL`.
+Обозначения: `$X = "C:\IF\ImageForge.Experiments.exe"`. Вставляйте команды по одной строке: склеенная строка молча пропускает следующую команду. Каждая команда утилиты заканчивается строкой `RESULT: OK` или `RESULT: FAIL`.
 
 ### 0. Подготовка (в гостевой Windows)
 
@@ -62,7 +62,7 @@ Move-Item C:\IF\fixture\install-pro.wim C:\IF\fixture\media\sources\install.wim
 & $X info C:\IF\fixture\media\sources\install.wim
 & $X hash C:\IF\fixture\media\sources\install.wim
 ```
-Ожидается: export завершается с `Dism.exe exit code 0`; `info` показывает **один** индекс (Index 1, Professional); записан SHA-256 фикстуры. Это хеш фикстуры для отчёта M1.
+Ожидается: export завершается с `Dism.exe exit code 0`; `info` показывает **один** индекс (Index 1, Professional, версия `10.0.26200.x` для 25H2; `10.0.26300.x` означает 26H2 — укажите это в отчёте); записан SHA-256 фикстуры. Это хеш фикстуры для отчёта M1.
 
 ### 2. Эксперимент 1: mount/unmount без изменений
 

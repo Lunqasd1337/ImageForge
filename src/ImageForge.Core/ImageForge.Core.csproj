@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Pure logic: no P/Invoke, no network clients, no WinUI (plan, section 13). -->
+  <!-- Pure logic: no P/Invoke, no network clients, no WinUI (plan, section 13).
+       StreamJsonRpc is here only for the shared, stream-level RPC framing used by App and Engine.Host. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StreamJsonRpc" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ImageForge.Core.Tests" />
   </ItemGroup>

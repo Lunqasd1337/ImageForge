@@ -359,15 +359,6 @@
           "PolyType": "1.4.1"
         }
       },
-      "Nerdbank.Streams": {
-        "type": "Transitive",
-        "resolved": "2.13.16",
-        "contentHash": "GjifQ5M4IpQWjGNNbIrsj8M/M7ESb2328OeoGeqxk5rOJiuaAJ5zFc6CyqB+5UWKr1KEGK23hKoxA+z1gooAKA==",
-        "dependencies": {
-          "Microsoft.VisualStudio.Threading.Only": "17.13.61",
-          "Microsoft.VisualStudio.Validation": "17.8.8"
-        }
-      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.4",
@@ -393,12 +384,25 @@
         "contentHash": "O/RzNwWoDzehkLlAG9hR8xooY5L41U7VUaYlcKvE3+FhHohBJqF10oLUzuv0v59VeJ62hv3uw9VoeX12zej7Sg=="
       },
       "imageforge.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "StreamJsonRpc": "[2.26.150, )"
+        }
       },
       "imageforge.engine": {
         "type": "Project",
         "dependencies": {
           "ImageForge.Core": "[1.0.0, )"
+        }
+      },
+      "Nerdbank.Streams": {
+        "type": "CentralTransitive",
+        "requested": "[2.13.16, )",
+        "resolved": "2.13.16",
+        "contentHash": "GjifQ5M4IpQWjGNNbIrsj8M/M7ESb2328OeoGeqxk5rOJiuaAJ5zFc6CyqB+5UWKr1KEGK23hKoxA+z1gooAKA==",
+        "dependencies": {
+          "Microsoft.VisualStudio.Threading.Only": "17.13.61",
+          "Microsoft.VisualStudio.Validation": "17.8.8"
         }
       },
       "Serilog": {

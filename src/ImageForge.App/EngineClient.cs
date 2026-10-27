@@ -4,6 +4,7 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using ImageForge.Core.Contracts;
 using ImageForge.Core.Hosting;
+using ImageForge.Core.Rpc;
 using StreamJsonRpc;
 
 namespace ImageForge.App;
@@ -75,7 +76,7 @@ public sealed partial class EngineClient : IAsyncDisposable
                 throw new EngineLaunchException("Канал движка принадлежит другому процессу.");
             }
 
-            var rpc = new JsonRpc(new HeaderDelimitedMessageHandler(pipe, pipe, new SystemTextJsonFormatter()));
+            var rpc = EngineRpc.Create(pipe, RpcLimits.Client);
             var service = rpc.Attach<IEngineService>();
             rpc.StartListening();
 

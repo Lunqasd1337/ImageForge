@@ -1,11 +1,11 @@
 using System.IO.Pipes;
 using ImageForge.Core.Contracts;
 using ImageForge.Core.Hosting;
+using ImageForge.Core.Rpc;
 using ImageForge.Engine;
 using ImageForge.Engine.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using StreamJsonRpc;
 
 namespace ImageForge.Engine.Host;
 
@@ -72,8 +72,7 @@ internal sealed partial class EnginePipeServer(
         }
 
         var service = new EngineService(lifetime.StopApplication);
-        var formatter = new SystemTextJsonFormatter();
-        using var rpc = new JsonRpc(new HeaderDelimitedMessageHandler(pipe, pipe, formatter));
+        using var rpc = EngineRpc.Create(pipe, RpcLimits.Engine);
         rpc.AddLocalRpcTarget<IEngineService>(service, null);
         rpc.StartListening();
         LogConnected(logger, client.ProcessId);

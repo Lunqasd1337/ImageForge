@@ -17,7 +17,7 @@
 - Отдельная VM, не рабочая Windows хоста. Снимок (checkpoint) перед началом — рекомендуется.
 - Свободно не меньше 30 ГБ на `C:` (NTFS).
 
-**Фикстура:** официальный ISO Windows 11 25H2 x64 с microsoft.com (русский или английский — укажите в отчёте).
+**Фикстура:** официальный ISO Windows 11 26H2 x64 с microsoft.com (базовая фикстура M1 по решению владельца; см. `docs/m1.md`) (русский или английский — укажите в отчёте).
 
 Все команды — в **PowerShell от имени администратора внутри сервисной VM**. Утилита сама просит повышение (UAC), если консоль не повышена.
 
@@ -62,7 +62,7 @@ Move-Item C:\IF\fixture\install-pro.wim C:\IF\fixture\media\sources\install.wim
 & $X info C:\IF\fixture\media\sources\install.wim
 & $X hash C:\IF\fixture\media\sources\install.wim
 ```
-Ожидается: export завершается с `Dism.exe exit code 0`; `info` показывает **один** индекс (Index 1, Professional, версия `10.0.26200.x` для 25H2; `10.0.26300.x` означает 26H2 — укажите это в отчёте); записан SHA-256 фикстуры. Это хеш фикстуры для отчёта M1.
+Ожидается: export завершается с `Dism.exe exit code 0`; `info` показывает **один** индекс (Index 1, Professional, версия `10.0.26300.x` для 26H2); записан SHA-256 фикстуры. Это хеш фикстуры для отчёта M1.
 
 ### 2. Эксперимент 1: mount/unmount без изменений
 

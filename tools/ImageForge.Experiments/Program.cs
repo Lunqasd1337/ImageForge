@@ -8,8 +8,10 @@ using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
 using ImageForge.Core.Safety;
 using ImageForge.Core.Servicing;
+using ImageForge.Core.Workspace;
 using ImageForge.Engine.Dism;
 using ImageForge.Engine.Registry;
+using ImageForge.Engine.Workspace;
 using Microsoft.Win32;
 
 // Manual M1 experiments (plan, section 16). Every command prints what it did and ends with RESULT: OK / FAIL.
@@ -25,6 +27,10 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["mounts"] = ("mounts", _ => Task.FromResult(Mounts())),
     ["unmount"] = ("unmount <mount-dir> commit|discard", a => Task.FromResult(Unmount(a[0], a[1]))),
     ["export"] = ("export <source.wim> <index> <destination.wim>", a => Export(a[0], int.Parse(a[1], CultureInfo.InvariantCulture), a[2])),
+    ["run"] = ("run <media-dir> <work-dir> <output-dir> none|after-mount|before-publish|pause-after-mount|pause-before-publish", a => RunPipelineAsync(a[0], a[1], a[2], a[3])),
+    ["status"] = ("status <work-dir>", a => Task.FromResult(Status(a[0]))),
+    ["recover"] = ("recover <work-dir>", a => RecoverAsync(a[0])),
+    ["manifest"] = ("manifest <dir>", a => ManifestAsync(a[0])),
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -257,4 +263,124 @@ static async Task<bool> Export(string source, int index, string destination)
     var result = await DismCli.RunAsync(arguments, line => Console.WriteLine("  " + line), CancellationToken.None).ConfigureAwait(false);
     Log($"Dism.exe exit code {result.ExitCode}");
     return result.ExitCode == 0;
+}
+
+// Experiment 4: the whole M1 run with an optional failure before publication.
+static async Task<bool> RunPipelineAsync(string media, string work, string output, string mode)
+{
+    var failure = mode switch
+    {
+        "none" or "pause-after-mount" or "pause-before-publish" => InjectedFailure.None,
+        "after-mount" => InjectedFailure.AfterMount,
+        "before-publish" => InjectedFailure.BeforePublish,
+        _ => (InjectedFailure?)null,
+    };
+    if (failure is null)
+    {
+        Log("Mode must be none, after-mount, before-publish, pause-after-mount or pause-before-publish.");
+        return false;
+    }
+
+    var (source, workDir, outputDir) = (Path.GetFullPath(media), Path.GetFullPath(work), Path.GetFullPath(output));
+    var problems = WorkspaceLocations.Validate(source, workDir, outputDir);
+    foreach (var problem in problems)
+    {
+        Log($"LOCATION ERROR: {problem.Kind} {problem.Location} {problem.Other}");
+    }
+
+    if (problems.Count > 0)
+    {
+        return false;
+    }
+
+    var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+        .Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(), [ValidationMarker.M1])).Plan!;
+    foreach (var p in plan.Preview)
+    {
+        Log($"Preview: {p.SourcePath} -> offline {p.Hive} hive, key {p.SubKey}, {p.ValueName} = REG_SZ \"{p.NewValue.Data}\"");
+    }
+
+    var layout = WorkspaceLayout.Create(workDir);
+    using var dism = new DismImages();
+    var pipeline = new RunPipeline(layout, new DismImageServicing(dism, Log), Guid.NewGuid)
+    {
+        Log = Log,
+        BeforeStep = (step, _) =>
+        {
+            if ((mode, step) is ("pause-before-publish", "publish") or ("pause-after-mount", "registry"))
+            {
+                Log($"PAUSED before step '{step}'.");
+                Log("Now end this process in Task Manager (ImageForge.Experiments.exe -> End task). Press Enter only to continue normally.");
+                Console.ReadLine();
+            }
+
+            return Task.CompletedTask;
+        },
+    };
+
+    var result = await pipeline.RunAsync(new RunRequest(source, outputDir, 1, plan, failure.Value), CancellationToken.None).ConfigureAwait(false);
+    Log($"Run {result.RunId:N}: {result.Status}" + (result.FailedStep is null ? string.Empty : $" at {result.FailedStep}: {result.Error}"));
+    if (result.PublishedPath is not null)
+    {
+        Log($"Published: {result.PublishedPath}");
+    }
+
+    PrintState(layout);
+    PrintMounts();
+    var hives = OwnedHivesLoaded();
+    var expected = failure == InjectedFailure.None ? RunStatus.Published : RunStatus.Failed;
+    return result.Status == expected && hives == 0 && DismImages.GetMountedImages().Count == 0;
+}
+
+static bool Status(string work)
+{
+    var layout = WorkspaceLayout.Create(Path.GetFullPath(work));
+    PrintState(layout);
+    using var dism = new DismImages();
+    PrintMounts();
+    return OwnedHivesLoaded() == 0;
+}
+
+static async Task<bool> RecoverAsync(string work)
+{
+    var layout = WorkspaceLayout.Create(Path.GetFullPath(work));
+    using var dism = new DismImages();
+    var result = await new RunRecovery(layout, new DismImageServicing(dism, Log)).RecoverAsync(CancellationToken.None).ConfigureAwait(false);
+    foreach (var action in result.Actions)
+    {
+        Log("recovery: " + action);
+    }
+
+    foreach (var problem in result.Problems)
+    {
+        Log("RECOVERY PROBLEM: " + problem);
+    }
+
+    Log($"Recovery: {result.Outcome}");
+    PrintState(layout);
+    PrintMounts();
+    return result.Outcome != RecoveryOutcome.StillRequired & OwnedHivesLoaded() == 0;
+}
+
+static async Task<bool> ManifestAsync(string dir)
+{
+    var manifest = await SourceManifest.ComputeAsync(Path.GetFullPath(dir), CancellationToken.None).ConfigureAwait(false);
+    Log($"{manifest.Entries.Count} files, fingerprint {manifest.Fingerprint.ToUpperInvariant()}  {Path.GetFullPath(dir)}");
+    return true;
+}
+
+static void PrintState(WorkspaceLayout layout)
+{
+    var loaded = new StateStore<WorkspaceState>(layout.StateFile).Load();
+    Log($"state.json ({loaded.Source}): target {loaded.State?.Target}, last run {loaded.State?.LastRun?.RunId:N} {loaded.State?.LastRun?.Status}" +
+        (loaded.State?.LastRun?.FailedStep is { } step ? $" at {step}" : string.Empty));
+    if (loaded.State?.LastRun is { } run)
+    {
+        var journal = RunJournal.Read(layout.Journal(run.RunId));
+        Log($"journal: {journal.Entries.Count} entries, corrupt {journal.IsCorrupt}, open step {journal.LastOpenStep ?? "none"}");
+        foreach (var entry in journal.Entries.TakeLast(4))
+        {
+            Log($"  #{entry.Sequence} {entry.Kind} {entry.Step} {entry.Detail}");
+        }
+    }
 }

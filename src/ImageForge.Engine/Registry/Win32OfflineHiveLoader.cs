@@ -39,6 +39,29 @@ public sealed class Win32OfflineHiveLoader(Guid runId) : IOfflineHiveLoader
         return new LoadedHive(hive, name);
     }
 
+    /// <summary>Unloads hives a run left loaded under HKLM; only names created for <paramref name="runId"/> are touched.</summary>
+    public static IReadOnlyList<string> UnloadOwned(Guid runId)
+    {
+        var prefix = $"ImageForge_{runId:N}_";
+        var names = Microsoft.Win32.Registry.LocalMachine.GetSubKeyNames()
+            .Where(n => HiveLoadName.IsOwned(n) && n.StartsWith(prefix, StringComparison.Ordinal))
+            .ToList();
+        if (names.Count == 0)
+        {
+            return names;
+        }
+
+        using (PrivilegeScope.ForHiveLoading())
+        {
+            foreach (var name in names)
+            {
+                Check(PInvoke.RegUnLoadKey(LocalMachine, name), $"RegUnLoadKey {name}");
+            }
+        }
+
+        return names;
+    }
+
     private static void Check(WIN32_ERROR error, string operation)
     {
         if (error != WIN32_ERROR.ERROR_SUCCESS)

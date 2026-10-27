@@ -14,6 +14,7 @@ public sealed class WorkspaceLayoutTests
 
         layout.Root.ShouldBe(@"E:\IFWork");
         layout.Base.ShouldBe(@"E:\IFWork\base");
+        layout.BasePartial.ShouldBe(@"E:\IFWork\base.partial");
         layout.StateFile.ShouldBe(@"E:\IFWork\state.json");
         layout.Logs.ShouldBe(@"E:\IFWork\logs");
         layout.Scratch.ShouldBe(@"E:\IFWork\scratch");

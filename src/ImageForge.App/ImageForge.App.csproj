@@ -10,6 +10,9 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Needed even unpackaged: generates ImageForge.App.pri, without which MainWindow.xaml cannot be located at run time (XamlParseException, 0xC000027B). -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <SelfContained>true</SelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -29,7 +32,7 @@
 
   <Target Name="CopyEngineHost" AfterTargets="Build">
     <ItemGroup>
-      <_EngineHostFiles Include="$(MSBuildThisFileDirectory)..\ImageForge.Engine.Host\bin\$(Configuration)\net10.0-windows\**\*" />
+      <_EngineHostFiles Include="$(MSBuildThisFileDirectory)..\ImageForge.Engine.Host\bin\$(Configuration)\net10.0-windows\win-x64\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(_EngineHostFiles)" DestinationFiles="@(_EngineHostFiles->'$(OutDir)engine\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>

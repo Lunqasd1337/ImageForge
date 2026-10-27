@@ -1,2 +1,16 @@
 GetNamedPipeClientProcessId
 OpenProcessToken
+GetCurrentProcess
+LookupPrivilegeValue
+AdjustTokenPrivileges
+SE_BACKUP_NAME
+SE_RESTORE_NAME
+RegLoadKey
+RegUnLoadKey
+RegCreateKeyEx
+RegOpenKeyEx
+RegQueryValueEx
+RegSetValueEx
+RegFlushKey
+HKEY_LOCAL_MACHINE
+WIN32_ERROR

@@ -77,7 +77,7 @@ jobs:
       - name: Start published app
         shell: pwsh
         run: |
-          Get-ChildItem artifacts/app -File | Where-Object { $_.Extension -in '.pri', '.xbf' -or $_.Name -like 'Microsoft.UI.Xaml*' -or $_.Name -like 'Microsoft.WindowsAppRuntime*' } | Select-Object Name, Length | Format-Table -AutoSize
+          Get-ChildItem artifacts/app -File -Recurse | Where-Object { $_.Extension -in '.pri', '.xbf' -or $_.Name -like 'Microsoft.UI.Xaml*' -or $_.Name -like 'Microsoft.WindowsAppRuntime*' } | Select-Object FullName, Length | Format-Table -AutoSize
           $start = Get-Date
           $p = Start-Process artifacts/app/ImageForge.App.exe -PassThru
           Start-Sleep -Seconds 20

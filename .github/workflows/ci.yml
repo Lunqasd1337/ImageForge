@@ -49,6 +49,23 @@ jobs:
           "BuildId: ${{ github.sha }} (run ${{ github.run_number }})" | Out-File -Encoding ascii -Append artifacts/experiments/SHA256.txt
           Get-Content artifacts/experiments/SHA256.txt
           "### ImageForge.Experiments`n``$hash``" | Out-File -Encoding utf8 -Append $env:GITHUB_STEP_SUMMARY
+      # Unpackaged app with the engine in .\engine, for the manual UAC/pipe check.
+      - run: dotnet publish src/ImageForge.App -c Release -o artifacts/app
+      - run: dotnet publish src/ImageForge.Engine.Host -c Release -o artifacts/app/engine
+      - name: Hash app bundle
+        shell: pwsh
+        run: |
+          $lines = foreach ($f in 'ImageForge.App.exe', 'engine/ImageForge.Engine.Host.exe') {
+            "$((Get-FileHash "artifacts/app/$f" -Algorithm SHA256).Hash)  $f"
+          }
+          $lines + "BuildId: ${{ github.sha }} (run ${{ github.run_number }})" | Out-File -Encoding ascii artifacts/app/SHA256.txt
+          Get-Content artifacts/app/SHA256.txt
+          "### ImageForge.App`n``````n$($lines -join "`n")`n``````" | Out-File -Encoding utf8 -Append $env:GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageForge.App-${{ github.sha }}
+          path: artifacts/app
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ImageForge.Experiments-${{ github.sha }}

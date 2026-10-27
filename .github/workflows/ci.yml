@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  core-tests:
+    name: Pure tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore tests/ImageForge.Core.Tests --locked-mode
+      - run: dotnet test --project tests/ImageForge.Core.Tests --no-restore -c Release
+      # Windows-targeted engine projects compile on Linux; they are not run here.
+      - run: dotnet build src/ImageForge.Engine.Host -c Release
+
+  windows-build:
+    name: Build all (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore ImageForge.slnx --locked-mode
+      - run: dotnet build ImageForge.slnx --no-restore -c Release
+      # Only pure tests run in CI. Engine integration checks run manually in a VM (plan, section 16).
+      - run: dotnet test --project tests/ImageForge.Core.Tests --no-build -c Release

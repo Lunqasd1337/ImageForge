@@ -100,6 +100,12 @@ static bool Info(string wim)
 
 static bool Mount(string wim, int index, string mountDir)
 {
+    if (!File.Exists(wim))
+    {
+        Log($"Image file not found: {Path.GetFullPath(wim)}");
+        return false;
+    }
+
     var full = Path.GetFullPath(mountDir);
     if (!Directory.Exists(full) || Directory.EnumerateFileSystemEntries(full).Any())
     {
@@ -222,8 +228,16 @@ static bool Unmount(string mountDir, string mode)
     }
 
     using var dism = new DismImages();
+    var full = Path.GetFullPath(mountDir).TrimEnd('\\');
+    if (!DismImages.GetMountedImages().Any(m => string.Equals(m.MountPath.TrimEnd('\\'), full, StringComparison.OrdinalIgnoreCase)))
+    {
+        Log($"Nothing is mounted at {full}");
+        PrintMounts();
+        return false;
+    }
+
     var last = -1;
-    DismImages.Unmount(Path.GetFullPath(mountDir), commit: mode == "commit", p =>
+    DismImages.Unmount(full, commit: mode == "commit", p =>
     {
         if (p / 10 != last / 10)
         {

@@ -92,4 +92,18 @@ public sealed class RunJournalTests
 
         RunJournal.Read(path).LastOpenStep.ShouldBeNull();
     }
+
+    [Fact]
+    public void Progress_entries_do_not_close_the_open_step()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.Combine("run.jsonl");
+        using (var journal = RunJournal.Open(path, RunId))
+        {
+            journal.Append(JournalEventKind.StepStarted, "publish", null);
+            journal.Append(JournalEventKind.StepProgress, "publish", "previous-moved");
+        }
+
+        RunJournal.Read(path).LastOpenStep.ShouldBe("publish");
+    }
 }

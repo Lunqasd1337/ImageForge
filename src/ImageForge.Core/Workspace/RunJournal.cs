@@ -9,6 +9,9 @@ public enum JournalEventKind
     StepStarted,
     StepCompleted,
     StepFailed,
+
+    /// <summary>A sub-step inside the open step (for example, a publication move); does not close the step.</summary>
+    StepProgress,
 }
 
 public sealed record JournalEntry(
@@ -92,9 +95,12 @@ public sealed class RunJournal : IDisposable
             }
 
             entries.Add(entry);
-            openStep = entry.Kind == JournalEventKind.StepStarted ? entry.Step
-                : string.Equals(openStep, entry.Step, StringComparison.Ordinal) ? null
-                : openStep;
+            openStep = entry.Kind switch
+            {
+                JournalEventKind.StepStarted => entry.Step,
+                JournalEventKind.StepProgress => openStep,
+                _ => string.Equals(openStep, entry.Step, StringComparison.Ordinal) ? null : openStep,
+            };
         }
 
         return new JournalReadResult(entries, false, openStep);

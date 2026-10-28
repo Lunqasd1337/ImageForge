@@ -6,6 +6,7 @@ using ImageForge.Core.Changes;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
+using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Safety;
 using ImageForge.Core.Servicing;
 using ImageForge.Core.Workspace;
@@ -31,6 +32,7 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["status"] = ("status <work-dir>", a => Task.FromResult(Status(a[0]))),
     ["recover"] = ("recover <work-dir>", a => RecoverAsync(a[0])),
     ["manifest"] = ("manifest <dir>", a => ManifestAsync(a[0])),
+    ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
 if (args.Length == 0 || !commands.TryGetValue(args[0], out var command))
@@ -367,6 +369,71 @@ static async Task<bool> ManifestAsync(string dir)
     var manifest = await SourceManifest.ComputeAsync(Path.GetFullPath(dir), CancellationToken.None).ConfigureAwait(false);
     Log($"{manifest.Entries.Count} files, fingerprint {manifest.Fingerprint.ToUpperInvariant()}  {Path.GetFullPath(dir)}");
     return true;
+}
+
+// Parses a .reg file and compares every value under HKEY_CURRENT_USER\<live-key> with the live registry (read only),
+// so real regedit exports serve as reference fixtures.
+static bool RegCheck(string file, string encodingName, int codePage, string liveKey)
+{
+    var encoding = Enum.Parse<RegFileEncoding>(encodingName, ignoreCase: true);
+    var text = new RegFileLoader().Decode(File.ReadAllBytes(file), encoding, codePage);
+    Log($"decoded as {text.Encoding?.ToString() ?? "-"}{(text.CodePage is { } cp ? $" (code page {cp})" : string.Empty)}");
+    var parsed = text.Text is null ? null : new RegFileParser().Parse(text.Text);
+    foreach (var d in text.Diagnostics.Concat(parsed?.Diagnostics ?? []))
+    {
+        Log($"line {d.Line}: {d.Code}: {d.Message}");
+    }
+
+    if (parsed is not { IsValid: true })
+    {
+        return false;
+    }
+
+    Log($"{parsed.Operations.Count} operations");
+    const string prefix = "HKEY_CURRENT_USER\\";
+    var ok = true;
+    var compared = 0;
+    foreach (var op in parsed.Operations)
+    {
+        var name = op is SetRegValue v ? (v.Name.Length == 0 ? "@" : $"\"{v.Name}\"") : string.Empty;
+        Log($"  line {op.Line}: {op.GetType().Name} [{op.KeyPath}] {name} {(op is SetRegValue set ? set.Data.Describe() : string.Empty)}");
+        if (op is not SetRegValue value || !value.KeyPath.StartsWith(prefix + liveKey, StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        using var key = Registry.CurrentUser.OpenSubKey(value.KeyPath[prefix.Length..]);
+        var live = key?.GetValue(value.Name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+        var same = live is not null && Matches(value.Data, live);
+        compared++;
+        ok &= same;
+        Log($"    live {(same ? "matches" : $"DIFFERS: {Show(live)}")}");
+    }
+
+    Log($"{compared} values compared with HKEY_CURRENT_USER\\{liveKey}");
+    return ok && compared > 0;
+
+    static bool Matches(RegData data, object live)
+    {
+        var text = data.Bytes.Length % 2 == 0 ? System.Text.Encoding.Unicode.GetString(data.Bytes) : null;
+        return (data.Type, live) switch
+        {
+            (RegValueType.Sz or RegValueType.ExpandSz, string s) => text?.TrimEnd('\0') == s,
+            (RegValueType.MultiSz, string[] items) => text is not null && text.TrimEnd('\0').Split('\0').Where(x => x.Length > 0).SequenceEqual(items),
+            (RegValueType.Dword, int i) => data.Bytes.Length == 4 && BitConverter.ToInt32(data.Bytes) == i,
+            (RegValueType.Qword, long l) => data.Bytes.Length == 8 && BitConverter.ToInt64(data.Bytes) == l,
+            (_, byte[] bytes) => bytes.AsSpan().SequenceEqual(data.Bytes),
+            _ => false,
+        };
+    }
+
+    static string Show(object? live) => live switch
+    {
+        null => "(missing)",
+        byte[] b => Convert.ToHexString(b),
+        string[] items => string.Join(" | ", items),
+        _ => Convert.ToString(live, CultureInfo.InvariantCulture) ?? string.Empty,
+    };
 }
 
 static void PrintState(WorkspaceLayout layout)

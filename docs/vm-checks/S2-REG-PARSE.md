@@ -1,7 +1,7 @@
 # Ручная проверка S2-REG-PARSE: разбор настоящих экспортов regedit
 
 Статус: **Ожидает ручной проверки**.
-Проверяет загрузчик и парсер `.reg` (план, раздел 9) на файлах, которые сделал сам Windows, в обоих форматах: Windows Registry Editor Version 5.00 (UTF-16LE) и REGEDIT4 (ANSI). Каждое значение из файла сравнивается с живым реестром VM побайтно. Утилита реестр только читает.
+Проверяет загрузчик и парсер `.reg` (план, раздел 9) на файлах, которые сделал сам Windows, в формате Windows Registry Editor Version 5.00 (UTF-16LE), и что REGEDIT4 отклоняется (решение владельца от 28.10.2026). Каждое значение из файла сравнивается с живым реестром VM побайтно. Утилита реестр только читает.
 Тестовый ключ создаётся в `HKCU` **сервисной VM** и в конце удаляется. На хосте ничего не выполняется.
 
 ## Сборка
@@ -39,9 +39,9 @@ reg add "$K\Вложенный ключ" /v "Длинное" /t REG_BINARY /d ((
 reg export "$K" C:\IF\regtest-v5.reg /y
 & $X reg-check C:\IF\regtest-v5.reg auto 1251 Software\ImageForgeRegFileTest
 ```
-Ожидается: `decoded as Utf16`, `format Version5`, у каждого значения `live matches`, `9 values compared`, `RESULT: OK`.
+Ожидается: `decoded as Utf16`, у каждого значения `live matches`, `9 values compared`, `RESULT: OK`.
 
-### 3. Экспорт в формате REGEDIT4
+### 3. REGEDIT4 отклоняется
 
 1. Откройте `regedit`, перейдите к `HKEY_CURRENT_USER\Software\ImageForgeRegFileTest`.
 2. «Файл» → «Экспорт…», тип файла **«Файлы реестра Win9x/NT4 (*.reg)»**, имя `C:\IF\regtest-v4.reg`, «Выбранная ветвь».
@@ -49,7 +49,7 @@ reg export "$K" C:\IF\regtest-v5.reg /y
 ```powershell
 & $X reg-check C:\IF\regtest-v4.reg auto 1251 Software\ImageForgeRegFileTest
 ```
-Ожидается: `decoded as Ansi (code page 1251)`, `format Regedit4`. В REGEDIT4 нет Юникода, поэтому кириллица должна совпасть, только если кодовая страница системы — 1251. Пришлите вывод как есть, даже если будут `DIFFERS`: это и есть результат проверки ANSI.
+Ожидается: `line 1: regfile.format.unsupported`, `RESULT: FAIL`. Здесь FAIL — правильный результат.
 
 ### 4. Уборка
 
@@ -60,7 +60,7 @@ Stop-Transcript
 
 ## Что прислать
 
-`C:\IF\s2-reg-parse.txt`, а также оба файла `C:\IF\regtest-v5.reg` и `C:\IF\regtest-v4.reg`: они станут эталонными фикстурами в тестах.
+`C:\IF\s2-reg-parse.txt` и файл `C:\IF\regtest-v5.reg`: он станет эталонной фикстурой в тестах.
 
 ## Результаты
 

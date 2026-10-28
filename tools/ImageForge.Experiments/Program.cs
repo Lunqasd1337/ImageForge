@@ -378,7 +378,7 @@ static bool RegCheck(string file, string encodingName, int codePage, string live
     var encoding = Enum.Parse<RegFileEncoding>(encodingName, ignoreCase: true);
     var text = new RegFileLoader().Decode(File.ReadAllBytes(file), encoding, codePage);
     Log($"decoded as {text.Encoding?.ToString() ?? "-"}{(text.CodePage is { } cp ? $" (code page {cp})" : string.Empty)}");
-    var parsed = text.Text is null ? null : new RegFileParser().Parse(text.Text, codePage);
+    var parsed = text.Text is null ? null : new RegFileParser().Parse(text.Text);
     foreach (var d in text.Diagnostics.Concat(parsed?.Diagnostics ?? []))
     {
         Log($"line {d.Line}: {d.Code}: {d.Message}");
@@ -389,7 +389,7 @@ static bool RegCheck(string file, string encodingName, int codePage, string live
         return false;
     }
 
-    Log($"format {parsed.Format}, {parsed.Operations.Count} operations");
+    Log($"{parsed.Operations.Count} operations");
     const string prefix = "HKEY_CURRENT_USER\\";
     var ok = true;
     var compared = 0;

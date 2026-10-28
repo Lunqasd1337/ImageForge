@@ -7,7 +7,7 @@ public sealed class RegFileParserTests
     private const string V5 = "Windows Registry Editor Version 5.00";
     private static readonly RegFileParser Parser = new();
 
-    private static RegFileParseResult Parse(params string[] lines) => Parser.Parse(string.Join("\r\n", lines) + "\r\n", 1251);
+    private static RegFileParseResult Parse(params string[] lines) => Parser.Parse(string.Join("\r\n", lines) + "\r\n");
 
     private static RegFileParseResult Valid(params string[] lines)
     {
@@ -26,10 +26,18 @@ public sealed class RegFileParserTests
     private static string Hex(RegFileOperation op) => Convert.ToHexString(((SetRegValue)op).Data.Bytes);
 
     [Fact]
-    public void Both_headers_are_recognised()
+    public void Version5_header_is_accepted()
     {
-        Valid(V5).Format.ShouldBe(RegFileFormat.Version5);
-        Valid("REGEDIT4").Format.ShouldBe(RegFileFormat.Regedit4);
+        Valid(V5).Operations.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Regedit4_is_refused()
+    {
+        var error = Error("REGEDIT4", "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", "\"a\"=\"b\"");
+
+        error.Code.ShouldBe(RegFileCodes.FormatUnsupported);
+        error.Line.ShouldBe(1);
     }
 
     [Fact]
@@ -178,23 +186,6 @@ public sealed class RegFileParserTests
     }
 
     [Fact]
-    public void Regedit4_string_hex_is_ansi_and_is_converted_to_utf16()
-    {
-        // "Аб" in Windows-1251 is C0 E1.
-        var ops = Valid(
-            "REGEDIT4",
-            "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]",
-            "\"e\"=hex(2):c0,e1,00",
-            "\"m\"=hex(7):41,00,42,00,00",
-            "\"b\"=hex:c0,e1").Operations;
-
-        Hex(ops[1]).ShouldBe("100431040000");
-        Hex(ops[2]).ShouldBe("4100000042000000" + "0000");
-        Hex(ops[3]).ShouldBe("C0E1");
-        ((SetRegValue)ops[2]).Data.Describe().ShouldBe("REG_MULTI_SZ: A | B");
-    }
-
-    [Fact]
     public void Version5_string_hex_is_kept_as_utf16_bytes()
     {
         var ops = Valid(V5, "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", "\"e\"=hex(2):25,00,41,00,25,00,00,00").Operations;
@@ -257,6 +248,6 @@ public sealed class RegFileParserTests
     [Fact]
     public void Lf_only_line_endings_work()
     {
-        Parser.Parse(V5 + "\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]\n\"a\"=\"b\"\n", 1251).Operations.Count.ShouldBe(2);
+        Parser.Parse(V5 + "\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]\n\"a\"=\"b\"\n").Operations.Count.ShouldBe(2);
     }
 }

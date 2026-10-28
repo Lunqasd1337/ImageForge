@@ -13,20 +13,12 @@ public static class RegFileCodes
     public const string EncodingInvalid = "regfile.encoding.invalid";
     public const string EncodingUnsupported = "regfile.encoding.unsupported";
     public const string HeaderMissing = "regfile.header.missing";
+    public const string FormatUnsupported = "regfile.format.unsupported";
     public const string KeyMalformed = "regfile.key.malformed";
     public const string ValueOutsideKey = "regfile.value.outside-key";
     public const string ValueMalformed = "regfile.value.malformed";
     public const string ValueTypeUnsupported = "regfile.value.type-unsupported";
     public const string LineUnrecognized = "regfile.line.unrecognized";
-}
-
-public enum RegFileFormat
-{
-    /// <summary>REGEDIT4: text is ANSI, and string types written as hex are ANSI bytes.</summary>
-    Regedit4,
-
-    /// <summary>Windows Registry Editor Version 5.00: string types written as hex are UTF-16LE bytes.</summary>
-    Version5,
 }
 
 /// <summary>Registry value types REG_NONE..REG_QWORD (0..0xB), numbered as the Win32 constants.</summary>
@@ -103,7 +95,7 @@ public sealed record SetRegValue(int Line, string KeyPath, string Name, RegData 
 public sealed record DeleteRegValue(int Line, string KeyPath, string Name) : RegFileOperation(Line, KeyPath);
 
 /// <param name="Operations">In file order, including repeated writes and deletions; empty when any diagnostic exists.</param>
-public sealed record RegFileParseResult(RegFileFormat? Format, IReadOnlyList<RegFileOperation> Operations, IReadOnlyList<RegFileDiagnostic> Diagnostics)
+public sealed record RegFileParseResult(IReadOnlyList<RegFileOperation> Operations, IReadOnlyList<RegFileDiagnostic> Diagnostics)
 {
     public bool IsValid => Diagnostics.Count == 0;
 }

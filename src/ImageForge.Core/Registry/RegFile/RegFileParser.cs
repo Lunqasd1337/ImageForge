@@ -5,20 +5,20 @@ namespace ImageForge.Core.Registry.RegFile;
 
 public interface IRegFileParser
 {
-    /// <param name="ansiCodePage">Used for REGEDIT4 string types written as hex, which are ANSI bytes.</param>
-    RegFileParseResult Parse(string text, int ansiCodePage);
+    RegFileParseResult Parse(string text);
 }
 
 /// <summary>
-/// Syntax of REGEDIT4 and Windows Registry Editor Version 5.00 files, on already decoded text. Every problem is
-/// reported with its line, and any problem blocks the whole file. Key paths are not mapped here.
+/// Syntax of Windows Registry Editor Version 5.00 files, on already decoded text. REGEDIT4 is recognised only to be
+/// refused (owner decision, 28.10.2026). Every problem is reported with its line, and any problem blocks the whole
+/// file. Key paths are not mapped here.
 /// </summary>
 public sealed class RegFileParser : IRegFileParser
 {
     private const string HeaderV5 = "Windows Registry Editor Version 5.00";
     private const string HeaderV4 = "REGEDIT4";
 
-    public RegFileParseResult Parse(string text, int ansiCodePage)
+    public RegFileParseResult Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
         var lines = text.ReplaceLineEndings("\n").Split('\n');
@@ -31,16 +31,17 @@ public sealed class RegFileParser : IRegFileParser
             index++;
         }
 
-        RegFileFormat? format = index < lines.Length ? lines[index].Trim() switch
+        var header = index < lines.Length ? lines[index].Trim() : string.Empty;
+        if (header == HeaderV4)
         {
-            HeaderV5 => RegFileFormat.Version5,
-            HeaderV4 => RegFileFormat.Regedit4,
-            _ => null,
-        } : null;
-        if (format is null)
+            diagnostics.Add(new RegFileDiagnostic(RegFileCodes.FormatUnsupported, index + 1, $"REGEDIT4 files are not supported; export the key again as \"{HeaderV5}\" (regedit's default .reg type)."));
+            return new RegFileParseResult([], diagnostics);
+        }
+
+        if (header != HeaderV5)
         {
-            diagnostics.Add(new RegFileDiagnostic(RegFileCodes.HeaderMissing, Math.Min(index, lines.Length - 1) + 1, $"The file must start with \"{HeaderV5}\" or \"{HeaderV4}\"."));
-            return new RegFileParseResult(null, [], diagnostics);
+            diagnostics.Add(new RegFileDiagnostic(RegFileCodes.HeaderMissing, Math.Min(index, lines.Length - 1) + 1, $"The file must start with \"{HeaderV5}\"."));
+            return new RegFileParseResult([], diagnostics);
         }
 
         string? currentKey = null;
@@ -73,7 +74,7 @@ public sealed class RegFileParser : IRegFileParser
 
             try
             {
-                operations.Add(ParseValue(lines, ref index, currentKey, format.Value, ansiCodePage));
+                operations.Add(ParseValue(lines, ref index, currentKey));
             }
             catch (RegSyntaxException ex)
             {
@@ -81,7 +82,7 @@ public sealed class RegFileParser : IRegFileParser
             }
         }
 
-        return new RegFileParseResult(format, diagnostics.Count == 0 ? operations : [], diagnostics);
+        return new RegFileParseResult(diagnostics.Count == 0 ? operations : [], diagnostics);
     }
 
     private static string? ParseKey(string line, int lineNumber, List<RegFileOperation> operations, List<RegFileDiagnostic> diagnostics)
@@ -106,7 +107,7 @@ public sealed class RegFileParser : IRegFileParser
         return delete ? null : path;
     }
 
-    private static RegFileOperation ParseValue(string[] lines, ref int index, string key, RegFileFormat format, int ansiCodePage)
+    private static RegFileOperation ParseValue(string[] lines, ref int index, string key)
     {
         var lineNumber = index + 1;
         var line = lines[index].TrimStart();
@@ -154,13 +155,7 @@ public sealed class RegFileParser : IRegFileParser
         if (rest.StartsWith("hex", StringComparison.OrdinalIgnoreCase))
         {
             var (type, afterColon) = ReadHexType(rest);
-            var bytes = ReadHexBytes(lines, ref index, afterColon);
-            if (format == RegFileFormat.Regedit4 && type is RegValueType.Sz or RegValueType.ExpandSz or RegValueType.MultiSz)
-            {
-                bytes = AnsiToUtf16(bytes, ansiCodePage);
-            }
-
-            return new SetRegValue(lineNumber, key, name, new RegData(type, bytes));
+            return new SetRegValue(lineNumber, key, name, new RegData(type, ReadHexBytes(lines, ref index, afterColon)));
         }
 
         throw new RegSyntaxException(RegFileCodes.ValueMalformed, "Expected \"text\", dword:, hex:, hex(type): or - as the value data.");
@@ -218,20 +213,6 @@ public sealed class RegFileParser : IRegFileParser
         }
 
         return bytes;
-    }
-
-    private static byte[] AnsiToUtf16(byte[] bytes, int codePage)
-    {
-        var encoding = CodePagesEncodingProvider.Instance.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback)
-            ?? throw new RegSyntaxException(RegFileCodes.ValueMalformed, $"Code page {codePage} is not available.");
-        try
-        {
-            return Encoding.Unicode.GetBytes(encoding.GetString(bytes));
-        }
-        catch (DecoderFallbackException)
-        {
-            throw new RegSyntaxException(RegFileCodes.ValueMalformed, $"The string bytes are not valid in code page {codePage}.");
-        }
     }
 
     private static string ReadQuoted(string line, ref int pos)

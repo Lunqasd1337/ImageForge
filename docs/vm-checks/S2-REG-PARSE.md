@@ -21,7 +21,7 @@ Start-Transcript C:\IF\s2-reg-parse.txt
 
 ```powershell
 $K = "HKCU\Software\ImageForgeRegFileTest"
-reg add "$K" /v "Строка" /t REG_SZ /d "Привет; это не комментарий \ и кавычка `"" /f
+reg add "$K" /v "Строка" /t REG_SZ /d "Привет; это не комментарий \ а обратная черта" /f
 reg add "$K" /ve /t REG_SZ /d "по умолчанию" /f
 reg add "$K" /v "Путь" /t REG_EXPAND_SZ /d "%SystemRoot%\Тест" /f
 reg add "$K" /v "Список" /t REG_MULTI_SZ /d "один\0два\0три" /f

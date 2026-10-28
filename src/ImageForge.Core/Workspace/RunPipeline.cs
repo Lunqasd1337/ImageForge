@@ -72,11 +72,19 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             store.Save(state);
 
             var working = Path.Combine(run.Working, "install.wim");
-            await context.Step("working-copy", () =>
+            await context.Step("working-copy", async () =>
             {
                 Directory.CreateDirectory(run.Working);
-                TreeCopy.CopyFile(Path.Combine(paths.Base, "sources", "install.wim"), working);
-                return Task.FromResult(true);
+                var copied = await TreeCopy.CopyFileAsync(Path.Combine(paths.Base, "sources", "install.wim"), working, ct).ConfigureAwait(false);
+                var expected = source.Entries.Single(e => string.Equals(e.RelativePath, InstallImage, StringComparison.OrdinalIgnoreCase));
+                if (copied.Length != expected.Length || !string.Equals(copied.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    // The base copy was reused on metadata alone; damaged content must not be reused again.
+                    TryDeleteDirectory(paths.Base);
+                    throw new IOException($@"The base copy of {InstallImage} does not match the source; it was deleted and will be copied again.");
+                }
+
+                return true;
             }, ct).ConfigureAwait(false);
 
             await context.Step("mount", async () =>
@@ -124,15 +132,17 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(publication.Staging)!);
-                TreeCopy.Copy(paths.Base, publication.Staging, [InstallImage], ct);
+                // Hashing while copying checks every staged file against the source manifest, which also covers a
+                // base copy that was reused on metadata alone.
+                var staged = (await TreeCopy.CopyAsync(paths.Base, publication.Staging, [InstallImage], ct).ConfigureAwait(false)).ToList();
                 Directory.CreateDirectory(Path.Combine(publication.Staging, "sources"));
-                TreeCopy.CopyFile(completed, Path.Combine(publication.Staging, "sources", "install.wim"));
+                var image = await TreeCopy.CopyFileAsync(completed, Path.Combine(publication.Staging, "sources", "install.wim"), ct).ConfigureAwait(false);
+                staged.Add(image with { RelativePath = InstallImage });
 
                 var expected = baseManifest.Entries
                     .Select(e => string.Equals(e.RelativePath, InstallImage, StringComparison.OrdinalIgnoreCase) ? completedEntry : e)
                     .ToList();
-                var staged = await SourceManifest.ComputeAsync(publication.Staging, ct).ConfigureAwait(false);
-                var differences = SourceManifest.Compare(new SourceManifest(expected, string.Empty), staged);
+                var differences = SourceManifest.Compare(new SourceManifest(expected, string.Empty), new SourceManifest(staged, string.Empty));
                 return differences.Count == 0
                     ? true
                     : throw new IOException($"Assembled result does not match: {string.Join(", ", differences.Select(d => $"{d.Change} {d.RelativePath}"))}.");
@@ -140,8 +150,8 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
             await context.Step("source-recheck", async () =>
             {
-                var again = await SourceManifest.ComputeAsync(request.SourceDir, ct).ConfigureAwait(false);
-                var differences = SourceManifest.Compare(source, again);
+                // Owner decision (28.10.2026): size and time for every file, full hash only for install.wim.
+                var differences = await SourceManifest.CheckMetadataAsync(request.SourceDir, source, [InstallImage], ct).ConfigureAwait(false);
                 return differences.Count == 0 ? true : throw new SourceChangedException(differences);
             }, ct).ConfigureAwait(false);
 
@@ -223,19 +233,17 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
     private async Task<SourceManifest> PrepareBaseAsync(string sourceDir, SourceManifest source, WorkspaceState state, CancellationToken ct)
     {
-        if (state.SourceFingerprint == source.Fingerprint && Directory.Exists(paths.Base))
+        // A reused base is checked by size and time here; its content is verified when it is copied (working-copy
+        // for install.wim, assemble for the rest).
+        if (state.SourceFingerprint == source.Fingerprint && Directory.Exists(paths.Base)
+            && (await SourceManifest.CheckMetadataAsync(paths.Base, source, [], ct).ConfigureAwait(false)).Count == 0)
         {
-            var existing = await SourceManifest.ComputeAsync(paths.Base, ct).ConfigureAwait(false);
-            if (existing.Fingerprint == source.Fingerprint)
-            {
-                Log?.Invoke("base copy reused");
-                return existing;
-            }
+            Log?.Invoke("base copy reused");
+            return source;
         }
 
         TryDeleteDirectory(paths.BasePartial, throwOnError: true);
-        TreeCopy.Copy(sourceDir, paths.BasePartial, null, ct);
-        var copy = await SourceManifest.ComputeAsync(paths.BasePartial, ct).ConfigureAwait(false);
+        var copy = SourceManifest.FromEntries(await TreeCopy.CopyAsync(sourceDir, paths.BasePartial, null, ct).ConfigureAwait(false));
         var differences = SourceManifest.Compare(source, copy);
         if (differences.Count > 0)
         {

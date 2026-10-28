@@ -315,10 +315,10 @@ public sealed class RunPipelineTests : IDisposable
     /// <param name="inventory">What the preview saw; the run compares it with the image.</param>
     private RunRequest AppxRequest(string remove, params string[] inventory)
     {
-        var packages = inventory.Distinct().Select(n => PackageIdentity.Parse(n)!).Select(i => new ProvisionedAppxPackage(i.Name, i)).ToList();
+        var packages = inventory.Distinct().Select(n => Appx.AppxPlanningTests.Package(n)).ToList();
         var family = PackageIdentity.Parse(remove)!.FamilyName;
         var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
-            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, new RemoveProvisionedAppx(family)]) { Appx = new AppxInventory(packages, []) })
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, new RemoveProvisionedAppx(family)]) { Appx = new AppxInventory(packages, []) { InboxDependencies = [] } })
             .Plan.ShouldNotBeNull();
         return new RunRequest(_source, _output, 1, plan);
     }

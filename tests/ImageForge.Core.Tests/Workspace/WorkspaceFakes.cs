@@ -52,13 +52,37 @@ internal sealed class FakeServicing : IImageServicing
 
     public bool FailAppxList { get; set; }
 
+    /// <summary>Package full name → the dependency families its manifest lists; written into every read-only mount.</summary>
+    public Dictionary<string, string[]> Dependencies { get; } = [];
+
     public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {
         Calls.Add("mount read-only");
         File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
+        foreach (var name in Provisioned.Where(n => n.EndsWith("_8wekyb3d8bbwe", StringComparison.Ordinal)))
+        {
+            WriteManifest(mountDir, PackageIdentity.Parse(name)!, Dependencies.GetValueOrDefault(name, []));
+        }
+
         Mounted.Add(mountDir);
         _images[mountDir] = imageFile;
         return Task.CompletedTask;
+    }
+
+    private const string Microsoft = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US";
+
+    // A plain (non-bundle) layout for every package; only the Microsoft publisher is known here.
+    private static void WriteManifest(string mountDir, PackageIdentity package, string[] dependsOn)
+    {
+        var folder = Path.Combine(mountDir, "Program Files", "WindowsApps", package.FullName);
+        Directory.CreateDirectory(folder);
+        var dependencies = string.Concat(dependsOn.Select(f => $"<PackageDependency Name=\"{f[..f.LastIndexOf('_')]}\" MinVersion=\"1.0.0.0\" Publisher=\"{Microsoft}\" />"));
+        File.WriteAllText(Path.Combine(folder, "AppxManifest.xml"), $"""
+            <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10">
+              <Identity Name="{package.Name}" Publisher="{Microsoft}" Version="{package.Version}" ProcessorArchitecture="{package.Architecture}" />
+              <Dependencies>{dependencies}</Dependencies>
+            </Package>
+            """);
     }
 
     public Task<AppxInventory> GetProvisionedAppxAsync(string mountDir, CancellationToken ct)
@@ -113,7 +137,14 @@ internal sealed class FakeServicing : IImageServicing
 
         foreach (var entry in Directory.EnumerateFileSystemEntries(mountDir))
         {
-            File.Delete(entry);
+            if (Directory.Exists(entry))
+            {
+                Directory.Delete(entry, recursive: true);
+            }
+            else
+            {
+                File.Delete(entry);
+            }
         }
 
         return Task.CompletedTask;

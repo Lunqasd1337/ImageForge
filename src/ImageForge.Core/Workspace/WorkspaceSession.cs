@@ -36,9 +36,15 @@ public sealed record PlanSummary(
 }
 
 /// <param name="Warning">Shown before removal; null when none is known.</param>
-/// <param name="BlockedReason">Why the package cannot be removed yet; null when it can.</param>
+/// <param name="BlockedReason">Why the package cannot be removed at all; null when it can (alone or with its dependents).</param>
 public sealed record AppxPackageView(
-    string DisplayName, string PackageName, string FamilyName, string Version, string Architecture, string? Warning, string? BlockedReason);
+    string DisplayName, string PackageName, string FamilyName, string Version, string Architecture, string? Warning, string? BlockedReason)
+{
+    public bool IsFramework { get; init; }
+
+    /// <summary>Provisioned packages that depend on this one; removing it needs them removed too.</summary>
+    public IReadOnlyList<string> NeededBy { get; init; } = [];
+}
 
 /// <param name="Problems">Why the inventory could not be read; the packages are empty then.</param>
 public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<AppxPackageView> Packages, IReadOnlyList<string> Problems);
@@ -150,7 +156,7 @@ public sealed class WorkspaceSession(
             _inventory = inventory;
             return new InspectionSummary(
                 _revision,
-                [.. inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase).Select(p => View(p.DisplayName, p.Identity))],
+                [.. inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase).Select(p => View(p, inventory))],
                 []);
         }
     }
@@ -205,7 +211,7 @@ public sealed class WorkspaceSession(
             return result.Plan is { } plan
                 ? new PlanSummary(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint, plan.Preview, [], null, fileEncoding)
                 {
-                    AppxRemovals = [.. plan.AppxRemovals.Select(r => View(r.DisplayName, r.Package))],
+                    AppxRemovals = [.. plan.AppxRemovals.Select(r => View(_inventory!.Packages.Single(p => p.Identity == r.Package), _inventory))],
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
@@ -341,14 +347,22 @@ public sealed class WorkspaceSession(
         }
     }
 
-    private static AppxPackageView View(string displayName, PackageIdentity identity) => new(
-        displayName,
-        identity.FullName,
-        identity.FamilyName,
-        identity.Version.ToString(4),
-        identity.Architecture,
-        AppxWarnings.For(identity),
-        AppxFrameworks.IsFramework(identity) ? "Библиотека для других приложений; удаление пока заблокировано." : null);
+    private static AppxPackageView View(ProvisionedAppxPackage package, AppxInventory inventory)
+    {
+        var family = package.Identity.FamilyName;
+        var blocked = package.Facts is null ? $"Зависимости не прочитаны ({package.FactsProblem}); удалить нельзя."
+            : inventory.InboxDependencies?.Contains(family, StringComparer.OrdinalIgnoreCase) == true ? "Нужна встроенным приложениям Windows; удалить нельзя."
+            : null;
+        return new AppxPackageView(
+            package.DisplayName, package.PackageName, family, package.Identity.Version.ToString(4), package.Identity.Architecture,
+            AppxWarnings.For(package.Identity), blocked)
+        {
+            IsFramework = package.Facts?.IsFramework == true,
+            NeededBy = [.. inventory.Packages
+                .Where(p => p.Facts?.DependsOn.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
+                .Select(p => p.DisplayName)],
+        };
+    }
 
     private static Action<string> Report(IProgress<string>? progress) => line => progress?.Report(line);
 

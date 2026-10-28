@@ -4,14 +4,29 @@ using System.Text;
 
 namespace ImageForge.Core.Appx;
 
+/// <param name="IsFramework">The manifest marks the package as a framework other packages build on.</param>
+/// <param name="DependsOn">Family names of the packages it needs, from its manifest.</param>
+public sealed record AppxPackageFacts(bool IsFramework, IReadOnlyList<string> DependsOn);
+
 public sealed record ProvisionedAppxPackage(string DisplayName, PackageIdentity Identity)
 {
     public string PackageName => Identity.FullName;
+
+    /// <summary>What its manifest says; null until read, or when it could not be read (see <see cref="FactsProblem"/>).</summary>
+    public AppxPackageFacts? Facts { get; init; }
+
+    public string? FactsProblem { get; init; }
 }
 
 /// <param name="Problems">Anything that makes the list untrustworthy; a caller must not plan removals from it.</param>
 public sealed record AppxInventory(IReadOnlyList<ProvisionedAppxPackage> Packages, IReadOnlyList<string> Problems)
 {
+    /// <summary>
+    /// Family names the inbox apps (Windows\SystemApps) depend on; they cannot be removed, so neither can these.
+    /// Null when not read or when an inbox manifest could not be read.
+    /// </summary>
+    public IReadOnlyCollection<string>? InboxDependencies { get; init; }
+
     /// <summary>SHA-256 over the sorted full names; a run compares it with the list it reads from its own mount.</summary>
     public string Fingerprint => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
         string.Join('\n', Packages.Select(p => p.PackageName).Order(StringComparer.Ordinal)))));

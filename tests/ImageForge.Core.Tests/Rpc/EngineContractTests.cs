@@ -38,7 +38,7 @@ public sealed class EngineContractTests : IAsyncDisposable
     private IEngineService Connect(Func<string, string, string, IReadOnlyList<LocationProblem>> validate)
     {
         var servicing = new FakeServicing();
-        servicing.Provisioned.Add("Clipchamp.Clipchamp_4.3.10120.0_neutral_~_yxz26nhyzhsrt");
+        servicing.Provisioned.Add("Microsoft.BingWeather_4.54.63029.0_neutral_~_8wekyb3d8bbwe");
         var session = new WorkspaceSession(_ => servicing, Guid.NewGuid, dir => new TestPaths(dir), validate);
         var (serverStream, clientStream) = FullDuplexStream.CreatePair();
         var server = EngineRpc.Create(serverStream, RpcLimits.Engine);
@@ -119,8 +119,8 @@ public sealed class EngineContractTests : IAsyncDisposable
         var inspection = await engine.InspectAsync(null, Ct);
         var plan = await engine.PlanAsync(new PlanOptions(null, [inspection.Packages.Single().FamilyName]), Ct);
 
-        inspection.Packages.Single().Version.ShouldBe("4.3.10120.0");
-        plan.AppxRemovals.Single().DisplayName.ShouldBe("Clipchamp.Clipchamp");
+        inspection.Packages.Single().Version.ShouldBe("4.54.63029.0");
+        plan.AppxRemovals.Single().DisplayName.ShouldBe("Microsoft.BingWeather");
         (await engine.StartAsync(new StartPlanRequest(plan.PlanId, plan.WorkspaceRevision, Guid.NewGuid()), null, Ct)).Status.ShouldBe(RunStatus.Published);
     }
 

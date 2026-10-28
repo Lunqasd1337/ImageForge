@@ -42,10 +42,10 @@ Stop-Transcript
 Start-Transcript C:\Users\Public\s2-first-logon-user.txt
 reg query "HKCU\Software\Classes\.imageforgetest"
 reg query "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
-reg query "HKCU\Software\Microsoft\Active Setup\Installed Components" /s /f ImageForge
+reg query "HKCU\Software\Microsoft\Active Setup\Installed Components\{GUID}"
 Stop-Transcript
 ```
-Затем правый клик по рабочему столу.
+`{GUID}` — из строки `Active Setup:` в выводе `first-logon-export` (в HKCU под этим GUID хранится только `Version`). Затем правый клик по рабочему столу.
 
 Ожидается:
 - `.imageforgetest`: `(по умолчанию) REG_SZ ImageForgeTest.User` и `Число REG_DWORD 0x7`.

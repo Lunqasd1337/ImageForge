@@ -7,7 +7,7 @@
 ## Сборка и требования
 
 - `ImageForge.Experiments-<sha>` из CI этого PR, положить в `C:\IF`.
-- Сервисная VM, фикстура `C:\IF\fixture\media`, свободно не меньше 10 ГБ. `& $X mounts` → `none`.
+- Сервисная VM ([как подготовить в Hyper-V](HYPERV.md)), фикстура `C:\IF\fixture\media`, свободно не меньше 10 ГБ. `& $X mounts` → `none`.
 
 PowerShell от администратора, по одной строке:
 ```powershell

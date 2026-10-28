@@ -281,7 +281,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         LocationProblemKind.NotLocalPath => $"{Name(problem.Location)}: нужен полный путь на локальном диске",
         LocationProblemKind.Same => $"{Name(problem.Location)} и {Name(problem.Other)} совпадают",
-        _ => $"{Name(problem.Location)} находится внутри {Name(problem.Other)}",
+        _ => $"{Name(problem.Location)} находится внутри папки «{Name(problem.Other)}»",
     };
 
     private static string Name(string? location) => location switch

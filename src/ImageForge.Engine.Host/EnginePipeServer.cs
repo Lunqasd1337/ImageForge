@@ -71,7 +71,7 @@ internal sealed partial class EnginePipeServer(
             return;
         }
 
-        var service = new EngineService(lifetime.StopApplication);
+        using var service = new EngineService(lifetime.StopApplication, line => LogEngine(logger, line));
         using var rpc = EngineRpc.Create(pipe, RpcLimits.Engine);
         rpc.AddLocalRpcTarget<IEngineService>(service, null);
         rpc.StartListening();
@@ -79,6 +79,9 @@ internal sealed partial class EnginePipeServer(
 
         await rpc.Completion.WaitAsync(stoppingToken).ConfigureAwait(false);
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Line}")]
+    private static partial void LogEngine(ILogger logger, string line);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "UI process {Pid} connected")]
     private static partial void LogConnected(ILogger logger, int pid);

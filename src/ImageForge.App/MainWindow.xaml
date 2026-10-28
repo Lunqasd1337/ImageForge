@@ -8,20 +8,27 @@
     <StackPanel Margin="24" Spacing="12" MaxWidth="900" HorizontalAlignment="Left">
       <TextBlock Text="ImageForge" Style="{StaticResource TitleTextBlockStyle}" />
 
-      <TextBox Header="Источник (папка дистрибутива)" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay}" />
-      <TextBox Header="Рабочая папка" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay}" />
+      <TextBox Header="Источник (папка дистрибутива, например C:\IF\fixture\media)" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox Header="Рабочая папка (например C:\IF\ws)" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox Header="Папка результата (например C:\IF\result)" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBlock Text="Цель: образ 1 в sources\install.wim" />
 
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
-      <TextBlock Text="{x:Bind ViewModel.OperationPreview}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
+      <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 
       <StackPanel Orientation="Horizontal" Spacing="8">
         <Button Content="Подключить движок" Command="{x:Bind ViewModel.ConnectEngineCommand}" />
-        <Button Content="Запустить" IsEnabled="False" ToolTipService.ToolTip="Появится в M1" />
+        <Button Content="Подготовить" Command="{x:Bind ViewModel.PrepareCommand}" />
+        <Button Content="Запустить" Command="{x:Bind ViewModel.StartCommand}" Style="{StaticResource AccentButtonStyle}" />
+        <Button Content="Восстановить" Command="{x:Bind ViewModel.RecoverCommand}" />
       </StackPanel>
 
+      <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
       <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" TextWrapping="Wrap" />
+      <HyperlinkButton Content="{x:Bind ViewModel.PublishedPath, Mode=OneWay}" Command="{x:Bind ViewModel.OpenResultCommand}"
+                       Visibility="{x:Bind ViewModel.HasResult, Mode=OneWay}" />
       <TextBox Header="Журнал" Text="{x:Bind ViewModel.Log, Mode=OneWay}" IsReadOnly="True"
-               AcceptsReturn="True" TextWrapping="Wrap" MinHeight="160" FontFamily="Consolas" />
+               AcceptsReturn="True" TextWrapping="Wrap" MinHeight="200" FontFamily="Consolas" />
     </StackPanel>
   </ScrollViewer>
 </Window>

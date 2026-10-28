@@ -1,3 +1,5 @@
+using ImageForge.Core.Registry;
+
 namespace ImageForge.Core.Planning;
 
 /// <summary>The Russian text of one registry change in the preview, shared by the window and the experiments tool.</summary>
@@ -22,7 +24,9 @@ public static class RegistryPreviewText
         var lines = new List<string>
         {
             $"{action}: {change.SourcePath}",
-            $"  Куст: офлайн {change.Hive} ({change.HiveFile}), ключ {target}",
+            change.FirstLogon
+                ? $@"  При первом входе каждого пользователя (Active Setup, reg import из {FirstLogonDelivery.Directory}), ключ HKCU\Software\Classes{(change.SubKey.Length == 0 ? string.Empty : "\\" + change.SubKey)}"
+                : $"  Куст: офлайн {change.Hive} ({change.HiveFile}), ключ {target}",
         };
         if (change.ValueName is { } name)
         {

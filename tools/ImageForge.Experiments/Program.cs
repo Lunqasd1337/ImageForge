@@ -34,6 +34,7 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["manifest"] = ("manifest <dir>", a => ManifestAsync(a[0])),
     ["reg-apply"] = ("reg-apply <mount-dir> <file.reg>", a => Task.FromResult(RegApply(a[0], a[1]))),
     ["reg-verify"] = ("reg-verify <mount-dir> <file.reg>", a => Task.FromResult(RegVerify(a[0], a[1]))),
+    ["first-logon-export"] = ("first-logon-export <file.reg> <empty-out-dir>", a => Task.FromResult(FirstLogonExport(a[0], a[1]))),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -160,7 +161,7 @@ static bool WriteMarker(string mountDir)
 
     Log($"PlanId {plan.PlanId}, fingerprint {plan.Fingerprint}");
     var runId = Guid.NewGuid();
-    var executor = new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile));
+    var executor = new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile), new MountFileWriter(scope.Root));
     var report = executor.Execute(plan, CancellationToken.None);
     Log($"Execution: {report.Outcome}, steps {report.CompletedSteps}/{plan.Steps.Count}" +
         (report.Error is null ? string.Empty : $", failed step {report.FailedStepIndex}: {report.Error}"));
@@ -477,7 +478,7 @@ static bool RegApply(string mountDir, string file)
 
     var scope = WriteScope.Create(Path.GetFullPath(mountDir));
     var runId = Guid.NewGuid();
-    var report = new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile))
+    var report = new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile), new MountFileWriter(scope.Root))
         .Execute(plan, CancellationToken.None);
     Log($"Execution: {report.Outcome}, steps {report.CompletedSteps}/{plan.Steps.Count}" +
         (report.Error is null ? string.Empty : $", failed step {report.FailedStepIndex}: {report.Error}"));
@@ -487,6 +488,36 @@ static bool RegApply(string mountDir, string file)
     }
 
     return report.Outcome == ExecutionOutcome.Completed && OwnedHivesLoaded() == 0;
+}
+
+// Writes what a run would put into the image for HKCU\Software\Classes: the per-user file and the Active Setup
+// registration as register.reg (HKLM), so the first-logon import can be tried on a live VM. Nothing is installed here.
+static bool FirstLogonExport(string file, string outDir)
+{
+    if (PlanRegFile(file) is not { } plan)
+    {
+        return false;
+    }
+
+    if (plan.Steps.OfType<WriteImageFile>().SingleOrDefault() is not { } userFile)
+    {
+        Log(@"The file has no HKCU\Software\Classes changes; nothing to export.");
+        return false;
+    }
+
+    if (Directory.Exists(outDir) && Directory.EnumerateFileSystemEntries(outDir).Any())
+    {
+        Log($"{outDir} is not empty.");
+        return false;
+    }
+
+    Directory.CreateDirectory(outDir);
+    var registration = plan.Preview.Where(p => p.SubKey.StartsWith(FirstLogonDelivery.ActiveSetupComponents + "\\", StringComparison.Ordinal)).ToList();
+    File.WriteAllBytes(Path.Combine(outDir, Path.GetFileName(userFile.RelativePath)), userFile.Content);
+    File.WriteAllBytes(Path.Combine(outDir, "register.reg"), RegFileWriter.Write(@"HKEY_LOCAL_MACHINE\SOFTWARE", registration));
+    Log($"User file: {Path.GetFileName(userFile.RelativePath)} -> %SystemDrive%\\{userFile.RelativePath}");
+    Log($"Active Setup: HKLM\\SOFTWARE\\{registration[0].SubKey}");
+    return true;
 }
 
 // Reads the offline hives back and checks the final effect of every change in the file, in file order.
@@ -500,7 +531,15 @@ static bool RegVerify(string mountDir, string file)
     var scope = WriteScope.Create(Path.GetFullPath(mountDir));
     var loader = new Win32OfflineHiveLoader(Guid.NewGuid());
     var ok = true;
-    foreach (var group in plan.Preview.GroupBy(p => p.Hive))
+    foreach (var written in plan.Steps.OfType<WriteImageFile>())
+    {
+        var path = Path.Combine(scope.Root, written.RelativePath);
+        var same = File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(written.Content);
+        ok &= same;
+        Log($"  file {written.RelativePath}: {(File.Exists(path) ? "present" : "absent")} {(same ? "OK" : "MISMATCH")}");
+    }
+
+    foreach (var group in plan.Preview.Where(p => !p.FirstLogon).GroupBy(p => p.Hive))
     {
         var hive = (Win32OfflineHiveLoader.LoadedHive)loader.Load(group.Key, OfflineHivePaths.Resolve(scope, group.First().HiveFile));
         try

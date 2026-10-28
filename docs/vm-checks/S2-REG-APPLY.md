@@ -75,25 +75,30 @@ Windows Registry Editor Version 5.00
 - `reg-apply`: `Execution: Completed`, `RESULT: OK`.
 - `reg-verify`: у каждой строки `OK`. Ключ `ImageForgeTest\Ветка` — `absent`, значение `Удалить` — `absent`, у SYSTEM путь начинается с `ControlSet001` (или того номера, что указан в образе). `RESULT: OK`.
 
-### 2б. Нет UsrClass.dat — отказ без записи
+### 2б. HKCU\Software\Classes — через первый вход пользователя
 
-В `install.wim` фикстуры у профиля Default нет `UsrClass.dat` (так показал первый прогон S2-REG-APPLY; `Test-Path` ниже это подтверждает). По плану такой куст не создаётся и не подменяется другим, поэтому файл с `HKCU\Software\Classes` должен быть отклонён до любой записи.
+В `install.wim` у профиля Default нет `UsrClass.dat`, поэтому такие изменения не пишутся в кусты образа. Они кладутся файлом в `ProgramData\ImageForge\FirstLogon`, а в SOFTWARE регистрируется Active Setup, который импортирует файл при первом входе каждого пользователя. Сам импорт при входе проверяется отдельно: [S2-FIRST-LOGON](S2-FIRST-LOGON.md).
 
 ```powershell
 Test-Path C:\IF\scratch\mount\Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat
 @'
 Windows Registry Editor Version 5.00
 
-[HKEY_LOCAL_MACHINE\SOFTWARE\ImageForgeTest]
-"НеДолжноПоявиться"="1"
+[HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32]
+@=""
 
 [HKEY_CURRENT_USER\Software\Classes\.imageforgetest]
 @="ImageForgeTest.User"
 '@ | Set-Content C:\IF\scratch\classes.reg -Encoding Unicode
 & $X reg-apply C:\IF\scratch\mount C:\IF\scratch\classes.reg
-& $X reg-verify C:\IF\scratch\mount C:\IF\scratch\apply.reg
+& $X reg-verify C:\IF\scratch\mount C:\IF\scratch\classes.reg
+Get-ChildItem C:\IF\scratch\mount\ProgramData\ImageForge\FirstLogon
 ```
-Ожидается: `Test-Path` → `False`. `reg-apply`: `Execution: Failed, steps 0/…`, `HiveFileMissing: the image has no Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat`, `RESULT: FAIL`, строки `RECOVERY REQUIRED` нет. Следующий `reg-verify` по `apply.reg` — снова `RESULT: OK` (значения `НеДолжноПоявиться` он не проверяет; оно не записалось, потому что SOFTWARE даже не загружался).
+Ожидается:
+- `Test-Path` → `False`.
+- Превью `reg-apply`: у ключей `HKCU\Software\Classes\…` строка «При первом входе каждого пользователя (Active Setup, …)», затем четыре записи в `Microsoft\Active Setup\Installed Components\{…}` (по умолчанию, `StubPath`, `Version`, `IsInstalled`). `RESULT: OK`.
+- `reg-verify`: строка `file ProgramData\ImageForge\FirstLogon\user-classes-….reg: present OK`, четыре значения Active Setup `OK`, `RESULT: OK`.
+- В папке один файл `user-classes-….reg`.
 
 ### 3. Повторное применение
 

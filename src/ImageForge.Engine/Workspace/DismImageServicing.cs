@@ -41,7 +41,7 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
     public ExecutionReport ApplyRegistryPlan(Guid runId, ExecutionPlan plan, string mountDir, CancellationToken ct)
     {
         var scope = WriteScope.Create(mountDir);
-        return new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile))
+        return new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile), new MountFileWriter(scope.Root))
             .Execute(plan, ct);
     }
 

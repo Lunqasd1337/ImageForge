@@ -43,8 +43,20 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             return new PlanResult(null, diagnostics);
         }
 
-        // One load/unload per hive; within a hive the requested order is kept, including repeats and deletions.
+        // HKCU\Software\Classes has no hive in the image; it is delivered at first logon, and the file goes in first.
         var steps = new List<PlannedStep>();
+        var userClasses = changes.Where(c => c.Hive == OfflineHive.DefaultUserClasses).Select(c => c with { FirstLogon = true }).ToList();
+        changes = [.. changes.Where(c => c.Hive != OfflineHive.DefaultUserClasses)];
+        if (userClasses.Count > 0)
+        {
+            var package = FirstLogonDelivery.UserClasses(userClasses);
+            steps.Add(new WriteImageFile(package.FileRelativePath, package.Content));
+            changes.AddRange(package.Registration.Select(r => new RegistryWritePreview(
+                @"HKLM\SOFTWARE\" + package.ComponentKey, OfflineHive.Software, RegistryPathMapper.SoftwareHiveFile,
+                package.ComponentKey, r.Name, r.Value)));
+        }
+
+        // One load/unload per hive; within a hive the requested order is kept, including repeats and deletions.
         foreach (var hive in changes.GroupBy(c => c.Hive))
         {
             steps.Add(new LoadOfflineHive(hive.Key, hive.First().HiveFile));
@@ -52,7 +64,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             steps.Add(new UnloadOfflineHive(hive.Key));
         }
 
-        var plan = new ExecutionPlan(newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, changes, string.Empty);
+        var plan = new ExecutionPlan(
+            newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, [.. userClasses, .. changes], string.Empty);
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
 
@@ -97,6 +110,13 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (valueName is not null && (valueName.Length > MaxValueNameLength || valueName.Contains('\0', StringComparison.Ordinal)))
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое имя значения в {keyPath}"));
+            return null;
+        }
+
+        if (location.Hive == OfflineHive.DefaultUserClasses && !(FirstLogonDelivery.CanHold(location.SubKey) && FirstLogonDelivery.CanHold(valueName ?? string.Empty)))
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.FirstLogonUnrepresentable, index, $"Перевод строки в имени нельзя передать через .reg для первого входа: {keyPath}"));
             return null;
         }
 
@@ -165,6 +185,9 @@ public static class PlanFingerprint
                     break;
                 case UnloadOfflineHive unload:
                     Append(builder, "unload", unload.Hive);
+                    break;
+                case WriteImageFile file:
+                    Append(builder, "write-file", file.RelativePath, Convert.ToHexString(SHA256.HashData(file.Content)));
                     break;
                 default:
                     throw new NotSupportedException($"Unknown plan step {step.GetType().Name}.");

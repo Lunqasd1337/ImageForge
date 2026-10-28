@@ -119,17 +119,17 @@ public sealed class RegistryPlanExecutorTests
     [Fact]
     public void A_missing_hive_file_fails_before_any_hive_is_loaded()
     {
-        _loader.MissingHiveFiles.Add(RegistryPathMapper.DefaultUserClassesHiveFile);
+        _loader.MissingHiveFiles.Add(RegistryPathMapper.DefaultUserHiveFile);
         var plan = Plan(
             ValidationMarker.M1,
-            new SetRegistryValue(@"HKCU\Software\Classes\.x", string.Empty, RegistryValue.Sz("y")));
+            new SetRegistryValue(@"HKCU\Control Panel\X", "y", RegistryValue.Sz("z")));
 
         var report = Executor().Execute(plan, TestContext.Current.CancellationToken);
 
         report.Outcome.ShouldBe(ExecutionOutcome.Failed);
         report.CompletedSteps.ShouldBe(0);
         report.FailedStepIndex.ShouldBe(3);
-        report.Error.ShouldNotBeNull().ShouldContain("UsrClass.dat");
+        report.Error.ShouldNotBeNull().ShouldContain("NTUSER.DAT");
         _loader.Log.ShouldBeEmpty();
     }
 

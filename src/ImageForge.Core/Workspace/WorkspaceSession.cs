@@ -1,6 +1,8 @@
 using ImageForge.Core.Changes;
+using ImageForge.Core.Contracts;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
+using ImageForge.Core.Registry.RegFile;
 
 namespace ImageForge.Core.Workspace;
 
@@ -15,12 +17,19 @@ public sealed record WorkspaceSummary(
     bool RecoveryRequired,
     IReadOnlyList<LocationProblem> Problems);
 
+/// <param name="FileDiagnostics">Problems in the .reg file itself (decoding, syntax); the plan is not built then.</param>
+/// <param name="FileEncoding">How the .reg file was decoded, for the window to show; null without a file.</param>
 public sealed record PlanSummary(
     Guid PlanId,
     long WorkspaceRevision,
     string Fingerprint,
     IReadOnlyList<RegistryWritePreview> Preview,
-    IReadOnlyList<PlanningDiagnostic> Diagnostics);
+    IReadOnlyList<PlanningDiagnostic> Diagnostics,
+    IReadOnlyList<RegFileDiagnostic>? FileDiagnostics = null,
+    string? FileEncoding = null)
+{
+    public IReadOnlyList<RegFileDiagnostic> FileDiagnostics { get; init; } = FileDiagnostics ?? [];
+}
 
 public sealed record RunOutcome(
     Guid OperationId,
@@ -78,18 +87,53 @@ public sealed class WorkspaceSession(
         }
     }
 
-    public PlanSummary PlanM1()
+    public PlanSummary Plan(PlanOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.RegFile is { } file ? PlanRegFile(file) : PlanM1();
+    }
+
+    /// <summary>Plans the M1 validation marker; used when no .reg file is chosen.</summary>
+    public PlanSummary PlanM1() => Plan([ValidationMarker.M1], null);
+
+    /// <summary>Plans the changes of a .reg file. A file that cannot be read drops the previous plan.</summary>
+    public PlanSummary PlanRegFile(RegFileInput file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        var import = RegFileImport.Read(file);
+        var encoding = import.Encoding switch
+        {
+            RegFileEncodingKind.Utf16 => "UTF-16",
+            RegFileEncodingKind.Utf8 => "UTF-8",
+            RegFileEncodingKind.Ansi => $"ANSI {import.CodePage}",
+            _ => null,
+        };
+        if (import.Changes is not { } changes)
+        {
+            lock (_gate)
+            {
+                ThrowIfBusy();
+                _ = _open ?? throw new InvalidOperationException("No workspace is open.");
+                _plan = null;
+                return new PlanSummary(Guid.Empty, _revision, string.Empty, [], [], import.Diagnostics, encoding);
+            }
+        }
+
+        return Plan(changes, encoding);
+    }
+
+    private PlanSummary Plan(IReadOnlyList<ImageChange> changes, string? fileEncoding)
     {
         lock (_gate)
         {
             ThrowIfBusy();
             var open = _open ?? throw new InvalidOperationException("No workspace is open.");
             var result = new PipelinePlanner(new RegistryPathMapper(), newId)
-                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, [ValidationMarker.M1]));
+                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, changes));
             _plan = result.Plan;
             return result.Plan is { } plan
-                ? new PlanSummary(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint, plan.Preview, [])
-                : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics);
+                ? new PlanSummary(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint, plan.Preview, [], null, fileEncoding)
+                : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
     }
 

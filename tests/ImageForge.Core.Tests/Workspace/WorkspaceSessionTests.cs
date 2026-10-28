@@ -1,4 +1,6 @@
+using System.Text;
 using ImageForge.Core.Planning;
+using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
 
 namespace ImageForge.Core.Tests.Workspace;
@@ -126,6 +128,48 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.Mounted.ShouldBeEmpty();
         await _session.WhenIdleAsync();
     }
+
+    [Fact]
+    public async Task A_reg_file_is_planned_and_its_changes_run()
+    {
+        _session.Open(_folders);
+
+        var plan = _session.PlanRegFile(RegFile("[HKEY_LOCAL_MACHINE\\SOFTWARE\\X]\r\n\"a\"=dword:00000001\r\n"));
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.FileDiagnostics.ShouldBeEmpty();
+        plan.FileEncoding.ShouldBe("UTF-16");
+        plan.Preview.Select(p => p.SubKey).ShouldBe(["X", "X"]);
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+    }
+
+    [Fact]
+    public async Task A_broken_reg_file_shows_its_problems_and_drops_the_previous_plan()
+    {
+        _session.Open(_folders);
+        var previous = _session.PlanM1();
+
+        var plan = _session.PlanRegFile(RegFile("\"a\"=dword:1\r\n"));
+
+        plan.PlanId.ShouldBe(Guid.Empty);
+        plan.FileDiagnostics.Single().Code.ShouldBe(RegFileCodes.ValueOutsideKey);
+        (await _session.StartAsync(Start(previous), null, Ct)).Rejection.ShouldBe(StartPlanRejection.UnknownPlan);
+    }
+
+    [Fact]
+    public void A_reg_file_whose_paths_cannot_be_applied_gets_planning_diagnostics()
+    {
+        _session.Open(_folders);
+
+        var plan = _session.PlanRegFile(RegFile("[HKEY_LOCAL_MACHINE\\SAM\\X]\r\n\"a\"=dword:1\r\n"));
+
+        plan.PlanId.ShouldBe(Guid.Empty);
+        plan.FileDiagnostics.ShouldBeEmpty();
+        plan.Diagnostics.ShouldNotBeEmpty();
+    }
+
+    private static RegFileInput RegFile(string body) =>
+        new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 
     private static StartPlanRequest Start(PlanSummary plan) => new(plan.PlanId, plan.WorkspaceRevision, Guid.NewGuid());
 

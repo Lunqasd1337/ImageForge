@@ -1,5 +1,7 @@
+using System.Text;
 using ImageForge.Core.Contracts;
 using ImageForge.Core.Planning;
+using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Rpc;
 using ImageForge.Core.Tests.Workspace;
 using ImageForge.Core.Workspace;
@@ -56,7 +58,7 @@ public sealed class EngineContractTests : IAsyncDisposable
         opened.Problems.ShouldBeEmpty();
         opened.WorkspaceId.ShouldNotBe(Guid.Empty);
 
-        var plan = await engine.PlanAsync(Ct);
+        var plan = await engine.PlanAsync(new PlanOptions(null), Ct);
         var preview = plan.Preview.ShouldHaveSingleItem();
         preview.SubKey.ShouldBe(@"ImageForge\Validation");
         preview.NewValue.ShouldNotBeNull().Text.ShouldBe("M1");
@@ -82,7 +84,28 @@ public sealed class EngineContractTests : IAsyncDisposable
 
         opened.Problems.ShouldBe([new LocationProblem(LocationProblemKind.Same, WorkspaceLocations.Source, WorkspaceLocations.OutputDir)]);
         (await engine.StartAsync(new StartPlanRequest(Guid.NewGuid(), 1, Guid.NewGuid()), null, Ct)).Rejection.ShouldBe(StartPlanRejection.NotOpen);
-        await Should.ThrowAsync<RemoteInvocationException>(() => engine.PlanAsync(Ct));
+        await Should.ThrowAsync<RemoteInvocationException>(() => engine.PlanAsync(new PlanOptions(null), Ct));
+    }
+
+    [Fact]
+    public async Task A_reg_file_and_its_problems_cross_the_channel()
+    {
+        var engine = Connect((_, _, _) => []);
+        await engine.OpenWorkspaceAsync(new OpenWorkspaceRequest(_dir.Combine("media"), _dir.Combine("work"), _dir.Combine("out", "Win11")), Ct);
+        static RegFileInput File(string body) => new(
+            "t.reg",
+            [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)],
+            RegFileEncoding.Auto,
+            1251);
+
+        var good = await engine.PlanAsync(new PlanOptions(File("[HKEY_CURRENT_USER\\Software\\Classes\\.x]\r\n@=\"y\"\r\n")), Ct);
+        var bad = await engine.PlanAsync(new PlanOptions(File("[HKEY_LOCAL_MACHINE\\SOFTWARE\\X]\r\n\"a\"=dword:zz\r\n")), Ct);
+
+        good.PlanId.ShouldNotBe(Guid.Empty);
+        good.FileEncoding.ShouldBe("UTF-16");
+        good.Preview.ShouldContain(p => p.FirstLogon && p.NewValue != null && p.NewValue.Text == "y");
+        bad.PlanId.ShouldBe(Guid.Empty);
+        bad.FileDiagnostics.Single().Line.ShouldBe(4);
     }
 
     private sealed class Progress(List<string> lines) : IProgress<string>
@@ -107,7 +130,7 @@ public sealed class EngineContractTests : IAsyncDisposable
 
         public Task<WorkspaceSummary> GetWorkspaceAsync(CancellationToken ct) => Task.FromResult(session.Summary());
 
-        public Task<PlanSummary> PlanAsync(CancellationToken ct) => Task.FromResult(session.PlanM1());
+        public Task<PlanSummary> PlanAsync(PlanOptions options, CancellationToken ct) => Task.FromResult(session.Plan(options));
 
         public Task<RunOutcome> StartAsync(StartPlanRequest request, IProgress<string>? progress, CancellationToken ct) => session.StartAsync(request, progress, ct);
 

@@ -1,4 +1,5 @@
 using ImageForge.Core.Planning;
+using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
 using StreamJsonRpc;
 
@@ -6,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 2;
+    public const int Version = 3;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -39,14 +40,20 @@ public partial interface IEngineService
 
     Task<WorkspaceSummary> GetWorkspaceAsync(CancellationToken ct);
 
-    /// <summary>Plans the M1 marker for the open workspace; only this plan can be started.</summary>
-    Task<PlanSummary> PlanAsync(CancellationToken ct);
+    /// <summary>
+    /// Plans the open workspace: the changes of the chosen .reg file, or the M1 marker without one. Only the latest
+    /// plan can be started; a file that cannot be read leaves no plan.
+    /// </summary>
+    Task<PlanSummary> PlanAsync(PlanOptions options, CancellationToken ct);
 
     /// <summary>Runs the shown plan to the end and returns its outcome; progress lines stream while it runs.</summary>
     Task<RunOutcome> StartAsync(StartPlanRequest request, IProgress<string>? progress, CancellationToken ct);
 
     Task<RecoveryResult> RecoverAsync(IProgress<string>? progress, CancellationToken ct);
 }
+
+/// <param name="RegFile">The .reg file to apply; null plans the M1 validation marker.</param>
+public sealed record PlanOptions(RegFileInput? RegFile);
 
 public enum EngineState
 {

@@ -25,7 +25,6 @@ public sealed class RegistryPathMapperTests
     }
 
     [Theory]
-    [InlineData(@"HKLM\SOFTWARE2\X")]
     [InlineData(@"HKLM\SOFTWAREX")]
     [InlineData(@"HKLMX\SOFTWARE\X")]
     [InlineData(@"HKEY_LOCAL_MACHINE_SOFTWARE\X")]
@@ -42,27 +41,77 @@ public sealed class RegistryPathMapperTests
     [InlineData(@"HKLM\SAM\X")]
     [InlineData(@"HKLM\SECURITY\Policy")]
     [InlineData(@"HKLM\HARDWARE\DESCRIPTION")]
+    [InlineData(@"HKLM\BCD00000000\Objects")]
+    [InlineData(@"HKLM\SOFTWARE2\X")]
     [InlineData(@"HKCC\Software")]
     [InlineData(@"HKEY_CURRENT_CONFIG\Software")]
+    [InlineData(@"HKU\S-1-5-21-1-2-3-1001\Software")]
+    [InlineData(@"HKU\.DEFAULTX\Software")]
     public void Blocks_forbidden_roots(string importPath)
     {
         _mapper.Map(importPath).Error.ShouldBe(RegistryMappingError.ForbiddenRoot);
     }
 
     [Theory]
-    [InlineData(@"HKLM\SYSTEM\Setup")]
-    [InlineData(@"HKCU\Software\Microsoft")]
-    [InlineData(@"HKEY_CURRENT_USER\Software\Classes\x")]
-    [InlineData(@"HKU\.DEFAULT\Control Panel")]
-    [InlineData(@"HKCR\.txt")]
-    public void Reports_roots_planned_after_M1_as_not_supported_yet(string importPath)
+    [InlineData(@"HKLM\SYSTEM\Setup", OfflineHive.System, @"Windows\System32\config\SYSTEM", "Setup")]
+    [InlineData(@"HKLM\SYSTEM", OfflineHive.System, @"Windows\System32\config\SYSTEM", "")]
+    [InlineData(@"HKLM\SYSTEM\ControlSet001\Services", OfflineHive.System, @"Windows\System32\config\SYSTEM", @"ControlSet001\Services")]
+    [InlineData(@"HKCU\Software\Microsoft", OfflineHive.DefaultUser, @"Users\Default\NTUSER.DAT", @"Software\Microsoft")]
+    [InlineData(@"HKEY_CURRENT_USER\Control Panel\Desktop", OfflineHive.DefaultUser, @"Users\Default\NTUSER.DAT", @"Control Panel\Desktop")]
+    [InlineData(@"HKCU\Software\ClassesX", OfflineHive.DefaultUser, @"Users\Default\NTUSER.DAT", @"Software\ClassesX")]
+    [InlineData(@"HKCU\Software\Classes\.txt", OfflineHive.DefaultUserClasses, @"Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat", ".txt")]
+    [InlineData(@"hkcu\software\classes", OfflineHive.DefaultUserClasses, @"Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat", "")]
+    [InlineData(@"HKU\.DEFAULT\Control Panel", OfflineHive.Default, @"Windows\System32\config\DEFAULT", "Control Panel")]
+    public void Maps_each_root_to_its_offline_hive(string importPath, OfflineHive hive, string hiveFile, string subKey)
     {
-        _mapper.Map(importPath).Error.ShouldBe(RegistryMappingError.NotSupportedYet);
+        var location = _mapper.Map(importPath).Location.ShouldNotBeNull();
+
+        location.Hive.ShouldBe(hive);
+        location.HiveFile.ShouldBe(hiveFile);
+        location.SubKey.ShouldBe(subKey);
+        location.UnderCurrentControlSet.ShouldBeFalse();
+        location.ClassesRootPolicy.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(@"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip", @"Services\Tcpip")]
+    [InlineData(@"HKEY_LOCAL_MACHINE\system\currentcontrolset", "")]
+    public void CurrentControlSet_is_left_for_the_image_to_resolve(string importPath, string subKey)
+    {
+        var location = _mapper.Map(importPath).Location.ShouldNotBeNull();
+
+        location.Hive.ShouldBe(OfflineHive.System);
+        location.SubKey.ShouldBe(subKey);
+        location.UnderCurrentControlSet.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(@"HKCR\.txt", @"Classes\.txt")]
+    [InlineData(@"HKEY_CLASSES_ROOT\CLSID\{0}", @"Classes\CLSID\{0}")]
+    [InlineData(@"HKCR", "Classes")]
+    public void HKCR_goes_to_the_machine_classes_by_policy(string importPath, string subKey)
+    {
+        var location = _mapper.Map(importPath).Location.ShouldNotBeNull();
+
+        location.Hive.ShouldBe(OfflineHive.Software);
+        location.SubKey.ShouldBe(subKey);
+        location.ClassesRootPolicy.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(1u, "ControlSet001")]
+    [InlineData(2u, "ControlSet002")]
+    [InlineData(0u, null)]
+    [InlineData(null, null)]
+    public void Current_control_set_comes_only_from_Select_Current(uint? current, string? expected)
+    {
+        ControlSet.FromSelectCurrent(current).ShouldBe(expected);
     }
 
     [Theory]
     [InlineData(@"HKXX\SOFTWARE")]
     [InlineData(@"SOFTWARE\ImageForge")]
+    [InlineData(@"HKLM")]
     public void Reports_unknown_roots(string importPath)
     {
         _mapper.Map(importPath).Error.ShouldBe(RegistryMappingError.UnknownRoot);

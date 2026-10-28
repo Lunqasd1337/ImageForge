@@ -1,6 +1,6 @@
 # Ручная проверка S2-APPX-INVENTORY: список и удаление предустановленных приложений
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** (2026-10-28, Hyper-V, Win11 26H2 Pro).
 Проверяет первую часть Appx (план, раздел 8): ImageForge читает список provisioned-пакетов образа через DISM, разбирает каждое имя пакета без потерь, предупреждает о Microsoft Store и App Installer и удаляет ровно один пакет по полному имени. Удаление в окне и в запуске появится в следующей части.
 Работа идёт с **копией** `install.wim` в `C:\IF\scratch`, фикстура не монтируется.
 
@@ -68,3 +68,11 @@ Stop-Transcript
 ## Что прислать
 
 `C:\IF\s2-appx.txt` целиком. Если что-то не совпало, ещё вывод `dism /English /Image:C:\IF\scratch\mount /Get-ProvisionedAppxPackages` до уборки.
+
+## Результаты
+
+| BuildId | VM | Шаги | Итог |
+|---|---|---|---|
+| f90304ab | Hyper-V | 1–4 | OK: 47 пакетов, совпадает с DISM; предупреждения только у Store и App Installer; Clipchamp удалён (47 → 46); оба отказа без вызова удаления; mounts none, host-check OK |
+
+Наблюдение: в provisioned-списке 26H2 Pro нет библиотек (VCLibs, UI.Xaml, NET.Native, WindowsAppRuntime); Store и App Installer — нейтральные пакеты-бандлы.

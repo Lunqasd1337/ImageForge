@@ -10,6 +10,15 @@ public enum StartPlanRejection
     ExpectedRevisionMismatch,
     StalePlan,
     IntegrityMismatch,
+
+    /// <summary>No workspace is open in the engine.</summary>
+    NotOpen,
+
+    /// <summary>Another run is in progress.</summary>
+    Busy,
+
+    /// <summary>The ClientRequestId was already used for a different plan.</summary>
+    RequestConflict,
 }
 
 /// <summary>Ensures the engine executes exactly the plan the UI showed, against the workspace state it was made for.</summary>

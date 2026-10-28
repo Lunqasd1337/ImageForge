@@ -39,7 +39,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         ArgumentNullException.ThrowIfNull(request);
         Directory.CreateDirectory(paths.Root);
         var store = new StateStore<WorkspaceState>(paths.StateFile);
-        var state = LoadForRun(store);
+        var state = LoadForRun(store, request.Plan.WorkspaceId);
 
         var runId = newId();
         var imageId = request.Plan.ImageId;
@@ -125,6 +125,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
                 Directory.CreateDirectory(Path.GetDirectoryName(publication.Staging)!);
                 TreeCopy.Copy(paths.Base, publication.Staging, [InstallImage], ct);
+                Directory.CreateDirectory(Path.Combine(publication.Staging, "sources"));
                 TreeCopy.CopyFile(completed, Path.Combine(publication.Staging, "sources", "install.wim"));
 
                 var expected = baseManifest.Entries
@@ -206,7 +207,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         }
     }
 
-    private static WorkspaceState LoadForRun(StateStore<WorkspaceState> store)
+    private static WorkspaceState LoadForRun(StateStore<WorkspaceState> store, Guid workspaceId)
     {
         var loaded = store.Load();
         if (loaded.Source == StateSource.Unusable)
@@ -214,7 +215,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             throw new WorkspaceRecoveryRequiredException("state.json and its backup are damaged.");
         }
 
-        var state = loaded.State ?? new WorkspaceState(Guid.NewGuid(), null, TargetStatus.Pending, null);
+        var state = loaded.State ?? new WorkspaceState(workspaceId, null, TargetStatus.Pending, null);
         return state.LastRun?.Status is RunStatus.Running or RunStatus.RecoveryRequired
             ? throw new WorkspaceRecoveryRequiredException($"Run {state.LastRun.RunId:N} did not finish ({state.LastRun.Status}); recover the workspace first.")
             : state;
@@ -329,6 +330,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await beforeStep(name, ct).ConfigureAwait(false);
             }
 
+            // A servicing call itself is never interrupted; cancellation takes effect between steps, so the
+            // failure path can still release the mount.
+            ct.ThrowIfCancellationRequested();
             journal.Append(JournalEventKind.StepStarted, name, null);
             log?.Invoke($"{name}...");
             var result = await body().ConfigureAwait(false);

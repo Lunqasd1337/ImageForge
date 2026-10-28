@@ -23,7 +23,7 @@ public sealed class PipelinePlannerTests
         marker.KeyPath.ShouldBe(@"HKLM\SOFTWARE\ImageForge\Validation");
         marker.ValueName.ShouldBe("Milestone");
         marker.Value.Type.ShouldBe(RegistryValueType.Sz);
-        marker.Value.Data.ShouldBe("M1");
+        marker.Value.Text.ShouldBe("M1");
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class PipelinePlannerTests
     }
 
     [Theory]
-    [InlineData(@"HKLM\SYSTEM\Setup", PlanningCodes.RegistryRootNotSupportedYet)]
+    [InlineData(@"HKU\S-1-5-18\Software", PlanningCodes.RegistryRootForbidden)]
     [InlineData(@"HKLM\SAM\X", PlanningCodes.RegistryRootForbidden)]
     [InlineData(@"HKXX\SOFTWARE", PlanningCodes.RegistryRootUnknown)]
     [InlineData(@"HKLM\SOFTWARE\\X", PlanningCodes.RegistryPathMalformed)]
@@ -101,6 +101,61 @@ public sealed class PipelinePlannerTests
         var diagnostic = result.Diagnostics.Single();
         diagnostic.Code.ShouldBe(expectedCode);
         diagnostic.ChangeIndex.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_reg_file_becomes_ordered_steps_per_hive_with_a_preview_for_each_change()
+    {
+        var bytes = new RegistryValue(RegistryValueType.Binary, [1, 2]);
+        var result = Planner().Plan(Request(
+            1,
+            new CreateRegistryKey(@"HKLM\SOFTWARE\A"),
+            new SetRegistryValue(@"HKLM\SYSTEM\CurrentControlSet\Services\S", "Start", bytes),
+            new DeleteRegistryValue(@"HKLM\SOFTWARE\A", ""),
+            new DeleteRegistryKey(@"HKCR\.old")));
+
+        var plan = result.Plan.ShouldNotBeNull();
+        plan.Steps.ShouldBe(
+        [
+            new LoadOfflineHive(OfflineHive.Software, @"Windows\System32\config\SOFTWARE"),
+            new CreateOfflineRegistryKey(OfflineHive.Software, "A"),
+            new DeleteOfflineRegistryValue(OfflineHive.Software, "A", ""),
+            new DeleteOfflineRegistryKey(OfflineHive.Software, @"Classes\.old"),
+            new UnloadOfflineHive(OfflineHive.Software),
+            new LoadOfflineHive(OfflineHive.System, @"Windows\System32\config\SYSTEM"),
+            new SetOfflineRegistryValue(OfflineHive.System, @"Services\S", "Start", new RegistryValue(RegistryValueType.Binary, [1, 2]), UnderCurrentControlSet: true),
+            new UnloadOfflineHive(OfflineHive.System),
+        ]);
+        plan.Preview.Select(p => p.Kind).ShouldBe([RegistryChangeKind.CreateKey, RegistryChangeKind.SetValue, RegistryChangeKind.DeleteValue, RegistryChangeKind.DeleteKey]);
+        plan.Preview[1].UnderCurrentControlSet.ShouldBeTrue();
+        plan.Preview[3].ClassesRootPolicy.ShouldBeTrue();
+        plan.Preview[0].ValueName.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(@"HKLM\SOFTWARE")]
+    [InlineData(@"HKCU")]
+    [InlineData(@"HKLM\SYSTEM\CurrentControlSet")]
+    public void Deleting_a_hive_root_is_blocked(string keyPath)
+    {
+        Planner().Plan(Request(1, new DeleteRegistryKey(keyPath))).Diagnostics.Single().Code.ShouldBe(PlanningCodes.RegistryKeyDeleteRoot);
+    }
+
+    [Fact]
+    public void Value_bytes_are_part_of_the_fingerprint()
+    {
+        var a = Planner().Plan(Request(1, new SetRegistryValue(@"HKLM\SOFTWARE\A", "b", new RegistryValue(RegistryValueType.Binary, [1])))).Plan!;
+        var b = Planner().Plan(Request(1, new SetRegistryValue(@"HKLM\SOFTWARE\A", "b", new RegistryValue(RegistryValueType.Binary, [2])))).Plan!;
+        var c = Planner().Plan(Request(1, new SetRegistryValue(@"HKLM\SOFTWARE\A", "b", new RegistryValue(RegistryValueType.None, [1])))).Plan!;
+
+        a.Fingerprint.ShouldNotBe(b.Fingerprint);
+        a.Fingerprint.ShouldNotBe(c.Fingerprint);
+    }
+
+    [Fact]
+    public void Value_types_outside_0_to_b_are_rejected()
+    {
+        Planner().Plan(Request(1, new SetRegistryValue(@"HKLM\SOFTWARE\A", "b", new RegistryValue((RegistryValueType)0xC, [])))).Diagnostics.Single().Code.ShouldBe(PlanningCodes.RegistryValueInvalid);
     }
 
     [Fact]

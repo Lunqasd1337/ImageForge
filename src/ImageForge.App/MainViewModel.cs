@@ -125,12 +125,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
             _plan = plan;
             HasPlan = true;
-            OperationPreview = string.Join(Environment.NewLine, plan.Preview.Select(p =>
-                $"""
-                Куст: офлайн {p.Hive.ToString().ToUpperInvariant()} ({p.HiveFile})
-                Ключ: {p.SourcePath}
-                Значение: {p.ValueName} (REG_SZ) = {p.NewValue.Data}
-                """));
+            OperationPreview = string.Join(Environment.NewLine, plan.Preview.Select(RegistryPreviewText.Describe));
             Status = "План готов. Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }

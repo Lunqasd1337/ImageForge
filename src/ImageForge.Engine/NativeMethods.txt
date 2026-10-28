@@ -14,3 +14,4 @@ RegSetValueEx
 RegFlushKey
 HKEY_LOCAL_MACHINE
 WIN32_ERROR
+RegDeleteValue

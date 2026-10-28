@@ -59,7 +59,7 @@ public sealed class EngineContractTests : IAsyncDisposable
         var plan = await engine.PlanAsync(Ct);
         var preview = plan.Preview.ShouldHaveSingleItem();
         preview.SubKey.ShouldBe(@"ImageForge\Validation");
-        preview.NewValue.Data.ShouldBe("M1");
+        preview.NewValue.ShouldNotBeNull().Text.ShouldBe("M1");
 
         var lines = new List<string>();
         var outcome = await engine.StartAsync(new StartPlanRequest(plan.PlanId, plan.WorkspaceRevision, Guid.NewGuid()), new Progress(lines), Ct);

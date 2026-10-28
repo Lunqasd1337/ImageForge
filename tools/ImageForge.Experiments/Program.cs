@@ -32,6 +32,8 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["status"] = ("status <work-dir>", a => Task.FromResult(Status(a[0]))),
     ["recover"] = ("recover <work-dir>", a => RecoverAsync(a[0])),
     ["manifest"] = ("manifest <dir>", a => ManifestAsync(a[0])),
+    ["reg-apply"] = ("reg-apply <mount-dir> <file.reg>", a => Task.FromResult(RegApply(a[0], a[1]))),
+    ["reg-verify"] = ("reg-verify <mount-dir> <file.reg>", a => Task.FromResult(RegVerify(a[0], a[1]))),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -153,7 +155,7 @@ static bool WriteMarker(string mountDir)
 
     foreach (var p in plan.Preview)
     {
-        Log($"Preview: {p.SourcePath} -> offline {p.Hive} hive ({OfflineHivePaths.Resolve(scope, p.HiveFile)}), key {p.SubKey}, {p.ValueName} = REG_SZ \"{p.NewValue.Data}\"");
+        Log($"Preview: {RegistryPreviewText.Describe(p)} ({OfflineHivePaths.Resolve(scope, p.HiveFile)})");
     }
 
     Log($"PlanId {plan.PlanId}, fingerprint {plan.Fingerprint}");
@@ -187,7 +189,7 @@ static bool ReadMarker(string mountDir)
     }
 
     Log($"Offline {ValidationMarker.M1.KeyPath}\\{ValidationMarker.M1.ValueName} = {(value is null ? "<absent>" : $"\"{value}\"")}");
-    return value == ValidationMarker.M1.Value.Data && OwnedHivesLoaded() == 0;
+    return value == ValidationMarker.M1.Value.Text && OwnedHivesLoaded() == 0;
 }
 
 static bool HostCheck()
@@ -299,7 +301,7 @@ static async Task<bool> RunPipelineAsync(string media, string work, string outpu
         .Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(), [ValidationMarker.M1])).Plan!;
     foreach (var p in plan.Preview)
     {
-        Log($"Preview: {p.SourcePath} -> offline {p.Hive} hive, key {p.SubKey}, {p.ValueName} = REG_SZ \"{p.NewValue.Data}\"");
+        Log($"Preview: {RegistryPreviewText.Describe(p)}");
     }
 
     var layout = WorkspaceLayout.Create(workDir);
@@ -413,15 +415,15 @@ static bool RegCheck(string file, string encodingName, int codePage, string live
     Log($"{compared} values compared with HKEY_CURRENT_USER\\{liveKey}");
     return ok && compared > 0;
 
-    static bool Matches(RegData data, object live)
+    static bool Matches(RegistryValue data, object live)
     {
         var text = data.Bytes.Length % 2 == 0 ? System.Text.Encoding.Unicode.GetString(data.Bytes) : null;
         return (data.Type, live) switch
         {
-            (RegValueType.Sz or RegValueType.ExpandSz, string s) => text?.TrimEnd('\0') == s,
-            (RegValueType.MultiSz, string[] items) => text is not null && text.TrimEnd('\0').Split('\0').Where(x => x.Length > 0).SequenceEqual(items),
-            (RegValueType.Dword, int i) => data.Bytes.Length == 4 && BitConverter.ToInt32(data.Bytes) == i,
-            (RegValueType.Qword, long l) => data.Bytes.Length == 8 && BitConverter.ToInt64(data.Bytes) == l,
+            (RegistryValueType.Sz or RegistryValueType.ExpandSz, string s) => text?.TrimEnd('\0') == s,
+            (RegistryValueType.MultiSz, string[] items) => text is not null && text.TrimEnd('\0').Split('\0').Where(x => x.Length > 0).SequenceEqual(items),
+            (RegistryValueType.Dword, int i) => data.Bytes.Length == 4 && BitConverter.ToInt32(data.Bytes) == i,
+            (RegistryValueType.Qword, long l) => data.Bytes.Length == 8 && BitConverter.ToInt64(data.Bytes) == l,
             (_, byte[] bytes) => bytes.AsSpan().SequenceEqual(data.Bytes),
             _ => false,
         };
@@ -434,6 +436,127 @@ static bool RegCheck(string file, string encodingName, int codePage, string live
         string[] items => string.Join(" | ", items),
         _ => Convert.ToString(live, CultureInfo.InvariantCulture) ?? string.Empty,
     };
+}
+
+static ExecutionPlan? PlanRegFile(string file)
+{
+    var text = new RegFileLoader().Decode(File.ReadAllBytes(file), RegFileEncoding.Auto, 1251);
+    var parsed = text.Text is null ? null : new RegFileParser().Parse(text.Text);
+    foreach (var d in text.Diagnostics.Concat(parsed?.Diagnostics ?? []))
+    {
+        Log($"line {d.Line}: {d.Code}: {d.Message}");
+    }
+
+    if (parsed is not { IsValid: true })
+    {
+        return null;
+    }
+
+    var result = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+        .Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(), RegFileChanges.From(parsed)));
+    foreach (var d in result.Diagnostics)
+    {
+        Log($"PLAN ERROR change {d.ChangeIndex}: {d.Code}: {d.Message}");
+    }
+
+    foreach (var p in result.Plan?.Preview ?? [])
+    {
+        Log(RegistryPreviewText.Describe(p));
+    }
+
+    return result.Plan;
+}
+
+// Applies a .reg file to the offline hives of a mounted image, as a run would (no commit; unmount separately).
+static bool RegApply(string mountDir, string file)
+{
+    if (PlanRegFile(file) is not { } plan)
+    {
+        return false;
+    }
+
+    var scope = WriteScope.Create(Path.GetFullPath(mountDir));
+    var runId = Guid.NewGuid();
+    var report = new RegistryPlanExecutor(new Win32OfflineHiveLoader(runId), hiveFile => OfflineHivePaths.Resolve(scope, hiveFile))
+        .Execute(plan, CancellationToken.None);
+    Log($"Execution: {report.Outcome}, steps {report.CompletedSteps}/{plan.Steps.Count}" +
+        (report.Error is null ? string.Empty : $", failed step {report.FailedStepIndex}: {report.Error}"));
+    if (report.RequiresRecovery)
+    {
+        Log($"RECOVERY REQUIRED: hives still loaded: {string.Join(", ", report.HivesLeftLoaded)} (run {runId:N})");
+    }
+
+    return report.Outcome == ExecutionOutcome.Completed && OwnedHivesLoaded() == 0;
+}
+
+// Reads the offline hives back and checks the final effect of every change in the file, in file order.
+static bool RegVerify(string mountDir, string file)
+{
+    if (PlanRegFile(file) is not { } plan)
+    {
+        return false;
+    }
+
+    var scope = WriteScope.Create(Path.GetFullPath(mountDir));
+    var loader = new Win32OfflineHiveLoader(Guid.NewGuid());
+    var ok = true;
+    foreach (var group in plan.Preview.GroupBy(p => p.Hive))
+    {
+        var hive = (Win32OfflineHiveLoader.LoadedHive)loader.Load(group.Key, OfflineHivePaths.Resolve(scope, group.First().HiveFile));
+        try
+        {
+            var controlSet = group.Any(p => p.UnderCurrentControlSet) ? ControlSet.FromSelectCurrent(hive.ReadSelectCurrent()) : null;
+            string Resolve(RegistryWritePreview p) => p.UnderCurrentControlSet ? (p.SubKey.Length == 0 ? controlSet! : $"{controlSet}\\{p.SubKey}") : p.SubKey;
+            static bool Under(string key, string root) => key.Equals(root, StringComparison.OrdinalIgnoreCase) || key.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase);
+
+            // Final expectation per key and value: later changes override earlier ones; a deleted key drops what was under it.
+            var keys = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            var values = new Dictionary<(string Key, string Name), RegistryValue?>();
+            foreach (var p in group)
+            {
+                var key = Resolve(p);
+                switch (p.Kind)
+                {
+                    case RegistryChangeKind.DeleteKey:
+                        foreach (var k in keys.Keys.Where(k => Under(k, key)).ToList()) { keys.Remove(k); }
+                        foreach (var v in values.Keys.Where(v => Under(v.Key, key)).ToList()) { values.Remove(v); }
+                        keys[key] = false;
+                        break;
+                    case RegistryChangeKind.CreateKey:
+                        keys[key] = true;
+                        break;
+                    case RegistryChangeKind.SetValue:
+                        keys[key] = true;
+                        values[(key, p.ValueName!)] = p.NewValue;
+                        break;
+                    case RegistryChangeKind.DeleteValue:
+                        values[(key, p.ValueName!)] = null;
+                        break;
+                }
+            }
+
+            foreach (var (key, present) in keys)
+            {
+                var actual = hive.KeyExists(key);
+                ok &= actual == present;
+                Log($"  {group.Key}\\{key}: key {(actual ? "present" : "absent")} {(actual == present ? "OK" : "MISMATCH")}");
+            }
+
+            foreach (var ((key, name), expected) in values)
+            {
+                var actual = hive.ReadValue(key, name);
+                var same = expected is null ? actual is null : expected.Equals(actual);
+                ok &= same;
+                Log($"  {group.Key}\\{key} [{(name.Length == 0 ? "@" : name)}]: {(actual is null ? "absent" : actual.Describe())} {(same ? "OK" : "MISMATCH, expected " + (expected?.Describe() ?? "absent"))}");
+            }
+        }
+        finally
+        {
+            hive.Unload();
+        }
+    }
+
+    return ok && OwnedHivesLoaded() == 0;
 }
 
 static void PrintState(WorkspaceLayout layout)

@@ -29,17 +29,12 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         }
 
         var diagnostics = new List<PlanningDiagnostic>();
-        var writes = new List<RegistryWritePreview>();
+        var changes = new List<RegistryWritePreview>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
-            switch (request.Changes[i])
+            if (PlanRegistryChange(request.Changes[i], i, diagnostics) is { } preview)
             {
-                case SetRegistryValue set:
-                    PlanRegistryWrite(set, i, writes, diagnostics);
-                    break;
-                default:
-                    diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UnsupportedChange, i, "Тип изменения не поддерживается."));
-                    break;
+                changes.Add(preview);
             }
         }
 
@@ -48,46 +43,81 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             return new PlanResult(null, diagnostics);
         }
 
+        // One load/unload per hive; within a hive the requested order is kept, including repeats and deletions.
         var steps = new List<PlannedStep>();
-        foreach (var hive in writes.GroupBy(w => w.Hive))
+        foreach (var hive in changes.GroupBy(c => c.Hive))
         {
             steps.Add(new LoadOfflineHive(hive.Key, hive.First().HiveFile));
-            steps.AddRange(hive.Select(w => new SetOfflineRegistryValue(w.Hive, w.SubKey, w.ValueName, w.NewValue)));
+            steps.AddRange(hive.Select(ToStep));
             steps.Add(new UnloadOfflineHive(hive.Key));
         }
 
-        var plan = new ExecutionPlan(newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, writes, string.Empty);
+        var plan = new ExecutionPlan(newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, changes, string.Empty);
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
 
-    private void PlanRegistryWrite(SetRegistryValue set, int index, List<RegistryWritePreview> writes, List<PlanningDiagnostic> diagnostics)
+    private static PlannedStep ToStep(RegistryWritePreview c) => c.Kind switch
     {
-        var mapping = mapper.Map(set.KeyPath);
+        RegistryChangeKind.SetValue => new SetOfflineRegistryValue(c.Hive, c.SubKey, c.ValueName!, c.NewValue!, c.UnderCurrentControlSet),
+        RegistryChangeKind.DeleteValue => new DeleteOfflineRegistryValue(c.Hive, c.SubKey, c.ValueName!, c.UnderCurrentControlSet),
+        RegistryChangeKind.CreateKey => new CreateOfflineRegistryKey(c.Hive, c.SubKey, c.UnderCurrentControlSet),
+        RegistryChangeKind.DeleteKey => new DeleteOfflineRegistryKey(c.Hive, c.SubKey, c.UnderCurrentControlSet),
+        _ => throw new ArgumentOutOfRangeException(nameof(c)),
+    };
+
+    private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)
+    {
+        var (keyPath, kind, valueName, value) = change switch
+        {
+            SetRegistryValue set => (set.KeyPath, RegistryChangeKind.SetValue, set.ValueName, set.Value),
+            DeleteRegistryValue delete => (delete.KeyPath, RegistryChangeKind.DeleteValue, delete.ValueName, null),
+            CreateRegistryKey key => (key.KeyPath, RegistryChangeKind.CreateKey, null, null),
+            DeleteRegistryKey key => (key.KeyPath, RegistryChangeKind.DeleteKey, (string?)null, (RegistryValue?)null),
+            _ => (null, default, null, null),
+        };
+        if (keyPath is null)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UnsupportedChange, index, "Тип изменения не поддерживается."));
+            return null;
+        }
+
+        var mapping = mapper.Map(keyPath);
         if (mapping.Location is not { } location)
         {
-            diagnostics.Add(new PlanningDiagnostic(CodeFor(mapping.Error), index, $"Путь реестра не может быть применён: {set.KeyPath}"));
-            return;
+            diagnostics.Add(new PlanningDiagnostic(CodeFor(mapping.Error), index, $"Путь реестра не может быть применён: {keyPath}"));
+            return null;
         }
 
-        // Only SOFTWARE is applied so far; the other mapped hives are planned once loading and control set
-        // resolution for them are in place.
-        if (location.Hive != OfflineHive.Software || location.ClassesRootPolicy)
+        if (kind == RegistryChangeKind.DeleteKey && location.SubKey.Length == 0)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryRootNotSupportedYet, index, $"Этот раздел реестра пока не применяется: {set.KeyPath}"));
-            return;
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryKeyDeleteRoot, index, $"Нельзя удалить корень куста: {keyPath}"));
+            return null;
         }
 
-        if (set.ValueName.Length > MaxValueNameLength
-            || set.ValueName.Contains('\0', StringComparison.Ordinal)
-            || set.Value.Type != RegistryValueType.Sz
-            || set.Value.Data.Contains('\0', StringComparison.Ordinal))
+        if (valueName is not null && (valueName.Length > MaxValueNameLength || valueName.Contains('\0', StringComparison.Ordinal)))
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое значение реестра в {set.KeyPath}"));
-            return;
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое имя значения в {keyPath}"));
+            return null;
         }
 
-        writes.Add(new RegistryWritePreview(set.KeyPath, location.Hive, location.HiveFile, location.SubKey, set.ValueName, set.Value));
+        if (value is not null && !IsWellFormed(value))
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое значение реестра в {keyPath}"));
+            return null;
+        }
+
+        return new RegistryWritePreview(
+            keyPath, location.Hive, location.HiveFile, location.SubKey, valueName, value, kind,
+            location.UnderCurrentControlSet, location.ClassesRootPolicy);
     }
+
+    /// <summary>A string value must not hide data after an embedded nul; other types keep their bytes as given.</summary>
+    private static bool IsWellFormed(RegistryValue value) => value.Type switch
+    {
+        RegistryValueType.Sz or RegistryValueType.ExpandSz => value.Text is { } text && !text.Contains('\0', StringComparison.Ordinal),
+        > RegistryValueType.Qword => false,
+        _ => true,
+    };
 
     private static string CodeFor(RegistryMappingError error) => error switch
     {
@@ -103,7 +133,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 1;
+    private const int FormatVersion = 2;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -122,7 +152,16 @@ public static class PlanFingerprint
                     Append(builder, "load", load.Hive, load.HiveFile);
                     break;
                 case SetOfflineRegistryValue set:
-                    Append(builder, "set", set.Hive, set.SubKey, set.ValueName, (int)set.Value.Type, set.Value.Data);
+                    Append(builder, "set", set.Hive, set.UnderCurrentControlSet, set.SubKey, set.ValueName, (uint)set.Value.Type, Convert.ToHexString(set.Value.Bytes));
+                    break;
+                case DeleteOfflineRegistryValue delete:
+                    Append(builder, "delete-value", delete.Hive, delete.UnderCurrentControlSet, delete.SubKey, delete.ValueName);
+                    break;
+                case CreateOfflineRegistryKey key:
+                    Append(builder, "create-key", key.Hive, key.UnderCurrentControlSet, key.SubKey);
+                    break;
+                case DeleteOfflineRegistryKey key:
+                    Append(builder, "delete-key", key.Hive, key.UnderCurrentControlSet, key.SubKey);
                     break;
                 case UnloadOfflineHive unload:
                     Append(builder, "unload", unload.Hive);

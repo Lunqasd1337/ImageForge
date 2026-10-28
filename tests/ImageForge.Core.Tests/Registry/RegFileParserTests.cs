@@ -1,3 +1,4 @@
+using ImageForge.Core.Changes;
 using ImageForge.Core.Registry.RegFile;
 
 namespace ImageForge.Core.Tests.Registry;
@@ -82,7 +83,7 @@ public sealed class RegFileParserTests
     {
         var op = (SetRegValue)Valid(V5, "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", "\"N\"=\"Аб\"").Operations[1];
 
-        op.Data.Type.ShouldBe(RegValueType.Sz);
+        op.Data.Type.ShouldBe(RegistryValueType.Sz);
         Convert.ToHexString(op.Data.Bytes).ShouldBe("100431040000");
     }
 
@@ -112,7 +113,7 @@ public sealed class RegFileParserTests
     {
         var op = Valid(V5, "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", $"\"d\"={data}").Operations[1];
 
-        ((SetRegValue)op).Data.Type.ShouldBe(RegValueType.Dword);
+        ((SetRegValue)op).Data.Type.ShouldBe(RegistryValueType.Dword);
         Hex(op).ShouldBe(hex);
     }
 
@@ -126,19 +127,19 @@ public sealed class RegFileParserTests
     }
 
     [Theory]
-    [InlineData("hex:", RegValueType.Binary, "")]
-    [InlineData("hex:01,ab,FF", RegValueType.Binary, "01ABFF")]
-    [InlineData("hex(0):01", RegValueType.None, "01")]
-    [InlineData("hex(2):41,00,00,00", RegValueType.ExpandSz, "41000000")]
-    [InlineData("hex(4):01,00,00,00", RegValueType.Dword, "01000000")]
-    [InlineData("hex(5):00,00,00,01", RegValueType.DwordBigEndian, "00000001")]
-    [InlineData("hex(6):41,00", RegValueType.Link, "4100")]
-    [InlineData("hex(7):41,00,00,00,00,00", RegValueType.MultiSz, "410000000000")]
-    [InlineData("hex(8):00", RegValueType.ResourceList, "00")]
-    [InlineData("hex(9):00", RegValueType.FullResourceDescriptor, "00")]
-    [InlineData("hex(a):00", RegValueType.ResourceRequirementsList, "00")]
-    [InlineData("hex(b):01,00,00,00,00,00,00,00", RegValueType.Qword, "0100000000000000")]
-    public void Hex_values_keep_their_type_and_bytes(string data, RegValueType type, string hex)
+    [InlineData("hex:", RegistryValueType.Binary, "")]
+    [InlineData("hex:01,ab,FF", RegistryValueType.Binary, "01ABFF")]
+    [InlineData("hex(0):01", RegistryValueType.None, "01")]
+    [InlineData("hex(2):41,00,00,00", RegistryValueType.ExpandSz, "41000000")]
+    [InlineData("hex(4):01,00,00,00", RegistryValueType.Dword, "01000000")]
+    [InlineData("hex(5):00,00,00,01", RegistryValueType.DwordBigEndian, "00000001")]
+    [InlineData("hex(6):41,00", RegistryValueType.Link, "4100")]
+    [InlineData("hex(7):41,00,00,00,00,00", RegistryValueType.MultiSz, "410000000000")]
+    [InlineData("hex(8):00", RegistryValueType.ResourceList, "00")]
+    [InlineData("hex(9):00", RegistryValueType.FullResourceDescriptor, "00")]
+    [InlineData("hex(a):00", RegistryValueType.ResourceRequirementsList, "00")]
+    [InlineData("hex(b):01,00,00,00,00,00,00,00", RegistryValueType.Qword, "0100000000000000")]
+    public void Hex_values_keep_their_type_and_bytes(string data, RegistryValueType type, string hex)
     {
         var op = Valid(V5, "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", $"\"h\"={data}").Operations[1];
 
@@ -249,5 +250,25 @@ public sealed class RegFileParserTests
     public void Lf_only_line_endings_work()
     {
         Parser.Parse(V5 + "\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]\n\"a\"=\"b\"\n").Operations.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void A_valid_file_becomes_typed_changes_in_order()
+    {
+        var parsed = Valid(V5, "[HKEY_LOCAL_MACHINE\\SOFTWARE\\A]", "\"n\"=dword:00000001", "@=-", "[-HKEY_CURRENT_USER\\Software\\B]");
+
+        RegFileChanges.From(parsed).ShouldBe(
+        [
+            new CreateRegistryKey(@"HKEY_LOCAL_MACHINE\SOFTWARE\A"),
+            new SetRegistryValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\A", "n", new RegistryValue(RegistryValueType.Dword, [1, 0, 0, 0])),
+            new DeleteRegistryValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\A", ""),
+            new DeleteRegistryKey(@"HKEY_CURRENT_USER\Software\B"),
+        ]);
+    }
+
+    [Fact]
+    public void An_invalid_file_cannot_become_changes()
+    {
+        Should.Throw<ArgumentException>(() => RegFileChanges.From(Parse(V5, "bad")));
     }
 }

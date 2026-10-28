@@ -29,6 +29,9 @@ public sealed record DeleteOfflineRegistryKey(OfflineHive Hive, string SubKey, b
 
 public sealed record UnloadOfflineHive(OfflineHive Hive) : PlannedStep;
 
+/// <summary>Writes a file inside the mounted image; the path is relative to the mount root.</summary>
+public sealed record WriteImageFile(string RelativePath, byte[] Content) : PlannedStep;
+
 public enum RegistryChangeKind
 {
     SetValue,
@@ -41,6 +44,7 @@ public enum RegistryChangeKind
 /// <param name="ValueName">Null for key changes; empty for the default value.</param>
 /// <param name="NewValue">Only for <see cref="RegistryChangeKind.SetValue"/>.</param>
 /// <param name="ClassesRootPolicy">An HKCR path written to the machine classes by ImageForge policy.</param>
+/// <param name="FirstLogon">Not written offline: imported for every user at first logon (see <see cref="FirstLogonDelivery"/>).</param>
 public sealed record RegistryWritePreview(
     string SourcePath,
     OfflineHive Hive,
@@ -50,7 +54,8 @@ public sealed record RegistryWritePreview(
     RegistryValue? NewValue,
     RegistryChangeKind Kind = RegistryChangeKind.SetValue,
     bool UnderCurrentControlSet = false,
-    bool ClassesRootPolicy = false);
+    bool ClassesRootPolicy = false,
+    bool FirstLogon = false);
 
 public sealed record ExecutionPlan(
     Guid PlanId,
@@ -75,4 +80,5 @@ public static class PlanningCodes
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";
+    public const string FirstLogonUnrepresentable = "registry.first-logon.unrepresentable";
 }

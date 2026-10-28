@@ -11,6 +11,12 @@ public interface IOfflineHiveLoader
     bool HiveFileExists(string hiveFilePath);
 }
 
+public interface IImageFileWriter
+{
+    /// <summary>Writes the file under the mount root, creating folders; never through a reparse point.</summary>
+    void Write(string relativePath, byte[] content);
+}
+
 public interface ILoadedOfflineHive
 {
     OfflineHive Hive { get; }
@@ -54,7 +60,8 @@ public sealed record ExecutionReport(
 /// whatever happens; a hive that cannot be unloaded is reported so the workspace goes to RecoveryRequired.
 /// </summary>
 /// <param name="resolveHiveFile">Maps a hive file relative to the mount to a checked absolute path.</param>
-public sealed class RegistryPlanExecutor(IOfflineHiveLoader loader, Func<string, string> resolveHiveFile)
+/// <param name="files">Writes files into the image; a plan with file steps fails without it.</param>
+public sealed class RegistryPlanExecutor(IOfflineHiveLoader loader, Func<string, string> resolveHiveFile, IImageFileWriter? files = null)
 {
     public ExecutionReport Execute(ExecutionPlan plan, CancellationToken ct)
     {
@@ -63,6 +70,11 @@ public sealed class RegistryPlanExecutor(IOfflineHiveLoader loader, Func<string,
         // A missing hive file is not created or replaced by another hive; refuse the plan before anything is written.
         for (var i = 0; i < plan.Steps.Count; i++)
         {
+            if (plan.Steps[i] is WriteImageFile && files is null)
+            {
+                return new ExecutionReport(ExecutionOutcome.Failed, 0, i, "NotSupportedException: this executor cannot write files into the image.", []);
+            }
+
             if (plan.Steps[i] is not LoadOfflineHive load)
             {
                 continue;
@@ -137,6 +149,9 @@ public sealed class RegistryPlanExecutor(IOfflineHiveLoader loader, Func<string,
                                 throw new NotSupportedException($"Unknown plan step {step.GetType().Name}.");
                         }
 
+                        break;
+                    case WriteImageFile file:
+                        files!.Write(file.RelativePath, file.Content);
                         break;
                     case UnloadOfflineHive unload:
                         if (!loaded.TryGetValue(unload.Hive, out var owned))

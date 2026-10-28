@@ -110,6 +110,23 @@ public sealed class WorkspaceSessionTests : IDisposable
         (await _session.StartAsync(Start(_session.PlanM1()), null, Ct)).Status.ShouldBe(RunStatus.Published);
     }
 
+    [Fact]
+    public async Task WhenIdle_waits_for_the_run_and_its_cleanup()
+    {
+        _session.Open(_folders);
+        var plan = _session.PlanM1();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        await cts.CancelAsync();
+
+        var run = _session.StartAsync(Start(plan), null, cts.Token);
+        await _session.WhenIdleAsync();
+
+        run.IsCompleted.ShouldBeTrue();
+        (await run).Status.ShouldBe(RunStatus.Failed);
+        _servicing.Mounted.ShouldBeEmpty();
+        await _session.WhenIdleAsync();
+    }
+
     private static StartPlanRequest Start(PlanSummary plan) => new(plan.PlanId, plan.WorkspaceRevision, Guid.NewGuid());
 
     private sealed class SyncProgress(List<string> lines) : IProgress<string>

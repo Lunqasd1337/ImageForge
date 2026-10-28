@@ -14,6 +14,7 @@ public sealed class EngineService : IEngineService, IDisposable
     private readonly Action<string> _log;
     private readonly WorkspaceSession _session;
     private readonly Lock _dismGate = new();
+    private readonly CancellationTokenSource _stopping = new();
     private DismImages? _dism;
 
     public EngineService(Action requestShutdown, Action<string>? log = null)
@@ -55,25 +56,49 @@ public sealed class EngineService : IEngineService, IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         _log($"start plan {request.PlanId} revision {request.ExpectedWorkspaceRevision} request {request.ClientRequestId}");
-        var outcome = await _session.StartAsync(request, Tee(progress), ct).ConfigureAwait(false);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
+        var outcome = await _session.StartAsync(request, Tee(progress), linked.Token).ConfigureAwait(false);
         _log($"run {outcome.OperationId}: rejection {outcome.Rejection}, status {outcome.Status}, step {outcome.FailedStep}, error {outcome.Error}");
         return outcome;
     }
 
     public async Task<RecoveryResult> RecoverAsync(IProgress<string>? progress, CancellationToken ct)
     {
-        var result = await _session.RecoverAsync(Tee(progress), ct).ConfigureAwait(false);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
+        var result = await _session.RecoverAsync(Tee(progress), linked.Token).ConfigureAwait(false);
         _log($"recovery {result.Outcome}: {string.Join("; ", result.Actions.Concat(result.Problems))}");
         return result;
+    }
+
+    /// <summary>
+    /// Stops safely when the UI is gone: the run in progress is cancelled at the next step boundary, its failure
+    /// path discards the mount, and only then may the process exit.
+    /// </summary>
+    public async Task DrainAsync()
+    {
+        await _stopping.CancelAsync().ConfigureAwait(false);
+        await _session.WhenIdleAsync().ConfigureAwait(false);
     }
 
     public void Dispose()
     {
         lock (_dismGate)
         {
-            _dism?.Dispose();
+            try
+            {
+                _dism?.Dispose();
+            }
+#pragma warning disable CA1031 // Shutdown must not crash the host; the log keeps the reason.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                _log($"DismApi shutdown failed: {ex.Message}");
+            }
+
             _dism = null;
         }
+
+        _stopping.Dispose();
     }
 
     // DismApi may be initialized only once per process, so one session serves the whole engine lifetime.

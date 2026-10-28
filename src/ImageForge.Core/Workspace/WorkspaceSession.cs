@@ -49,6 +49,7 @@ public sealed class WorkspaceSession(
     private ExecutionPlan? _plan;
     private long _revision;
     private bool _busy;
+    private Task _current = Task.CompletedTask;
 
     /// <summary>Test hook for the manual failure experiments; the product UI never sets it.</summary>
     public InjectedFailure Failure { get; set; }
@@ -122,6 +123,7 @@ public sealed class WorkspaceSession(
             _busy = true;
             var task = RunAsync(registration.OperationId, open.Request, open.Paths, _plan!, progress, ct);
             _operations[registration.OperationId] = task;
+            _current = task;
             return task;
         }
     }
@@ -138,12 +140,30 @@ public sealed class WorkspaceSession(
 
         try
         {
-            return await new RunRecovery(paths, servicingFactory(Report(progress))).RecoverAsync(ct).ConfigureAwait(false);
+            var recovery = new RunRecovery(paths, servicingFactory(Report(progress))).RecoverAsync(ct);
+            lock (_gate)
+            {
+                _current = recovery;
+            }
+
+            return await recovery.ConfigureAwait(false);
         }
         finally
         {
             Finish();
         }
+    }
+
+    /// <summary>Completes when the run or recovery in progress (if any) has finished, including its cleanup.</summary>
+    public Task WhenIdleAsync()
+    {
+        Task current;
+        lock (_gate)
+        {
+            current = _current;
+        }
+
+        return current.ContinueWith(_ => { }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
 
     public WorkspaceSummary Summary()

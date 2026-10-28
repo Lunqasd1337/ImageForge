@@ -71,17 +71,33 @@ internal sealed partial class EnginePipeServer(
             return;
         }
 
-        using var service = new EngineService(lifetime.StopApplication, line => LogEngine(logger, line));
-        using var rpc = EngineRpc.Create(pipe, RpcLimits.Engine);
-        rpc.AddLocalRpcTarget<IEngineService>(service, null);
-        rpc.StartListening();
-        LogConnected(logger, client.ProcessId);
+        var service = new EngineService(lifetime.StopApplication, line => LogEngine(logger, line));
+        try
+        {
+            using var rpc = EngineRpc.Create(pipe, RpcLimits.Engine);
+            rpc.AddLocalRpcTarget<IEngineService>(service, null);
+            rpc.StartListening();
+            LogConnected(logger, client.ProcessId);
 
-        await rpc.Completion.WaitAsync(stoppingToken).ConfigureAwait(false);
+            await rpc.Completion.WaitAsync(stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            LogDraining(logger);
+            await service.DrainAsync().ConfigureAwait(false);
+            service.Dispose();
+            LogDrained(logger);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "{Line}")]
     private static partial void LogEngine(ILogger logger, string line);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Stopping: waiting for the operation in progress to stop at a safe point")]
+    private static partial void LogDraining(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Stopped safely")]
+    private static partial void LogDrained(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "UI process {Pid} connected")]
     private static partial void LogConnected(ILogger logger, int pid);

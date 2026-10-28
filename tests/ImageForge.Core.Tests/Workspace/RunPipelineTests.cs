@@ -109,6 +109,28 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Cancellation_stops_at_the_next_step_and_discards_the_mount()
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var pipeline = Pipeline(beforeStep: step =>
+        {
+            if (step == "registry")
+            {
+                cts.Cancel();
+            }
+        });
+
+        var result = await pipeline.RunAsync(Request(), cts.Token);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("registry");
+        _servicing.Calls.ShouldBe(["mount", "unmount discard"]);
+        _servicing.Mounted.ShouldBeEmpty();
+        State().Target.ShouldBe(TargetStatus.NeedsRebuild);
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Failed_export_is_reported_with_its_step()
     {
         _servicing.FailExport = true;

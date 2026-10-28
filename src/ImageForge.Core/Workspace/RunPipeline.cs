@@ -330,6 +330,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await beforeStep(name, ct).ConfigureAwait(false);
             }
 
+            // A servicing call itself is never interrupted; cancellation takes effect between steps, so the
+            // failure path can still release the mount.
+            ct.ThrowIfCancellationRequested();
             journal.Append(JournalEventKind.StepStarted, name, null);
             log?.Invoke($"{name}...");
             var result = await body().ConfigureAwait(false);

@@ -40,6 +40,8 @@ try
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSerilog();
+        // A DISM step in progress is never killed; stopping waits for it and for the cleanup that follows.
+        builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromMinutes(30));
         builder.Services.AddSingleton(launch);
         builder.Services.AddSingleton(client);
         builder.Services.AddHostedService<EnginePipeServer>();

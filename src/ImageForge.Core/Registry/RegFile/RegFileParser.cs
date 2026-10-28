@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using ImageForge.Core.Changes;
 
 namespace ImageForge.Core.Registry.RegFile;
 
@@ -141,7 +142,7 @@ public sealed class RegFileParser : IRegFileParser
         {
             var data = ReadQuoted(line, ref pos);
             ExpectEnd(line, pos);
-            return new SetRegValue(lineNumber, key, name, new RegData(RegValueType.Sz, Utf16Z(data)));
+            return new SetRegValue(lineNumber, key, name, new RegistryValue(RegistryValueType.Sz, Utf16Z(data)));
         }
 
         if (rest.StartsWith("dword:", StringComparison.OrdinalIgnoreCase))
@@ -149,22 +150,22 @@ public sealed class RegFileParser : IRegFileParser
             var digits = StripComment(rest["dword:".Length..]).Trim();
             Expect(digits.Length is >= 1 and <= 8 && digits.All(char.IsAsciiHexDigit), "dword: needs 1 to 8 hex digits.");
             var value = uint.Parse(digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
-            return new SetRegValue(lineNumber, key, name, new RegData(RegValueType.Dword, BitConverter.GetBytes(value)));
+            return new SetRegValue(lineNumber, key, name, new RegistryValue(RegistryValueType.Dword, BitConverter.GetBytes(value)));
         }
 
         if (rest.StartsWith("hex", StringComparison.OrdinalIgnoreCase))
         {
             var (type, afterColon) = ReadHexType(rest);
-            return new SetRegValue(lineNumber, key, name, new RegData(type, ReadHexBytes(lines, ref index, afterColon)));
+            return new SetRegValue(lineNumber, key, name, new RegistryValue(type, ReadHexBytes(lines, ref index, afterColon)));
         }
 
         throw new RegSyntaxException(RegFileCodes.ValueMalformed, "Expected \"text\", dword:, hex:, hex(type): or - as the value data.");
     }
 
-    private static (RegValueType Type, string AfterColon) ReadHexType(string rest)
+    private static (RegistryValueType Type, string AfterColon) ReadHexType(string rest)
     {
         var pos = 3;
-        uint type = (uint)RegValueType.Binary;
+        uint type = (uint)RegistryValueType.Binary;
         if (pos < rest.Length && rest[pos] == '(')
         {
             var close = rest.IndexOf(')', pos);
@@ -172,7 +173,7 @@ public sealed class RegFileParser : IRegFileParser
             var digits = rest[(pos + 1)..close];
             Expect(digits.Length <= 8 && digits.All(char.IsAsciiHexDigit), "The hex type must be hex digits.");
             type = uint.Parse(digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
-            if (type > (uint)RegValueType.Qword)
+            if (type > (uint)RegistryValueType.Qword)
             {
                 throw new RegSyntaxException(RegFileCodes.ValueTypeUnsupported, $"Value type 0x{type:X} is not supported; only 0 to b are.");
             }
@@ -181,7 +182,7 @@ public sealed class RegFileParser : IRegFileParser
         }
 
         Expect(pos < rest.Length && rest[pos] == ':', "Expected : after hex.");
-        return ((RegValueType)type, rest[(pos + 1)..]);
+        return ((RegistryValueType)type, rest[(pos + 1)..]);
     }
 
     private static byte[] ReadHexBytes(string[] lines, ref int index, string first)

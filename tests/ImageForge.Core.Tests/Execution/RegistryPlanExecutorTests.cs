@@ -128,6 +128,79 @@ public sealed class RegistryPlanExecutorTests
         _loader.Log.ShouldBeEmpty();
     }
 
+    [Fact]
+    public void Every_change_kind_runs_in_order_with_one_load_per_hive()
+    {
+        var report = Executor().Execute(
+            Plan(
+                new CreateRegistryKey(@"HKLM\SOFTWARE\A"),
+                new SetRegistryValue(@"HKCU\Control Panel\Desktop", "Wallpaper", RegistryValue.Sz("x")),
+                new DeleteRegistryValue(@"HKLM\SOFTWARE\A", "old"),
+                new DeleteRegistryKey(@"HKCR\.bad")),
+            TestContext.Current.CancellationToken);
+
+        report.Outcome.ShouldBe(ExecutionOutcome.Completed);
+        _loader.Log.ShouldBe(
+        [
+            $"load Software {HivePath}",
+            @"create-key Software A",
+            @"delete-value Software A old",
+            @"delete-key Software Classes\.bad",
+            "unload Software",
+            @"load DefaultUser D:\Work\mount\img\Users\Default\NTUSER.DAT",
+            @"set DefaultUser Control Panel\Desktop Wallpaper=x",
+            "unload DefaultUser",
+        ]);
+    }
+
+    [Fact]
+    public void CurrentControlSet_is_resolved_once_from_Select_Current()
+    {
+        var report = Executor().Execute(
+            Plan(
+                new SetRegistryValue(@"HKLM\SYSTEM\CurrentControlSet\Services\X", "Start", new RegistryValue(RegistryValueType.Dword, [4, 0, 0, 0])),
+                new CreateRegistryKey(@"HKLM\SYSTEM\CurrentControlSet"),
+                new CreateRegistryKey(@"HKLM\SYSTEM\Setup")),
+            TestContext.Current.CancellationToken);
+
+        report.Outcome.ShouldBe(ExecutionOutcome.Completed);
+        _loader.Log.Skip(1).ShouldBe(
+        [
+            "read-select System",
+            @"set System ControlSet002\Services\X Start=REG_DWORD: 0x00000004 (4)",
+            "create-key System ControlSet002",
+            "create-key System Setup",
+            "unload System",
+        ]);
+    }
+
+    [Fact]
+    public void Missing_Select_Current_fails_without_guessing_ControlSet001()
+    {
+        _loader.SelectCurrent = null;
+
+        var report = Executor().Execute(Plan(new CreateRegistryKey(@"HKLM\SYSTEM\CurrentControlSet\Services\X")), TestContext.Current.CancellationToken);
+
+        report.Outcome.ShouldBe(ExecutionOutcome.Failed);
+        report.Error.ShouldNotBeNull().ShouldContain("Select");
+        _loader.Log.ShouldNotContain(l => l.StartsWith("create-key", StringComparison.Ordinal));
+        _loader.Log[^1].ShouldBe("unload System");
+    }
+
+    [Fact]
+    public void Deleting_a_hive_root_is_refused_even_in_a_hand_made_plan()
+    {
+        var plan = Plan() with
+        {
+            Steps = [new LoadOfflineHive(OfflineHive.Software, "x"), new DeleteOfflineRegistryKey(OfflineHive.Software, ""), new UnloadOfflineHive(OfflineHive.Software)],
+        };
+
+        var report = Executor().Execute(plan, TestContext.Current.CancellationToken);
+
+        report.Outcome.ShouldBe(ExecutionOutcome.Failed);
+        _loader.Log.ShouldNotContain(l => l.StartsWith("delete-key", StringComparison.Ordinal));
+    }
+
     private sealed class FakeHiveLoader : IOfflineHiveLoader
     {
         public List<string> Log { get; } = [];
@@ -139,6 +212,8 @@ public sealed class RegistryPlanExecutorTests
         public bool FailOnUnload { get; set; }
 
         public Action? OnLoad { get; set; }
+
+        public uint? SelectCurrent { get; set; } = 2;
 
         public ILoadedOfflineHive Load(OfflineHive hive, string hiveFilePath)
         {
@@ -164,7 +239,19 @@ public sealed class RegistryPlanExecutorTests
                     throw new IOException("set failed");
                 }
 
-                owner.Log.Add($"set {hive} {subKey} {valueName}={value.Data}");
+                owner.Log.Add($"set {hive} {subKey} {valueName}={value.Text ?? value.Describe()}");
+            }
+
+            public void DeleteValue(string subKey, string valueName) => owner.Log.Add($"delete-value {hive} {subKey} {valueName}");
+
+            public void CreateKey(string subKey) => owner.Log.Add($"create-key {hive} {subKey}");
+
+            public void DeleteKeyTree(string subKey) => owner.Log.Add($"delete-key {hive} {subKey}");
+
+            public uint? ReadSelectCurrent()
+            {
+                owner.Log.Add($"read-select {hive}");
+                return owner.SelectCurrent;
             }
 
             public void Unload()

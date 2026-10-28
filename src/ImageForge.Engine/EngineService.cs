@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -45,10 +45,15 @@ public sealed class EngineService : IEngineService, IDisposable
 
     public Task<WorkspaceSummary> GetWorkspaceAsync(CancellationToken ct) => Task.FromResult(_session.Summary());
 
-    public Task<PlanSummary> PlanAsync(CancellationToken ct)
+    public Task<PlanSummary> PlanAsync(PlanOptions options, CancellationToken ct)
     {
-        var plan = _session.PlanM1();
-        _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}");
+        ArgumentNullException.ThrowIfNull(options);
+        _log(options.RegFile is { } file
+            ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
+            : "plan M1 marker");
+        var plan = _session.Plan(options);
+        _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
+            $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
         return Task.FromResult(plan);
     }
 

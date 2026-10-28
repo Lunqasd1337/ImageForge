@@ -13,6 +13,31 @@
       <TextBox Header="Папка результата (например C:\IF\result)" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
       <TextBlock Text="Цель: образ 1 в sources\install.wim" />
 
+      <TextBlock Text="Реестр" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Файл .reg в формате «Windows Registry Editor Version 5.00». Без файла применяется проверочный маркер M1." />
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox Header="Файл .reg" Text="{x:Bind ViewModel.RegFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseRegFile_Click" />
+        <Button Grid.Column="2" Content="Убрать" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ClearRegFileCommand}"
+                IsEnabled="{x:Bind ViewModel.HasRegFile, Mode=OneWay}" />
+      </Grid>
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ComboBox Header="Кодировка" SelectedIndex="{x:Bind ViewModel.RegFileEncodingIndex, Mode=TwoWay}" MinWidth="160">
+          <x:String>Авто (по BOM)</x:String>
+          <x:String>UTF-16</x:String>
+          <x:String>UTF-8</x:String>
+          <x:String>ANSI</x:String>
+        </ComboBox>
+        <TextBox Header="Кодовая страница ANSI" Text="{x:Bind ViewModel.AnsiCodePage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                 Width="180" IsEnabled="{x:Bind ViewModel.IsAnsi, Mode=OneWay}" />
+      </StackPanel>
+
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 

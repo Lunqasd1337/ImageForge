@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ImageForge.Core.Contracts;
 using ImageForge.Core.Planning;
+using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
 using Microsoft.UI.Dispatching;
 using StreamJsonRpc;
@@ -23,6 +26,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     public partial string OutputPath { get; set; } = string.Empty;
+
+    /// <summary>The .reg file to apply; empty plans the M1 validation marker.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRegFile))]
+    public partial string RegFilePath { get; set; } = string.Empty;
+
+    /// <summary>Index into Авто, UTF-16, UTF-8, ANSI; the order of <see cref="RegFileEncoding"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnsi))]
+    public partial int RegFileEncodingIndex { get; set; }
+
+    [ObservableProperty]
+    public partial string AnsiCodePage { get; set; } = "1251";
 
     [ObservableProperty]
     public partial string Status { get; set; } = "Движок не подключён.";
@@ -53,6 +69,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public bool HasResult => PublishedPath.Length > 0;
 
+    public bool HasRegFile => RegFilePath.Length > 0;
+
+    public bool IsAnsi => RegFileEncodingIndex == (int)RegFileEncoding.Ansi;
+
     partial void OnPublishedPathChanged(string value) => OnPropertyChanged(nameof(HasResult));
 
     // Any change of the folders invalidates the shown plan; it must be prepared again.
@@ -61,6 +81,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnWorkPathChanged(string value) => DropPlan();
 
     partial void OnOutputPathChanged(string value) => DropPlan();
+
+    partial void OnRegFilePathChanged(string value) => DropPlan();
+
+    partial void OnRegFileEncodingIndexChanged(int value) => DropPlan();
+
+    partial void OnAnsiCodePageChanged(string value) => DropPlan();
+
+    [RelayCommand]
+    private void ClearRegFile() => RegFilePath = string.Empty;
 
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectEngineAsync(CancellationToken ct)
@@ -98,6 +127,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task PrepareAsync(CancellationToken ct)
     {
         DropPlan();
+        if (!TryReadRegFile(out var options))
+        {
+            return;
+        }
+
         IsBusy = true;
         try
         {
@@ -116,17 +150,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            var plan = await _engine.Service.PlanAsync(ct).ConfigureAwait(true);
+            var plan = await _engine.Service.PlanAsync(options, ct).ConfigureAwait(true);
+            var encoding = plan.FileEncoding is null ? string.Empty : $" Кодировка файла: {plan.FileEncoding}.";
+            if (plan.FileDiagnostics.Count > 0)
+            {
+                Status = $"Файл .reg не принят, ничего не будет применено.{encoding}";
+                OperationPreview = string.Join(Environment.NewLine, plan.FileDiagnostics.Select(RegFileDiagnosticText.Describe));
+                return;
+            }
+
             if (plan.Diagnostics.Count > 0)
             {
-                Status = "План не построен: " + string.Join("; ", plan.Diagnostics.Select(d => d.Message));
+                Status = "План не построен, ничего не будет применено.";
+                OperationPreview = string.Join(Environment.NewLine, plan.Diagnostics.Select(d => $"изменение {d.ChangeIndex + 1}: {d.Message}"));
                 return;
             }
 
             _plan = plan;
             HasPlan = true;
             OperationPreview = string.Join(Environment.NewLine, plan.Preview.Select(RegistryPreviewText.Describe));
-            Status = "План готов. Проверьте превью и нажмите «Запустить».";
+            Status = $"План готов, изменений: {plan.Preview.Count}.{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
         catch (RemoteInvocationException ex)
@@ -145,6 +188,47 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     private bool CanPrepare() => !IsBusy && _engine is not null;
+
+    /// <summary>Reads the chosen file here, unelevated; the engine decodes and checks it. No file means the M1 marker.</summary>
+    private bool TryReadRegFile(out PlanOptions options)
+    {
+        options = new PlanOptions(null);
+        if (!HasRegFile)
+        {
+            return true;
+        }
+
+        var encoding = (RegFileEncoding)RegFileEncodingIndex;
+        if (!int.TryParse(AnsiCodePage, NumberStyles.None, CultureInfo.InvariantCulture, out var codePage) || codePage <= 0)
+        {
+            Status = "Кодовая страница ANSI должна быть числом, например 1251.";
+            return false;
+        }
+
+        try
+        {
+            var info = new FileInfo(RegFilePath.Trim().Trim('"'));
+            if (!info.Exists)
+            {
+                Status = "Файл .reg не найден: " + info.FullName;
+                return false;
+            }
+
+            if (info.Length > RegFileImport.MaxBytes)
+            {
+                Status = $"Файл .reg больше {RegFileImport.MaxBytes / 1024} КБ, такие файлы не принимаются.";
+                return false;
+            }
+
+            options = new PlanOptions(new RegFileInput(info.Name, File.ReadAllBytes(info.FullName), encoding, codePage));
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Status = "Не удалось прочитать файл .reg: " + ex.Message;
+            return false;
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync(CancellationToken ct)

@@ -17,6 +17,8 @@ public static class RegFileCodes
     public const string ValueMalformed = "regfile.value.malformed";
     public const string ValueTypeUnsupported = "regfile.value.type-unsupported";
     public const string LineUnrecognized = "regfile.line.unrecognized";
+    public const string TooLarge = "regfile.too-large";
+    public const string Empty = "regfile.empty";
 }
 
 /// <param name="Line">1-based line where the operation starts.</param>

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
+using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
@@ -35,6 +36,8 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["reg-apply"] = ("reg-apply <mount-dir> <file.reg>", a => Task.FromResult(RegApply(a[0], a[1]))),
     ["reg-verify"] = ("reg-verify <mount-dir> <file.reg>", a => Task.FromResult(RegVerify(a[0], a[1]))),
     ["first-logon-export"] = ("first-logon-export <file.reg> <empty-out-dir>", a => Task.FromResult(FirstLogonExport(a[0], a[1]))),
+    ["appx-list"] = ("appx-list <mount-dir>", a => AppxList(a[0])),
+    ["appx-remove"] = ("appx-remove <mount-dir> <PackageName>", a => AppxRemove(a[0], a[1])),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -268,6 +271,87 @@ static async Task<bool> Export(string source, int index, string destination)
     var result = await DismCli.RunAsync(arguments, line => Console.WriteLine("  " + line), CancellationToken.None).ConfigureAwait(false);
     Log($"Dism.exe exit code {result.ExitCode}");
     return result.ExitCode == 0;
+}
+
+static async Task<AppxInventory?> ReadAppxAsync(string mountDir)
+{
+    var arguments = DismCliArguments.GetProvisionedAppx(Path.GetFullPath(mountDir));
+    Log($"{DismCli.TrustedPath} {string.Join(' ', arguments)}");
+    var result = await DismCli.RunAsync(arguments, null, CancellationToken.None).ConfigureAwait(false);
+    Log($"Dism.exe exit code {result.ExitCode}");
+    if (result.ExitCode != 0)
+    {
+        Console.WriteLine(result.Output);
+        return null;
+    }
+
+    var inventory = DismAppxListParser.Parse(result.Output);
+    foreach (var problem in inventory.Problems)
+    {
+        Log("PROBLEM: " + problem);
+    }
+
+    return inventory.Problems.Count == 0 ? inventory : null;
+}
+
+static async Task<bool> AppxList(string mountDir)
+{
+    if (await ReadAppxAsync(mountDir).ConfigureAwait(false) is not { } inventory)
+    {
+        return false;
+    }
+
+    foreach (var package in inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        var id = package.Identity;
+        Console.WriteLine($"  {id.Name,-50} {id.Version,-16} {id.Architecture,-8} {id.FamilyName}");
+        if (AppxWarnings.For(id) is { } warning)
+        {
+            Console.WriteLine("      WARNING: " + warning);
+        }
+    }
+
+    Log($"Provisioned packages: {inventory.Packages.Count}");
+    return true;
+}
+
+// Removes one package named exactly as appx-list printed it, then lists again to confirm it is gone.
+static async Task<bool> AppxRemove(string mountDir, string packageName)
+{
+    if (PackageIdentity.Parse(packageName) is not { } identity)
+    {
+        Log($"'{packageName}' is not a valid package full name.");
+        return false;
+    }
+
+    if (await ReadAppxAsync(mountDir).ConfigureAwait(false) is not { } before)
+    {
+        return false;
+    }
+
+    if (!before.Packages.Any(p => p.Identity == identity))
+    {
+        Log($"'{packageName}' is not provisioned in this image; nothing was removed.");
+        return false;
+    }
+
+    if (AppxWarnings.For(identity) is { } warning)
+    {
+        Log("WARNING: " + warning);
+    }
+
+    var arguments = DismCliArguments.RemoveProvisionedAppx(Path.GetFullPath(mountDir), identity);
+    Log($"{DismCli.TrustedPath} {string.Join(' ', arguments)}");
+    var result = await DismCli.RunAsync(arguments, line => Console.WriteLine("  " + line), CancellationToken.None).ConfigureAwait(false);
+    Log($"Dism.exe exit code {result.ExitCode}");
+    if (result.ExitCode != 0 || await ReadAppxAsync(mountDir).ConfigureAwait(false) is not { } after)
+    {
+        return false;
+    }
+
+    var gone = !after.Packages.Any(p => p.Identity == identity);
+    Log($"Provisioned packages: {before.Packages.Count} -> {after.Packages.Count}; '{identity.Name}' {(gone ? "removed" : "STILL PRESENT")}");
+    return gone && after.Packages.Count == before.Packages.Count - 1;
 }
 
 // Experiment 4: the whole M1 run with an optional failure before publication.

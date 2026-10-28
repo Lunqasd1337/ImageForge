@@ -95,7 +95,7 @@ public sealed class Win32OfflineHiveLoader(Guid runId) : IOfflineHiveLoader
 
         public void DeleteValue(string subKey, string valueName)
         {
-            using var key = OpenPath(subKey, create: false);
+            using var key = OpenPath(subKey, create: false, writable: true);
             if (key is null)
             {
                 return;
@@ -246,9 +246,10 @@ public sealed class Win32OfflineHiveLoader(Guid runId) : IOfflineHiveLoader
 
         /// <summary>
         /// Opens (or creates) <paramref name="subKey"/> one segment at a time below the loaded root, opening links
-        /// as keys instead of following them, and refuses any segment that is a symbolic link.
+        /// as keys instead of following them, and refuses any segment that is a symbolic link. Without
+        /// <paramref name="create"/> the key is opened read-only unless <paramref name="writable"/> is set.
         /// </summary>
-        private SafeRegistryHandle? OpenPath(string subKey, bool create)
+        private SafeRegistryHandle? OpenPath(string subKey, bool create, bool writable = false)
         {
             ObjectDisposedException.ThrowIf(_unloaded, this);
 
@@ -269,7 +270,8 @@ public sealed class Win32OfflineHiveLoader(Guid runId) : IOfflineHiveLoader
                     }
                     else
                     {
-                        error = PInvoke.RegOpenKeyEx(current, segment, (uint)REG_OPEN_CREATE_OPTIONS.REG_OPTION_OPEN_LINK, REG_SAM_FLAGS.KEY_READ, out next);
+                        var access = writable ? REG_SAM_FLAGS.KEY_READ | REG_SAM_FLAGS.KEY_WRITE : REG_SAM_FLAGS.KEY_READ;
+                        error = PInvoke.RegOpenKeyEx(current, segment, (uint)REG_OPEN_CREATE_OPTIONS.REG_OPTION_OPEN_LINK, access, out next);
                         if (error == WIN32_ERROR.ERROR_FILE_NOT_FOUND)
                         {
                             current.Dispose();

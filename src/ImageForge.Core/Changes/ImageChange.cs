@@ -101,6 +101,10 @@ public sealed record CreateRegistryKey(string KeyPath) : ImageChange;
 /// <summary>Deletes the key and everything below it.</summary>
 public sealed record DeleteRegistryKey(string KeyPath) : ImageChange;
 
+/// <summary>Removes the provisioned package of this family; the exact package is resolved from the inventory.</summary>
+/// <param name="FamilyName">Name_PublisherId, as <see cref="Appx.PackageIdentity.FamilyName"/>.</param>
+public sealed record RemoveProvisionedAppx(string FamilyName) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

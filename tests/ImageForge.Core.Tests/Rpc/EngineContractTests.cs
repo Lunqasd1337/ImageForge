@@ -37,7 +37,9 @@ public sealed class EngineContractTests : IAsyncDisposable
 
     private IEngineService Connect(Func<string, string, string, IReadOnlyList<LocationProblem>> validate)
     {
-        var session = new WorkspaceSession(_ => new FakeServicing(), Guid.NewGuid, dir => new TestPaths(dir), validate);
+        var servicing = new FakeServicing();
+        servicing.Provisioned.Add("Clipchamp.Clipchamp_4.3.10120.0_neutral_~_yxz26nhyzhsrt");
+        var session = new WorkspaceSession(_ => servicing, Guid.NewGuid, dir => new TestPaths(dir), validate);
         var (serverStream, clientStream) = FullDuplexStream.CreatePair();
         var server = EngineRpc.Create(serverStream, RpcLimits.Engine);
         server.AddLocalRpcTarget<IEngineService>(new SessionEngine(session), null);
@@ -108,6 +110,20 @@ public sealed class EngineContractTests : IAsyncDisposable
         bad.FileDiagnostics.Single().Line.ShouldBe(4);
     }
 
+    [Fact]
+    public async Task An_inventory_and_a_removal_plan_cross_the_channel()
+    {
+        var engine = Connect((_, _, _) => []);
+        await engine.OpenWorkspaceAsync(new OpenWorkspaceRequest(_dir.Combine("media"), _dir.Combine("work"), _dir.Combine("out", "Win11")), Ct);
+
+        var inspection = await engine.InspectAsync(null, Ct);
+        var plan = await engine.PlanAsync(new PlanOptions(null, [inspection.Packages.Single().FamilyName]), Ct);
+
+        inspection.Packages.Single().Version.ShouldBe("4.3.10120.0");
+        plan.AppxRemovals.Single().DisplayName.ShouldBe("Clipchamp.Clipchamp");
+        (await engine.StartAsync(new StartPlanRequest(plan.PlanId, plan.WorkspaceRevision, Guid.NewGuid()), null, Ct)).Status.ShouldBe(RunStatus.Published);
+    }
+
     private sealed class Progress(List<string> lines) : IProgress<string>
     {
         public void Report(string value)
@@ -133,6 +149,8 @@ public sealed class EngineContractTests : IAsyncDisposable
         public Task<PlanSummary> PlanAsync(PlanOptions options, CancellationToken ct) => Task.FromResult(session.Plan(options));
 
         public Task<RunOutcome> StartAsync(StartPlanRequest request, IProgress<string>? progress, CancellationToken ct) => session.StartAsync(request, progress, ct);
+
+        public Task<InspectionSummary> InspectAsync(IProgress<string>? progress, CancellationToken ct) => session.InspectAsync(progress, ct);
 
         public Task<RecoveryResult> RecoverAsync(IProgress<string>? progress, CancellationToken ct) => session.RecoverAsync(progress, ct);
     }

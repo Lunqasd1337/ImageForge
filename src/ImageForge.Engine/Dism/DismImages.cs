@@ -29,8 +29,8 @@ public sealed class DismImages : IDisposable
         [.. DismApi.GetMountedImages().Select(m => new MountedImageSummary(
             m.ImageFilePath, m.ImageIndex, m.MountPath, m.MountMode.ToString(), m.MountStatus.ToString()))];
 
-    public static void Mount(string imageFile, int index, string mountPath, Action<int>? progressPercent = null) =>
-        DismApi.MountImage(imageFile, mountPath, index, readOnly: false, DismMountImageOptions.None,
+    public static void Mount(string imageFile, int index, string mountPath, Action<int>? progressPercent = null, bool readOnly = false) =>
+        DismApi.MountImage(imageFile, mountPath, index, readOnly, DismMountImageOptions.None,
             progressPercent is null ? null : p => progressPercent(Percent(p)));
 
     public static void Unmount(string mountPath, bool commit, Action<int>? progressPercent = null) =>

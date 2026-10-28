@@ -1,3 +1,4 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Contracts;
 using ImageForge.Core.Planning;
@@ -29,7 +30,18 @@ public sealed record PlanSummary(
     string? FileEncoding = null)
 {
     public IReadOnlyList<RegFileDiagnostic> FileDiagnostics { get; init; } = FileDiagnostics ?? [];
+
+    /// <summary>Provisioned packages the plan removes, in order.</summary>
+    public IReadOnlyList<AppxPackageView> AppxRemovals { get; init; } = [];
 }
+
+/// <param name="Warning">Shown before removal; null when none is known.</param>
+/// <param name="BlockedReason">Why the package cannot be removed yet; null when it can.</param>
+public sealed record AppxPackageView(
+    string DisplayName, string PackageName, string FamilyName, string Version, string Architecture, string? Warning, string? BlockedReason);
+
+/// <param name="Problems">Why the inventory could not be read; the packages are empty then.</param>
+public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<AppxPackageView> Packages, IReadOnlyList<string> Problems);
 
 public sealed record RunOutcome(
     Guid OperationId,
@@ -56,6 +68,7 @@ public sealed class WorkspaceSession(
     private readonly Lock _gate = new();
     private (OpenWorkspaceRequest Request, IWorkspacePaths Paths, Guid WorkspaceId, Guid ImageId)? _open;
     private ExecutionPlan? _plan;
+    private AppxInventory? _inventory;
     private long _revision;
     private bool _busy;
     private Task _current = Task.CompletedTask;
@@ -71,6 +84,7 @@ public sealed class WorkspaceSession(
             ThrowIfBusy();
             _open = null;
             _plan = null;
+            _inventory = null;
             _revision++;
 
             var problems = _validate(request.SourceDir, request.WorkDir, request.OutputDir);
@@ -87,17 +101,74 @@ public sealed class WorkspaceSession(
         }
     }
 
+    /// <summary>
+    /// Reads the provisioned packages of the image into the session; the plans that follow resolve removals against it.
+    /// A failure is returned as problems and leaves no inventory.
+    /// </summary>
+    public async Task<InspectionSummary> InspectAsync(IProgress<string>? progress, CancellationToken ct)
+    {
+        (OpenWorkspaceRequest Request, IWorkspacePaths Paths, Guid WorkspaceId, Guid ImageId) open;
+        lock (_gate)
+        {
+            ThrowIfBusy();
+            open = _open ?? throw new InvalidOperationException("No workspace is open.");
+            _busy = true;
+            _inventory = null;
+            _plan = null;
+        }
+
+        var log = Report(progress);
+        AppxInventory? inventory = null;
+        string? error = null;
+        try
+        {
+            var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log };
+            var task = inspection.InspectAsync(open.Request.SourceDir, open.WorkspaceId, 1, ct);
+            lock (_gate)
+            {
+                _current = task;
+            }
+
+            inventory = await task.ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // The window shows why the inventory is missing; the engine keeps running.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            error = ex.Message;
+            log($"inspection failed: {ex.Message}");
+        }
+
+        lock (_gate)
+        {
+            _busy = false;
+            if (inventory is null || inventory.Problems.Count > 0)
+            {
+                return new InspectionSummary(_revision, [], inventory?.Problems ?? [error!]);
+            }
+
+            _inventory = inventory;
+            return new InspectionSummary(
+                _revision,
+                [.. inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase).Select(p => View(p.DisplayName, p.Identity))],
+                []);
+        }
+    }
+
     public PlanSummary Plan(PlanOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        return options.RegFile is { } file ? PlanRegFile(file) : PlanM1();
+        List<ImageChange> removals = [.. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f))];
+        return options.RegFile is { } file ? PlanRegFile(file, removals)
+            : removals.Count > 0 ? Plan(removals, null)
+            : PlanM1();
     }
 
-    /// <summary>Plans the M1 validation marker; used when no .reg file is chosen.</summary>
+    /// <summary>Plans the M1 validation marker; used when nothing else is chosen.</summary>
     public PlanSummary PlanM1() => Plan([ValidationMarker.M1], null);
 
     /// <summary>Plans the changes of a .reg file. A file that cannot be read drops the previous plan.</summary>
-    public PlanSummary PlanRegFile(RegFileInput file)
+    public PlanSummary PlanRegFile(RegFileInput file, IReadOnlyList<ImageChange>? alsoChanges = null)
     {
         ArgumentNullException.ThrowIfNull(file);
         var import = RegFileImport.Read(file);
@@ -119,7 +190,7 @@ public sealed class WorkspaceSession(
             }
         }
 
-        return Plan(changes, encoding);
+        return Plan([.. changes, .. alsoChanges ?? []], encoding);
     }
 
     private PlanSummary Plan(IReadOnlyList<ImageChange> changes, string? fileEncoding)
@@ -129,10 +200,13 @@ public sealed class WorkspaceSession(
             ThrowIfBusy();
             var open = _open ?? throw new InvalidOperationException("No workspace is open.");
             var result = new PipelinePlanner(new RegistryPathMapper(), newId)
-                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, changes));
+                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, changes) { Appx = _inventory });
             _plan = result.Plan;
             return result.Plan is { } plan
                 ? new PlanSummary(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint, plan.Preview, [], null, fileEncoding)
+                {
+                    AppxRemovals = [.. plan.AppxRemovals.Select(r => View(r.DisplayName, r.Package))],
+                }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
     }
@@ -222,7 +296,8 @@ public sealed class WorkspaceSession(
             var loaded = new StateStore<WorkspaceState>(open.Paths.StateFile).Load();
             var lastRun = loaded.State?.LastRun;
             var recovery = loaded.Source == StateSource.Unusable
-                || lastRun?.Status is RunStatus.Running or RunStatus.RecoveryRequired;
+                || lastRun?.Status is RunStatus.Running or RunStatus.RecoveryRequired
+                || ImageInspection.LeftBehind(open.Paths);
             return new WorkspaceSummary(open.WorkspaceId, _revision, loaded.State?.Target ?? TargetStatus.Pending, lastRun, recovery, []);
         }
     }
@@ -265,6 +340,15 @@ public sealed class WorkspaceSession(
             throw new InvalidOperationException("A run is in progress.");
         }
     }
+
+    private static AppxPackageView View(string displayName, PackageIdentity identity) => new(
+        displayName,
+        identity.FullName,
+        identity.FamilyName,
+        identity.Version.ToString(4),
+        identity.Architecture,
+        AppxWarnings.For(identity),
+        AppxFrameworks.IsFramework(identity) ? "Библиотека для других приложений; удаление пока заблокировано." : null);
 
     private static Action<string> Report(IProgress<string>? progress) => line => progress?.Report(line);
 

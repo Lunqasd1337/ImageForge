@@ -1,3 +1,4 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
@@ -14,6 +15,8 @@ internal sealed class TestPaths(string root) : IWorkspacePaths
     public string BasePartial => Path.Combine(root, "base.partial");
 
     public string StateFile => Path.Combine(root, "state.json");
+
+    public string InspectMount => Path.Combine(root, "inspect");
 
     public string Mount(Guid imageId) => Path.Combine(root, "mount", imageId.ToString("N"));
 
@@ -40,6 +43,51 @@ internal sealed class FakeServicing : IImageServicing
     public bool FailExport { get; set; }
 
     public bool LeaveHiveLoaded { get; set; }
+
+    /// <summary>Full names of the provisioned packages every mounted image reports.</summary>
+    public List<string> Provisioned { get; } = [];
+
+    /// <summary>A removal that reports success but leaves the package in the list.</summary>
+    public bool IgnoreRemoval { get; set; }
+
+    public bool FailAppxList { get; set; }
+
+    public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct)
+    {
+        Calls.Add("mount read-only");
+        File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
+        Mounted.Add(mountDir);
+        _images[mountDir] = imageFile;
+        return Task.CompletedTask;
+    }
+
+    public Task<AppxInventory> GetProvisionedAppxAsync(string mountDir, CancellationToken ct)
+    {
+        Calls.Add("appx-list");
+        if (FailAppxList)
+        {
+            throw new IOException("Dism.exe /Get-ProvisionedAppxPackages exit code 87");
+        }
+
+        if (!Mounted.Contains(mountDir))
+        {
+            throw new InvalidOperationException("not mounted");
+        }
+
+        return Task.FromResult(new AppxInventory(
+            [.. Provisioned.Select(n => PackageIdentity.Parse(n)!).Select(i => new ProvisionedAppxPackage(i.Name, i))], []));
+    }
+
+    public Task RemoveProvisionedAppxAsync(string mountDir, PackageIdentity package, CancellationToken ct)
+    {
+        Calls.Add("appx-remove " + package.Name);
+        if (!IgnoreRemoval)
+        {
+            Provisioned.Remove(package.FullName);
+        }
+
+        return Task.CompletedTask;
+    }
 
     public Task MountAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {

@@ -1,3 +1,4 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Safety;
@@ -16,6 +17,18 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
     public Task MountAsync(string imageFile, int index, string mountDir, CancellationToken ct) =>
         Task.Run(() => DismImages.Mount(imageFile, index, mountDir, Progress("mount")), CancellationToken.None);
 
+    public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct) =>
+        Task.Run(() => DismImages.Mount(imageFile, index, mountDir, Progress("mount read-only"), readOnly: true), CancellationToken.None);
+
+    public async Task<AppxInventory> GetProvisionedAppxAsync(string mountDir, CancellationToken ct)
+    {
+        var result = await RunCliAsync(DismCliArguments.GetProvisionedAppx(mountDir), "/Get-ProvisionedAppxPackages").ConfigureAwait(false);
+        return DismAppxListParser.Parse(result.Output);
+    }
+
+    public Task RemoveProvisionedAppxAsync(string mountDir, PackageIdentity package, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.RemoveProvisionedAppx(mountDir, package), "/Remove-ProvisionedAppxPackage");
+
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>
         Task.Run(() => DismImages.Unmount(mountDir, commit, Progress(commit ? "commit" : "discard")), CancellationToken.None);
 
@@ -27,15 +40,17 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
             .Any(m => string.Equals(m.MountPath.TrimEnd('\\'), full, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public async Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct)
+    public Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.ExportImage(sourceImage, index, destinationImage), "/Export-Image");
+
+    // Servicing CLI calls are not cancelled once started (plan, section 7); cancellation takes effect between steps.
+    private async Task<CliResult> RunCliAsync(IReadOnlyList<string> arguments, string operation)
     {
-        var arguments = DismCliArguments.ExportImage(sourceImage, index, destinationImage);
         log?.Invoke($"{DismCli.TrustedPath} {string.Join(' ', arguments)}");
-        var result = await DismCli.RunAsync(arguments, null, ct).ConfigureAwait(false);
-        if (result.ExitCode != 0)
-        {
-            throw new IOException($"Dism.exe /Export-Image exit code {result.ExitCode}: {Tail(result.Output)}");
-        }
+        var result = await DismCli.RunAsync(arguments, null, CancellationToken.None).ConfigureAwait(false);
+        return result.ExitCode == 0
+            ? result
+            : throw new IOException($"Dism.exe {operation} exit code {result.ExitCode}: {Tail(result.Output)}");
     }
 
     public ExecutionReport ApplyRegistryPlan(Guid runId, ExecutionPlan plan, string mountDir, CancellationToken ct)

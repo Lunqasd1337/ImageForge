@@ -13,6 +13,9 @@ public interface IWorkspacePaths
 
     string StateFile { get; }
 
+    /// <summary>Where the verified copy is mounted read-only to read its inventories.</summary>
+    string InspectMount { get; }
+
     string Mount(Guid imageId);
 
     string Journal(Guid runId);
@@ -42,6 +45,8 @@ public sealed class WorkspaceLayout : IWorkspacePaths
     public string BasePartial => Under("base.partial");
 
     public string StateFile => Under("state.json");
+
+    public string InspectMount => Under("inspect");
 
     public string Logs => Under("logs");
 

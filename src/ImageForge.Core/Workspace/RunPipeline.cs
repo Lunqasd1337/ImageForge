@@ -40,6 +40,10 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         Directory.CreateDirectory(paths.Root);
         var store = new StateStore<WorkspaceState>(paths.StateFile);
         var state = LoadForRun(store, request.Plan.WorkspaceId);
+        if (ImageInspection.LeftBehind(paths))
+        {
+            throw new WorkspaceRecoveryRequiredException("An earlier inspection left its mount behind; recover the workspace first.");
+        }
 
         var runId = newId();
         var imageId = request.Plan.ImageId;
@@ -67,7 +71,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 throw new InvalidDataException(@"The source has no sources\install.wim; M1 supports only a WIM source.");
             }
 
-            var baseManifest = await context.Step("base-copy", () => PrepareBaseAsync(request.SourceDir, source, state, ct), ct).ConfigureAwait(false);
+            var baseManifest = await context.Step("base-copy", () => PrepareBaseAsync(paths, request.SourceDir, source, state.SourceFingerprint, Log, ct), ct).ConfigureAwait(false);
             state = state with { SourceFingerprint = source.Fingerprint };
             store.Save(state);
 
@@ -95,6 +99,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 mounted = true;
                 return true;
             }, ct).ConfigureAwait(false);
+            if (request.Plan.AppxRemovals.Count > 0)
+            {
+                await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
             await context.Step("registry", () =>
             {
                 Inject(request, InjectedFailure.AfterMount, "registry");
@@ -217,7 +226,37 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         }
     }
 
-    private static WorkspaceState LoadForRun(StateStore<WorkspaceState> store, Guid workspaceId)
+    // The removals were resolved from an inventory of the verified copy; the image mounted here must list exactly the
+    // same packages, or the plan no longer describes it.
+    private async Task<bool> RemoveAppxAsync(ExecutionPlan plan, string mountDir, CancellationToken ct)
+    {
+        var before = await servicing.GetProvisionedAppxAsync(mountDir, ct).ConfigureAwait(false);
+        if (before.Problems.Count > 0)
+        {
+            throw new InvalidDataException($"The provisioned package list cannot be read: {string.Join("; ", before.Problems)}");
+        }
+
+        if (before.Fingerprint != plan.AppxInventory)
+        {
+            throw new InvalidDataException("The provisioned packages changed since the preview; plan again.");
+        }
+
+        foreach (var removal in plan.AppxRemovals)
+        {
+            Log?.Invoke($"remove {removal.Package.FullName}");
+            await servicing.RemoveProvisionedAppxAsync(mountDir, removal.Package, ct).ConfigureAwait(false);
+        }
+
+        var after = await servicing.GetProvisionedAppxAsync(mountDir, ct).ConfigureAwait(false);
+        var left = plan.AppxRemovals.Where(r => after.Packages.Any(p => p.Identity == r.Package)).Select(r => r.Package.FullName).ToList();
+        return after.Problems.Count == 0 && left.Count == 0
+            ? true
+            : throw new InvalidDataException(left.Count > 0
+                ? $"Still provisioned after removal: {string.Join(", ", left)}."
+                : $"The provisioned package list cannot be read after removal: {string.Join("; ", after.Problems)}");
+    }
+
+    internal static WorkspaceState LoadForRun(StateStore<WorkspaceState> store, Guid workspaceId)
     {
         var loaded = store.Load();
         if (loaded.Source == StateSource.Unusable)
@@ -231,14 +270,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             : state;
     }
 
-    private async Task<SourceManifest> PrepareBaseAsync(string sourceDir, SourceManifest source, WorkspaceState state, CancellationToken ct)
+    internal static async Task<SourceManifest> PrepareBaseAsync(
+        IWorkspacePaths paths, string sourceDir, SourceManifest source, string? baseFingerprint, Action<string>? log, CancellationToken ct)
     {
         // A reused base is checked by size and time here; its content is verified when it is copied (working-copy
         // for install.wim, assemble for the rest).
-        if (state.SourceFingerprint == source.Fingerprint && Directory.Exists(paths.Base)
+        if (baseFingerprint == source.Fingerprint && Directory.Exists(paths.Base)
             && (await SourceManifest.CheckMetadataAsync(paths.Base, source, [], ct).ConfigureAwait(false)).Count == 0)
         {
-            Log?.Invoke("base copy reused");
+            log?.Invoke("base copy reused");
             return source;
         }
 

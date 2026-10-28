@@ -24,14 +24,24 @@ public sealed class RunRecovery(IWorkspacePaths paths, IImageServicing servicing
             return new RecoveryResult(RecoveryOutcome.StillRequired, [], ["state.json and its backup are damaged; manual inspection is needed."]);
         }
 
+        var actions = new List<string>();
+        var problems = new List<string>();
+        if (ImageInspection.LeftBehind(paths))
+        {
+            await DiscardAsync(paths.InspectMount, actions, problems, ct).ConfigureAwait(false);
+            if (ImageInspection.LeftBehind(paths))
+            {
+                problems.Add($"{paths.InspectMount} is not mounted but not empty; inspect it manually.");
+            }
+        }
+
         var state = loaded.State;
         if (state?.LastRun is not { Status: RunStatus.Running or RunStatus.RecoveryRequired } run)
         {
-            return new RecoveryResult(RecoveryOutcome.NothingToDo, [], []);
+            return problems.Count > 0
+                ? new RecoveryResult(RecoveryOutcome.StillRequired, actions, problems)
+                : new RecoveryResult(actions.Count > 0 ? RecoveryOutcome.Recovered : RecoveryOutcome.NothingToDo, actions, []);
         }
-
-        var actions = new List<string>();
-        var problems = new List<string>();
 
         // Hive files live inside the mount, so hives are unloaded before the image is discarded.
         Try(problems, "unload hives", () =>
@@ -42,23 +52,7 @@ public sealed class RunRecovery(IWorkspacePaths paths, IImageServicing servicing
             }
         });
 
-        var mountDir = paths.Mount(run.ImageId);
-        try
-        {
-            if (await servicing.IsMountedAsync(mountDir, ct).ConfigureAwait(false))
-            {
-                await servicing.UnmountAsync(mountDir, commit: false, ct).ConfigureAwait(false);
-                actions.Add($"discarded mount {mountDir}");
-            }
-
-            RunPipeline.TryDeleteEmptyDirectory(mountDir);
-        }
-#pragma warning disable CA1031 // Report the problem and keep the workspace in RecoveryRequired.
-        catch (Exception ex)
-#pragma warning restore CA1031
-        {
-            problems.Add($"discard mount: {ex.Message}");
-        }
+        await DiscardAsync(paths.Mount(run.ImageId), actions, problems, ct).ConfigureAwait(false);
 
         Try(problems, "publication", () =>
         {
@@ -97,6 +91,26 @@ public sealed class RunRecovery(IWorkspacePaths paths, IImageServicing servicing
         });
 
         return new RecoveryResult(recovered ? RecoveryOutcome.Recovered : RecoveryOutcome.StillRequired, actions, problems);
+    }
+
+    private async Task DiscardAsync(string mountDir, List<string> actions, List<string> problems, CancellationToken ct)
+    {
+        try
+        {
+            if (await servicing.IsMountedAsync(mountDir, ct).ConfigureAwait(false))
+            {
+                await servicing.UnmountAsync(mountDir, commit: false, ct).ConfigureAwait(false);
+                actions.Add($"discarded mount {mountDir}");
+            }
+
+            RunPipeline.TryDeleteEmptyDirectory(mountDir);
+        }
+#pragma warning disable CA1031 // Report the problem and keep the workspace in RecoveryRequired.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            problems.Add($"discard mount: {ex.Message}");
+        }
     }
 
     private static void Try(List<string> problems, string name, Action action)

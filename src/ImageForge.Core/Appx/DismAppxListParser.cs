@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ImageForge.Core.Appx;
 
@@ -8,7 +10,12 @@ public sealed record ProvisionedAppxPackage(string DisplayName, PackageIdentity 
 }
 
 /// <param name="Problems">Anything that makes the list untrustworthy; a caller must not plan removals from it.</param>
-public sealed record AppxInventory(IReadOnlyList<ProvisionedAppxPackage> Packages, IReadOnlyList<string> Problems);
+public sealed record AppxInventory(IReadOnlyList<ProvisionedAppxPackage> Packages, IReadOnlyList<string> Problems)
+{
+    /// <summary>SHA-256 over the sorted full names; a run compares it with the list it reads from its own mount.</summary>
+    public string Fingerprint => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+        string.Join('\n', Packages.Select(p => p.PackageName).Order(StringComparer.Ordinal)))));
+}
 
 /// <summary>
 /// Reads the output of <c>Dism /English /Image:... /Get-ProvisionedAppxPackages</c>: blocks of "Key : Value" lines

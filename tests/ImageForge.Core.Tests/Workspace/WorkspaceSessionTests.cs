@@ -1,4 +1,5 @@
 using System.Text;
+using ImageForge.Core.Contracts;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
@@ -166,6 +167,84 @@ public sealed class WorkspaceSessionTests : IDisposable
         plan.PlanId.ShouldBe(Guid.Empty);
         plan.FileDiagnostics.ShouldBeEmpty();
         plan.Diagnostics.ShouldNotBeEmpty();
+    }
+
+    private const string Clipchamp = "Clipchamp.Clipchamp_4.3.10120.0_neutral_~_yxz26nhyzhsrt";
+    private const string VcLibs = "Microsoft.VCLibs.140.00_14.0.33519.0_x64__8wekyb3d8bbwe";
+
+    [Fact]
+    public async Task Inspected_packages_can_be_planned_for_removal_and_removed()
+    {
+        _servicing.Provisioned.AddRange([Clipchamp, VcLibs]);
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.Problems.ShouldBeEmpty();
+        inspection.Packages.Select(p => p.PackageName).ShouldBe([Clipchamp, VcLibs]);
+        inspection.Packages[0].BlockedReason.ShouldBeNull();
+        inspection.Packages[1].BlockedReason.ShouldNotBeNull();
+
+        var plan = _session.Plan(new PlanOptions(null, ["Clipchamp.Clipchamp_yxz26nhyzhsrt"]));
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.Preview.ShouldBeEmpty();
+        plan.AppxRemovals.ShouldHaveSingleItem().PackageName.ShouldBe(Clipchamp);
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Provisioned.ShouldBe([VcLibs]);
+    }
+
+    [Fact]
+    public void Removal_before_inspection_is_blocked()
+    {
+        _session.Open(_folders);
+
+        var plan = _session.Plan(new PlanOptions(null, ["Clipchamp.Clipchamp_yxz26nhyzhsrt"]));
+
+        plan.PlanId.ShouldBe(Guid.Empty);
+        plan.Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxInventoryMissing);
+    }
+
+    [Fact]
+    public async Task Reopening_the_workspace_forgets_the_inventory()
+    {
+        _servicing.Provisioned.Add(Clipchamp);
+        _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+
+        _session.Open(_folders);
+
+        _session.Plan(new PlanOptions(null, ["Clipchamp.Clipchamp_yxz26nhyzhsrt"])).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxInventoryMissing);
+    }
+
+    [Fact]
+    public async Task A_failed_inspection_is_reported_and_leaves_no_inventory()
+    {
+        _servicing.Provisioned.Add(Clipchamp);
+        _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+        _servicing.FailAppxList = true;
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.Packages.ShouldBeEmpty();
+        inspection.Problems.ShouldHaveSingleItem().ShouldContain("exit code 87");
+        _servicing.Mounted.ShouldBeEmpty();
+        _session.Plan(new PlanOptions(null, ["Clipchamp.Clipchamp_yxz26nhyzhsrt"])).PlanId.ShouldBe(Guid.Empty);
+    }
+
+    [Fact]
+    public async Task A_reg_file_and_removals_plan_together()
+    {
+        _servicing.Provisioned.Add(Clipchamp);
+        _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+
+        var plan = _session.Plan(new PlanOptions(RegFile("[HKEY_LOCAL_MACHINE\\SOFTWARE\\X]\r\n\"a\"=dword:00000001\r\n"), ["Clipchamp.Clipchamp_yxz26nhyzhsrt"]));
+
+        plan.Preview.Count.ShouldBe(2);
+        plan.AppxRemovals.Count.ShouldBe(1);
     }
 
     private static RegFileInput RegFile(string body) =>

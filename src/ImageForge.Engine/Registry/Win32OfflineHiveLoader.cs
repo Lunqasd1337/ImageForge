@@ -23,11 +23,13 @@ public sealed class Win32OfflineHiveLoader(Guid runId) : IOfflineHiveLoader
     private static readonly SafeRegistryHandle LocalMachine = new(unchecked((nint)0x80000002), ownsHandle: false);
     private static readonly TimeSpan UnloadRetryDelay = TimeSpan.FromMilliseconds(500);
 
+    public bool HiveFileExists(string hiveFilePath) => File.Exists(hiveFilePath);
+
     public ILoadedOfflineHive Load(OfflineHive hive, string hiveFilePath)
     {
         if (!File.Exists(hiveFilePath))
         {
-            throw new FileNotFoundException("Offline hive file not found.", hiveFilePath);
+            throw new FileNotFoundException($"Offline hive file not found: {hiveFilePath}", hiveFilePath);
         }
 
         var name = HiveLoadName.Create(runId, hive);

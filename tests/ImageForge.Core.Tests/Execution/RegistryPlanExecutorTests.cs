@@ -117,6 +117,23 @@ public sealed class RegistryPlanExecutorTests
     }
 
     [Fact]
+    public void A_missing_hive_file_fails_before_any_hive_is_loaded()
+    {
+        _loader.MissingHiveFiles.Add(RegistryPathMapper.DefaultUserClassesHiveFile);
+        var plan = Plan(
+            ValidationMarker.M1,
+            new SetRegistryValue(@"HKCU\Software\Classes\.x", string.Empty, RegistryValue.Sz("y")));
+
+        var report = Executor().Execute(plan, TestContext.Current.CancellationToken);
+
+        report.Outcome.ShouldBe(ExecutionOutcome.Failed);
+        report.CompletedSteps.ShouldBe(0);
+        report.FailedStepIndex.ShouldBe(3);
+        report.Error.ShouldNotBeNull().ShouldContain("UsrClass.dat");
+        _loader.Log.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Hive_path_resolution_failure_fails_the_load_step()
     {
         var executor = new RegistryPlanExecutor(_loader, _ => throw new UnauthorizedAccessException("outside scope"));
@@ -214,6 +231,10 @@ public sealed class RegistryPlanExecutorTests
         public Action? OnLoad { get; set; }
 
         public uint? SelectCurrent { get; set; } = 2;
+
+        public HashSet<string> MissingHiveFiles { get; } = [];
+
+        public bool HiveFileExists(string hiveFilePath) => !MissingHiveFiles.Any(f => hiveFilePath.EndsWith(f, StringComparison.Ordinal));
 
         public ILoadedOfflineHive Load(OfflineHive hive, string hiveFilePath)
         {

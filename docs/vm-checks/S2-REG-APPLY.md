@@ -52,12 +52,9 @@ Windows Registry Editor Version 5.00
 [HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\ImageForgeTest]
 "Start"=dword:00000004
 
-; Профиль Default, его классы, системный профиль и HKCR
+; Профиль Default, системный профиль и HKCR
 [HKEY_CURRENT_USER\Control Panel\ImageForgeTest]
 "Цвет"="синий"
-
-[HKEY_CURRENT_USER\Software\Classes\.imageforgetest]
-@="ImageForgeTest.User"
 
 [HKEY_USERS\.DEFAULT\Control Panel\ImageForgeTest]
 "Цвет"="зелёный"
@@ -77,6 +74,26 @@ Windows Registry Editor Version 5.00
 - В превью SYSTEM-ключ указан как `Services\ImageForgeTest в ControlSet, который указан в SYSTEM\Select\Current`, HKCR — как `SOFTWARE\Classes\.imageforgetest (HKCR по политике ImageForge …)`.
 - `reg-apply`: `Execution: Completed`, `RESULT: OK`.
 - `reg-verify`: у каждой строки `OK`. Ключ `ImageForgeTest\Ветка` — `absent`, значение `Удалить` — `absent`, у SYSTEM путь начинается с `ControlSet001` (или того номера, что указан в образе). `RESULT: OK`.
+
+### 2б. Нет UsrClass.dat — отказ без записи
+
+В `install.wim` фикстуры у профиля Default нет `UsrClass.dat` (так показал первый прогон S2-REG-APPLY; `Test-Path` ниже это подтверждает). По плану такой куст не создаётся и не подменяется другим, поэтому файл с `HKCU\Software\Classes` должен быть отклонён до любой записи.
+
+```powershell
+Test-Path C:\IF\scratch\mount\Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat
+@'
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\ImageForgeTest]
+"НеДолжноПоявиться"="1"
+
+[HKEY_CURRENT_USER\Software\Classes\.imageforgetest]
+@="ImageForgeTest.User"
+'@ | Set-Content C:\IF\scratch\classes.reg -Encoding Unicode
+& $X reg-apply C:\IF\scratch\mount C:\IF\scratch\classes.reg
+& $X reg-verify C:\IF\scratch\mount C:\IF\scratch\apply.reg
+```
+Ожидается: `Test-Path` → `False`. `reg-apply`: `Execution: Failed, steps 0/…`, `HiveFileMissing: the image has no Users\Default\AppData\Local\Microsoft\Windows\UsrClass.dat`, `RESULT: FAIL`, строки `RECOVERY REQUIRED` нет. Следующий `reg-verify` по `apply.reg` — снова `RESULT: OK` (значения `НеДолжноПоявиться` он не проверяет; оно не записалось, потому что SOFTWARE даже не загружался).
 
 ### 3. Повторное применение
 

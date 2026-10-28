@@ -7,6 +7,8 @@ namespace ImageForge.Core.Execution;
 public interface IOfflineHiveLoader
 {
     ILoadedOfflineHive Load(OfflineHive hive, string hiveFilePath);
+
+    bool HiveFileExists(string hiveFilePath);
 }
 
 public interface ILoadedOfflineHive
@@ -57,6 +59,33 @@ public sealed class RegistryPlanExecutor(IOfflineHiveLoader loader, Func<string,
     public ExecutionReport Execute(ExecutionPlan plan, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(plan);
+
+        // A missing hive file is not created or replaced by another hive; refuse the plan before anything is written.
+        for (var i = 0; i < plan.Steps.Count; i++)
+        {
+            if (plan.Steps[i] is not LoadOfflineHive load)
+            {
+                continue;
+            }
+
+            string path;
+            try
+            {
+                path = resolveHiveFile(load.HiveFile);
+            }
+#pragma warning disable CA1031 // A path outside the write scope fails the plan like any other load failure.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                return new ExecutionReport(ExecutionOutcome.Failed, 0, i, $"{ex.GetType().Name}: {ex.Message}", []);
+            }
+
+            if (!loader.HiveFileExists(path))
+            {
+                return new ExecutionReport(
+                    ExecutionOutcome.Failed, 0, i, $"HiveFileMissing: the image has no {load.HiveFile} ({load.Hive}); nothing was written.", []);
+            }
+        }
 
         var loaded = new Dictionary<OfflineHive, ILoadedOfflineHive>();
         var controlSets = new Dictionary<OfflineHive, string>();

@@ -69,6 +69,14 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             return;
         }
 
+        // Only SOFTWARE is applied so far; the other mapped hives are planned once loading and control set
+        // resolution for them are in place.
+        if (location.Hive != OfflineHive.Software || location.ClassesRootPolicy)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryRootNotSupportedYet, index, $"Этот раздел реестра пока не применяется: {set.KeyPath}"));
+            return;
+        }
+
         if (set.ValueName.Length > MaxValueNameLength
             || set.ValueName.Contains('\0', StringComparison.Ordinal)
             || set.Value.Type != RegistryValueType.Sz

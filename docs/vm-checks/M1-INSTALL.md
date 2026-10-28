@@ -16,7 +16,8 @@
 Обозначения на сервисной VM (PowerShell от администратора, по одной строке):
 ```powershell
 $R = "C:\IF\result-ui"
-$X = "C:\IF\ImageForge.Experiments.exe"
+$X = { & "C:\IF\ImageForge.Experiments.exe" @args | Out-Host }
+# Без `| Out-Host` вывод утилиты не попадает в транскрипт (так было в первом прогоне M1-RUN).
 Start-Transcript C:\IF\m1-install.txt
 ```
 

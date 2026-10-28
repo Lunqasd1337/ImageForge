@@ -17,7 +17,8 @@
 
 Команды — в PowerShell от администратора, по одной строке:
 ```powershell
-$X = "C:\IF\ImageForge.Experiments.exe"; $M = "C:\IF\fixture\media"; $W = "C:\IF\ws"; $R = "C:\IF\result-ui"
+$X = { & "C:\IF\ImageForge.Experiments.exe" @args | Out-Host }; $M = "C:\IF\fixture\media"; $W = "C:\IF\ws"; $R = "C:\IF\result-ui"
+# Без `| Out-Host` вывод утилиты не попадает в транскрипт (так было в первом прогоне M1-RUN).
 Start-Transcript C:\IF\m1-run.txt
 & $X version
 & $X manifest $M

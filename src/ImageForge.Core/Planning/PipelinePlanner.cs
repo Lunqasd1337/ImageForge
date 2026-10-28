@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Registry;
 
@@ -30,9 +31,20 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
         var diagnostics = new List<PlanningDiagnostic>();
         var changes = new List<RegistryWritePreview>();
+        var removals = new List<AppxRemoval>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
-            if (PlanRegistryChange(request.Changes[i], i, diagnostics) is { } preview)
+            if (request.Changes[i] is RemoveProvisionedAppx remove)
+            {
+                foreach (var removal in PlanAppxRemoval(remove, request.Appx, i, diagnostics))
+                {
+                    if (!removals.Any(r => r.Package == removal.Package))
+                    {
+                        removals.Add(removal);
+                    }
+                }
+            }
+            else if (PlanRegistryChange(request.Changes[i], i, diagnostics) is { } preview)
             {
                 changes.Add(preview);
             }
@@ -65,7 +77,11 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         }
 
         var plan = new ExecutionPlan(
-            newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, [.. userClasses, .. changes], string.Empty);
+            newPlanId(), request.WorkspaceId, request.WorkspaceRevision, request.ImageId, steps, [.. userClasses, .. changes], string.Empty)
+        {
+            AppxRemovals = removals,
+            AppxInventory = removals.Count > 0 ? request.Appx!.Fingerprint : null,
+        };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
 
@@ -77,6 +93,35 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         RegistryChangeKind.DeleteKey => new DeleteOfflineRegistryKey(c.Hive, c.SubKey, c.UnderCurrentControlSet),
         _ => throw new ArgumentOutOfRangeException(nameof(c)),
     };
+
+    private static IEnumerable<AppxRemoval> PlanAppxRemoval(RemoveProvisionedAppx remove, AppxInventory? inventory, int index, List<PlanningDiagnostic> diagnostics)
+    {
+        if (inventory is null || inventory.Problems.Count > 0)
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.AppxInventoryMissing, index, "Список приложений образа не прочитан или прочитан с ошибками; удаление невозможно."));
+            return [];
+        }
+
+        var matches = inventory.Packages
+            .Where(p => string.Equals(p.Identity.FamilyName, remove.FamilyName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matches.Count == 0)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.AppxNotProvisioned, index, $"В образе нет приложения {remove.FamilyName}."));
+            return [];
+        }
+
+        if (matches.Any(m => AppxFrameworks.IsFramework(m.Identity)))
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.AppxFrameworkBlocked, index,
+                $"{remove.FamilyName} — библиотека, от которой зависят другие приложения; её удаление пока заблокировано."));
+            return [];
+        }
+
+        return matches.Select(m => new AppxRemoval(m.Identity, m.DisplayName, AppxWarnings.For(m.Identity)));
+    }
 
     private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)
     {
@@ -153,7 +198,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 2;
+    private const int FormatVersion = 3;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -191,6 +236,15 @@ public static class PlanFingerprint
                     break;
                 default:
                     throw new NotSupportedException($"Unknown plan step {step.GetType().Name}.");
+            }
+        }
+
+        if (plan.AppxRemovals.Count > 0)
+        {
+            Append(builder, "appx-inventory", plan.AppxInventory ?? string.Empty);
+            foreach (var removal in plan.AppxRemovals)
+            {
+                Append(builder, "remove-appx", removal.Package.FullName);
             }
         }
 

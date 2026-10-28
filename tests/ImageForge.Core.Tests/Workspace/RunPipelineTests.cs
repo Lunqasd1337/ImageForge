@@ -1,3 +1,4 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
@@ -264,6 +265,62 @@ public sealed class RunPipelineTests : IDisposable
     public async Task Recovery_without_an_interrupted_run_does_nothing()
     {
         (await new RunRecovery(_paths, _servicing).RecoverAsync(Ct)).Outcome.ShouldBe(RecoveryOutcome.NothingToDo);
+    }
+
+    private const string Clipchamp = "Clipchamp.Clipchamp_4.3.10120.0_neutral_~_yxz26nhyzhsrt";
+    private const string Weather = "Microsoft.BingWeather_4.54.63029.0_neutral_~_8wekyb3d8bbwe";
+
+    [Fact]
+    public async Task Planned_packages_are_removed_after_mount_and_before_the_registry()
+    {
+        _servicing.Provisioned.AddRange([Clipchamp, Weather]);
+
+        var result = await Pipeline().RunAsync(AppxRequest(Clipchamp, Clipchamp, Weather), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "appx-list", "appx-remove Clipchamp.Clipchamp", "appx-list", "registry", "unmount commit", "export"]);
+        _servicing.Provisioned.ShouldBe([Weather]);
+    }
+
+    [Fact]
+    public async Task An_inventory_that_changed_since_the_preview_stops_the_run_before_any_removal()
+    {
+        _servicing.Provisioned.AddRange([Clipchamp, Weather]);
+        var request = AppxRequest(Clipchamp, Clipchamp);
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("appx");
+        result.Error.ShouldNotBeNull().ShouldContain("changed");
+        _servicing.Calls.ShouldNotContain(c => c.StartsWith("appx-remove", StringComparison.Ordinal));
+        _servicing.Calls.ShouldContain("unmount discard");
+        _servicing.Calls.ShouldNotContain("unmount commit");
+    }
+
+    [Fact]
+    public async Task A_package_still_listed_after_its_removal_fails_the_run()
+    {
+        _servicing.Provisioned.AddRange([Clipchamp]);
+        _servicing.IgnoreRemoval = true;
+
+        var result = await Pipeline().RunAsync(AppxRequest(Clipchamp, Clipchamp), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("appx");
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    /// <param name="remove">The package to remove.</param>
+    /// <param name="inventory">What the preview saw; the run compares it with the image.</param>
+    private RunRequest AppxRequest(string remove, params string[] inventory)
+    {
+        var packages = inventory.Distinct().Select(n => PackageIdentity.Parse(n)!).Select(i => new ProvisionedAppxPackage(i.Name, i)).ToList();
+        var family = PackageIdentity.Parse(remove)!.FamilyName;
+        var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, new RemoveProvisionedAppx(family)]) { Appx = new AppxInventory(packages, []) })
+            .Plan.ShouldNotBeNull();
+        return new RunRequest(_source, _output, 1, plan);
     }
 
     private WorkspaceState State() => new StateStore<WorkspaceState>(_paths.StateFile).Load().State!;

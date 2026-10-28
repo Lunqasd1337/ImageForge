@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -17,6 +18,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private EngineClient? _engine;
     private PlanSummary? _plan;
+
+    // The folders the engine workspace was opened with; reopening forgets the inventory, so it happens only on change.
+    private OpenWorkspaceRequest? _opened;
 
     [ObservableProperty]
     public partial string SourcePath { get; set; } = string.Empty;
@@ -54,7 +58,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsConnected))]
-    [NotifyCanExecuteChangedFor(nameof(ConnectEngineCommand), nameof(PrepareCommand), nameof(StartCommand), nameof(RecoverCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ConnectEngineCommand), nameof(PrepareCommand), nameof(StartCommand), nameof(RecoverCommand), nameof(InspectCommand))]
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
@@ -64,6 +68,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RecoverCommand))]
     public partial bool RecoveryRequired { get; set; }
+
+    /// <summary>Provisioned packages of the last inspection; empty until «Прочитать приложения».</summary>
+    public ObservableCollection<AppxItem> Apps { get; } = [];
+
+    [ObservableProperty]
+    public partial string AppsStatus { get; set; } = "Список ещё не прочитан. Чтение копирует дистрибутив в рабочую папку (если копии ещё нет) и монтирует её только для чтения.";
 
     public bool IsConnected => _engine is not null;
 
@@ -75,12 +85,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnPublishedPathChanged(string value) => OnPropertyChanged(nameof(HasResult));
 
-    // Any change of the folders invalidates the shown plan; it must be prepared again.
-    partial void OnSourcePathChanged(string value) => DropPlan();
+    // Any change of the folders invalidates the shown plan and the inventory; they must be read again.
+    partial void OnSourcePathChanged(string value) => FoldersChanged();
 
-    partial void OnWorkPathChanged(string value) => DropPlan();
+    partial void OnWorkPathChanged(string value) => FoldersChanged();
 
-    partial void OnOutputPathChanged(string value) => DropPlan();
+    partial void OnOutputPathChanged(string value) => FoldersChanged();
 
     partial void OnRegFilePathChanged(string value) => DropPlan();
 
@@ -118,10 +128,82 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsBusy = false;
             OnPropertyChanged(nameof(IsConnected));
             PrepareCommand.NotifyCanExecuteChanged();
+            InspectCommand.NotifyCanExecuteChanged();
         }
     }
 
     private bool CanConnect() => !IsBusy && _engine is null;
+
+    [RelayCommand(CanExecute = nameof(CanPrepare))]
+    private async Task InspectAsync(CancellationToken ct)
+    {
+        DropPlan();
+        Apps.Clear();
+        IsBusy = true;
+        try
+        {
+            if (!await EnsureWorkspaceAsync(ct).ConfigureAwait(true))
+            {
+                return;
+            }
+
+            Status = "Чтение списка приложений из образа...";
+            var inspection = await _engine!.Service.InspectAsync(new UiProgress(this), ct).ConfigureAwait(true);
+            if (inspection.Problems.Count > 0)
+            {
+                AppsStatus = "Список не прочитан: " + string.Join("; ", inspection.Problems);
+                Status = AppsStatus;
+                ShowWorkspace(await _engine.Service.GetWorkspaceAsync(ct).ConfigureAwait(true));
+                return;
+            }
+
+            foreach (var package in inspection.Packages)
+            {
+                Apps.Add(new AppxItem(package, DropPlan));
+            }
+
+            AppsStatus = $"Предустановленных приложений: {inspection.Packages.Count}. Отметьте те, что нужно удалить, и нажмите «Подготовить».";
+            Status = AppsStatus;
+        }
+        catch (RemoteInvocationException ex)
+        {
+            Status = "Движок отклонил запрос: " + ex.Message;
+            Append(ex.ToString());
+        }
+        catch (ConnectionLostException ex)
+        {
+            Disconnected(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>Opens the engine workspace for the current folders unless it is already open for them.</summary>
+    private async Task<bool> EnsureWorkspaceAsync(CancellationToken ct)
+    {
+        var request = new OpenWorkspaceRequest(SourcePath.Trim(), WorkPath.Trim(), OutputPath.Trim());
+        var workspace = request == _opened
+            ? await _engine!.Service.GetWorkspaceAsync(ct).ConfigureAwait(true)
+            : await _engine!.Service.OpenWorkspaceAsync(request, ct).ConfigureAwait(true);
+        if (workspace.Problems.Count > 0)
+        {
+            _opened = null;
+            Status = "Папки не подходят: " + string.Join("; ", workspace.Problems.Select(Describe));
+            return false;
+        }
+
+        _opened = request;
+        ShowWorkspace(workspace);
+        if (workspace.RecoveryRequired)
+        {
+            Status = "Предыдущий запуск или чтение не завершены. Нажмите «Восстановить» и повторите.";
+            return false;
+        }
+
+        return true;
+    }
 
     [RelayCommand(CanExecute = nameof(CanPrepare))]
     private async Task PrepareAsync(CancellationToken ct)
@@ -132,25 +214,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
+        options = options with { RemoveAppx = [.. Apps.Where(a => a.IsSelected == true).Select(a => a.Package.FamilyName).Distinct()] };
         IsBusy = true;
         try
         {
-            var workspace = await _engine!.Service.OpenWorkspaceAsync(
-                new OpenWorkspaceRequest(SourcePath.Trim(), WorkPath.Trim(), OutputPath.Trim()), ct).ConfigureAwait(true);
-            if (workspace.Problems.Count > 0)
+            if (!await EnsureWorkspaceAsync(ct).ConfigureAwait(true))
             {
-                Status = "Папки не подходят: " + string.Join("; ", workspace.Problems.Select(Describe));
                 return;
             }
 
-            ShowWorkspace(workspace);
-            if (workspace.RecoveryRequired)
-            {
-                Status = "Предыдущий запуск не завершён. Нажмите «Восстановить», затем «Подготовить».";
-                return;
-            }
-
-            var plan = await _engine.Service.PlanAsync(options, ct).ConfigureAwait(true);
+            var plan = await _engine!.Service.PlanAsync(options, ct).ConfigureAwait(true);
             var encoding = plan.FileEncoding is null ? string.Empty : $" Кодировка файла: {plan.FileEncoding}.";
             if (plan.FileDiagnostics.Count > 0)
             {
@@ -168,8 +241,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
             _plan = plan;
             HasPlan = true;
-            OperationPreview = string.Join(Environment.NewLine, plan.Preview.Select(RegistryPreviewText.Describe));
-            Status = $"План готов, изменений: {plan.Preview.Count}.{encoding} Проверьте превью и нажмите «Запустить».";
+            OperationPreview = string.Join(Environment.NewLine, plan.AppxRemovals.Select(DescribeRemoval).Concat(plan.Preview.Select(RegistryPreviewText.Describe)));
+            var apps = plan.AppxRemovals.Count > 0 ? $" Удаляемых приложений: {plan.AppxRemovals.Count}." : string.Empty;
+            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
         catch (RemoteInvocationException ex)
@@ -339,6 +413,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Append($"Рабочая папка {workspace.WorkspaceId}, ревизия {workspace.Revision}, цель {workspace.Target}, {last}");
     }
 
+    private static string DescribeRemoval(AppxPackageView package) =>
+        $"Удалить приложение {package.DisplayName} ({package.PackageName})" + (package.Warning is { } warning ? $"{Environment.NewLine}  Внимание: {warning}" : string.Empty);
+
+    private void FoldersChanged()
+    {
+        DropPlan();
+        _opened = null;
+        if (Apps.Count > 0)
+        {
+            Apps.Clear();
+            AppsStatus = "Папки изменились; прочитайте список приложений снова.";
+        }
+    }
+
     private void DropPlan()
     {
         _plan = null;
@@ -348,10 +436,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void Disconnected(Exception ex)
     {
         _engine = null;
+        _opened = null;
         DropPlan();
+        Apps.Clear();
         OnPropertyChanged(nameof(IsConnected));
         ConnectEngineCommand.NotifyCanExecuteChanged();
         PrepareCommand.NotifyCanExecuteChanged();
+        InspectCommand.NotifyCanExecuteChanged();
         Status = "Связь с движком потеряна. Подключите движок снова; незавершённый запуск потребует восстановления.";
         Append(ex.ToString());
     }

@@ -1,3 +1,4 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 
@@ -7,6 +8,13 @@ namespace ImageForge.Core.Workspace;
 public interface IImageServicing
 {
     Task MountAsync(string imageFile, int index, string mountDir, CancellationToken ct);
+
+    /// <summary>Mounts without the ability to commit; used to read inventories from the verified source copy.</summary>
+    Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct);
+
+    Task<AppxInventory> GetProvisionedAppxAsync(string mountDir, CancellationToken ct);
+
+    Task RemoveProvisionedAppxAsync(string mountDir, PackageIdentity package, CancellationToken ct);
 
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 

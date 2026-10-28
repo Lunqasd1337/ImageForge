@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -50,7 +50,12 @@ public sealed class EngineService : IEngineService, IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
-            : "plan M1 marker");
+            : options.RemoveAppx.Count > 0 ? "plan without .reg" : "plan M1 marker");
+        foreach (var family in options.RemoveAppx)
+        {
+            _log($"plan remove appx {family}");
+        }
+
         var plan = _session.Plan(options);
         _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
             $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
@@ -65,6 +70,15 @@ public sealed class EngineService : IEngineService, IDisposable
         var outcome = await _session.StartAsync(request, Tee(progress), linked.Token).ConfigureAwait(false);
         _log($"run {outcome.OperationId}: rejection {outcome.Rejection}, status {outcome.Status}, step {outcome.FailedStep}, error {outcome.Error}");
         return outcome;
+    }
+
+    public async Task<InspectionSummary> InspectAsync(IProgress<string>? progress, CancellationToken ct)
+    {
+        _log("inspect image");
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
+        var result = await _session.InspectAsync(Tee(progress), linked.Token).ConfigureAwait(false);
+        _log($"inspection revision {result.WorkspaceRevision}: {result.Packages.Count} packages, problems: {string.Join("; ", result.Problems)}");
+        return result;
     }
 
     public async Task<RecoveryResult> RecoverAsync(IProgress<string>? progress, CancellationToken ct)

@@ -1,9 +1,14 @@
+using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Registry;
 
 namespace ImageForge.Core.Planning;
 
-public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid ImageId, IReadOnlyList<ImageChange> Changes);
+public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid ImageId, IReadOnlyList<ImageChange> Changes)
+{
+    /// <summary>The provisioned packages read from the image; Appx removals are planned only against it.</summary>
+    public AppxInventory? Appx { get; init; }
+}
 
 public abstract record PlannedStep;
 
@@ -64,7 +69,17 @@ public sealed record ExecutionPlan(
     Guid ImageId,
     IReadOnlyList<PlannedStep> Steps,
     IReadOnlyList<RegistryWritePreview> Preview,
-    string Fingerprint);
+    string Fingerprint)
+{
+    /// <summary>Provisioned packages to remove, in order, before the registry steps run.</summary>
+    public IReadOnlyList<AppxRemoval> AppxRemovals { get; init; } = [];
+
+    /// <summary>Fingerprint of the inventory the removals were resolved from; the run checks it before removing.</summary>
+    public string? AppxInventory { get; init; }
+}
+
+/// <param name="Warning">Shown before the removal is confirmed; null when none is known.</param>
+public sealed record AppxRemoval(PackageIdentity Package, string DisplayName, string? Warning);
 
 public sealed record PlanningDiagnostic(string Code, int ChangeIndex, string Message);
 
@@ -77,6 +92,9 @@ public static class PlanningCodes
     public const string RegistryPathMalformed = "registry.path.malformed";
     public const string RegistryRootUnknown = "registry.root.unknown";
     public const string RegistryRootForbidden = "registry.root.forbidden";
+    public const string AppxInventoryMissing = "appx.inventory.missing";
+    public const string AppxNotProvisioned = "appx.not-provisioned";
+    public const string AppxFrameworkBlocked = "appx.framework.blocked";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

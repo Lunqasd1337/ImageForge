@@ -4,7 +4,8 @@ using System.Text;
 
 namespace ImageForge.Core.Workspace;
 
-public sealed record ManifestEntry(string RelativePath, long Length, string Sha256);
+/// <param name="LastWriteUtc">Recorded for the metadata re-check; not part of the content comparison or the fingerprint.</param>
+public sealed record ManifestEntry(string RelativePath, long Length, string Sha256, DateTime LastWriteUtc = default);
 
 public enum ManifestChange
 {
@@ -22,24 +23,76 @@ public sealed record SourceManifest(IReadOnlyList<ManifestEntry> Entries, string
 
     public static async Task<SourceManifest> ComputeAsync(string root, CancellationToken ct)
     {
+        var entries = new List<ManifestEntry>();
+        foreach (var (file, relative) in Files(root))
+        {
+            ct.ThrowIfCancellationRequested();
+            entries.Add(await HashFileAsync(file, relative, ct).ConfigureAwait(false));
+        }
+
+        return FromEntries(entries);
+    }
+
+    public static SourceManifest FromEntries(IEnumerable<ManifestEntry> entries)
+    {
+        var sorted = entries.ToList();
+        sorted.Sort((x, y) => PathComparer.Compare(x.RelativePath, y.RelativePath));
+        return new SourceManifest(sorted, ComputeFingerprint(sorted));
+    }
+
+    /// <summary>
+    /// Re-checks a folder against a manifest without reading every file: size and last write time for all files,
+    /// full SHA-256 only for <paramref name="hashPaths"/>.
+    /// </summary>
+    public static async Task<IReadOnlyList<ManifestDifference>> CheckMetadataAsync(
+        string root, SourceManifest expected, IReadOnlyCollection<string> hashPaths, CancellationToken ct)
+    {
+        var hash = new HashSet<string>(hashPaths, PathComparer);
+        var actual = new List<ManifestEntry>();
+        foreach (var (file, relative) in Files(root))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (hash.Contains(relative))
+            {
+                actual.Add(await HashFileAsync(file, relative, ct).ConfigureAwait(false));
+                continue;
+            }
+
+            var info = new FileInfo(file);
+            actual.Add(new ManifestEntry(relative, info.Length, string.Empty, info.LastWriteTimeUtc));
+        }
+
+        var before = expected.Entries.ToDictionary(e => e.RelativePath, PathComparer);
+        var differences = Compare(expected, new SourceManifest(actual, string.Empty))
+            .Where(d => d.Change != ManifestChange.Changed || hash.Contains(d.RelativePath))
+            .ToList();
+        differences.AddRange(actual
+            .Where(e => !hash.Contains(e.RelativePath)
+                && before.TryGetValue(e.RelativePath, out var old)
+                && (old.Length != e.Length || old.LastWriteUtc != e.LastWriteUtc))
+            .Select(e => new ManifestDifference(ManifestChange.Changed, e.RelativePath)));
+
+        differences.Sort((x, y) => PathComparer.Compare(x.RelativePath, y.RelativePath));
+        return differences;
+    }
+
+    private static IEnumerable<(string File, string Relative)> Files(string root)
+    {
         var options = new EnumerationOptions
         {
             RecurseSubdirectories = true,
             IgnoreInaccessible = false,
             AttributesToSkip = FileAttributes.ReparsePoint,
         };
-        var entries = new List<ManifestEntry>();
-        foreach (var file in Directory.EnumerateFiles(root, "*", options))
-        {
-            ct.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
-            await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-            entries.Add(new ManifestEntry(relative, stream.Length, Convert.ToHexStringLower(hash)));
-        }
+        return Directory.EnumerateFiles(root, "*", options)
+            .Select(file => (file, Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/')));
+    }
 
-        entries.Sort((x, y) => PathComparer.Compare(x.RelativePath, y.RelativePath));
-        return new SourceManifest(entries, ComputeFingerprint(entries));
+    private static async Task<ManifestEntry> HashFileAsync(string file, string relative, CancellationToken ct)
+    {
+        await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
+        return new ManifestEntry(relative, stream.Length, Convert.ToHexStringLower(hash), File.GetLastWriteTimeUtc(file));
     }
 
     public static IReadOnlyList<ManifestDifference> Compare(SourceManifest expected, SourceManifest actual)

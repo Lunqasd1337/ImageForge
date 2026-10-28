@@ -174,6 +174,55 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_changed_image_with_the_same_size_and_time_is_caught_by_the_recheck()
+    {
+        var pipeline = Pipeline(beforeStep: step =>
+        {
+            if (step == "source-recheck")
+            {
+                SourceManifestTests.Rewrite(Path.Combine(_source, "sources", "install.wim"), "MIW");
+            }
+        });
+
+        var result = await pipeline.RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("source-recheck");
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_damaged_reused_base_file_is_caught_while_assembling()
+    {
+        (await Pipeline().RunAsync(Request(), Ct)).Status.ShouldBe(RunStatus.Published);
+        Directory.Delete(_output, recursive: true);
+        SourceManifestTests.Rewrite(Path.Combine(_paths.Base, "setup.exe"), "SETUP");
+
+        var result = await Pipeline().RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("assemble");
+        result.Error.ShouldNotBeNull().ShouldContain("setup.exe");
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_damaged_reused_base_image_is_deleted_and_copied_again_next_time()
+    {
+        (await Pipeline().RunAsync(Request(), Ct)).Status.ShouldBe(RunStatus.Published);
+        SourceManifestTests.Rewrite(Path.Combine(_paths.Base, "sources", "install.wim"), "MIW");
+
+        var failed = await Pipeline().RunAsync(Request(), Ct);
+        failed.Status.ShouldBe(RunStatus.Failed);
+        failed.FailedStep.ShouldBe("working-copy");
+        Directory.Exists(_paths.Base).ShouldBeFalse();
+
+        var log = new List<string>();
+        (await Pipeline(log).RunAsync(Request(), Ct)).Status.ShouldBe(RunStatus.Published);
+        log.ShouldNotContain("base copy reused");
+    }
+
+    [Fact]
     public async Task An_interrupted_run_blocks_new_runs_until_recovery_restores_the_previous_result()
     {
         (await Pipeline().RunAsync(Request(), Ct)).Status.ShouldBe(RunStatus.Published);

@@ -1,5 +1,7 @@
 using System.Buffers;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ImageForge.Core.Features;
 
@@ -73,7 +75,15 @@ public sealed record Capability(CapabilityIdentity Identity, CapabilityState Sta
     };
 }
 
-public sealed record CapabilityInventory(IReadOnlyList<Capability> Capabilities, IReadOnlyList<string> Problems);
+public sealed record CapabilityInventory(IReadOnlyList<Capability> Capabilities, IReadOnlyList<string> Problems)
+{
+    /// <summary>Localized names by capability name, for showing; read only for installed capabilities.</summary>
+    public IReadOnlyDictionary<string, string> DisplayNames { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>SHA-256 over the sorted names and states; a run compares it with the list it reads from its own mount.</summary>
+    public string Fingerprint => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+        string.Join('\n', Capabilities.Select(c => $"{c.Identity.FullName}={c.RawState}").Order(StringComparer.Ordinal)))));
+}
 
 /// <summary>Reads <c>Dism /English /Image:... /Get-Capabilities</c> ("Capability Identity" and "State" blocks).</summary>
 public static class DismCapabilityListParser

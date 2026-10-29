@@ -1,4 +1,5 @@
 using ImageForge.Core.Execution;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 
 namespace ImageForge.Core.Workspace;
@@ -102,6 +103,16 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             if (request.Plan.AppxRemovals.Count > 0)
             {
                 await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.Capabilities is { } capabilities)
+            {
+                await context.Step("capabilities", () => RemoveCapabilitiesAsync(capabilities, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.Features is { } features)
+            {
+                await context.Step("features", () => ChangeFeaturesAsync(features, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             await context.Step("registry", () =>
@@ -254,6 +265,83 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             : throw new InvalidDataException(left.Count > 0
                 ? $"Still provisioned after removal: {string.Join(", ", left)}."
                 : $"The provisioned package list cannot be read after removal: {string.Join("; ", after.Problems)}");
+    }
+
+    private async Task<bool> RemoveCapabilitiesAsync(CapabilityPlan plan, string mountDir, CancellationToken ct)
+    {
+        var before = await servicing.GetCapabilitiesAsync(mountDir, ct).ConfigureAwait(false);
+        if (before.Problems.Count > 0 || before.Fingerprint != plan.Inventory)
+        {
+            throw new InvalidDataException(before.Problems.Count > 0
+                ? $"The capability list cannot be read: {string.Join("; ", before.Problems)}"
+                : "The capabilities changed since the preview; plan again.");
+        }
+
+        foreach (var capability in plan.Remove)
+        {
+            Log?.Invoke($"remove capability {capability.FullName}");
+            await servicing.RemoveCapabilityAsync(mountDir, capability, ct).ConfigureAwait(false);
+        }
+
+        var after = await servicing.GetCapabilitiesAsync(mountDir, ct).ConfigureAwait(false);
+        var left = plan.Remove.Where(r => after.Capabilities.Any(c => c.Identity == r && c.State == CapabilityState.Installed)).Select(r => r.FullName).ToList();
+        return after.Problems.Count == 0 && left.Count == 0
+            ? true
+            : throw new InvalidDataException(left.Count > 0
+                ? $"Still installed after removal: {string.Join(", ", left)}."
+                : $"The capability list cannot be read after removal: {string.Join("; ", after.Problems)}");
+    }
+
+    // The change was worked out from the features of the verified copy; this mount must list the same states. DISM
+    // may turn on more than it was asked (default sub-features), so the whole list is compared afterwards and logged.
+    private async Task<bool> ChangeFeaturesAsync(FeaturePlan plan, string mountDir, CancellationToken ct)
+    {
+        var before = await servicing.GetFeaturesAsync(mountDir, ct).ConfigureAwait(false);
+        if (before.Problems.Count > 0 || before.Fingerprint != plan.Inventory)
+        {
+            throw new InvalidDataException(before.Problems.Count > 0
+                ? $"The feature list cannot be read: {string.Join("; ", before.Problems)}"
+                : "The features changed since the preview; plan again.");
+        }
+
+        if (plan.Disable.Count > 0)
+        {
+            Log?.Invoke($"disable {string.Join(", ", plan.Disable)}");
+            await servicing.DisableFeaturesAsync(mountDir, plan.Disable, ct).ConfigureAwait(false);
+        }
+
+        if (plan.Enable.Count > 0)
+        {
+            string? source = null;
+            if (plan.UsesMediaSxs)
+            {
+                source = ImageInspection.MediaSxs(paths);
+                if (!ImageInspection.MediaHasNetFx3(paths))
+                {
+                    throw new InvalidDataException($"{source} no longer holds the .NET Framework 3.5 package.");
+                }
+            }
+
+            Log?.Invoke($"enable {string.Join(", ", plan.Enable)}");
+            await servicing.EnableFeaturesAsync(mountDir, plan.Enable, source, ct).ConfigureAwait(false);
+        }
+
+        var after = await servicing.GetFeaturesAsync(mountDir, ct).ConfigureAwait(false);
+        if (after.Problems.Count > 0)
+        {
+            throw new InvalidDataException($"The feature list cannot be read after the change: {string.Join("; ", after.Problems)}");
+        }
+
+        var requested = plan.Disable.Concat(plan.Enable).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var change in FeatureDependencies.Compare(before, after))
+        {
+            Log?.Invoke($"{(requested.Contains(change.Name) ? "feature" : "also changed by DISM")} {change.Name}: {change.Before ?? "-"} -> {change.After ?? "-"}");
+        }
+
+        var wrong = plan.Enable.Where(f => after.Features.FirstOrDefault(a => a.Name == f)?.IsOn != true)
+            .Concat(plan.Disable.Where(f => after.Features.FirstOrDefault(a => a.Name == f)?.IsOff != true))
+            .ToList();
+        return wrong.Count == 0 ? true : throw new InvalidDataException($"Features not in the planned state: {string.Join(", ", wrong)}.");
     }
 
     internal static WorkspaceState LoadForRun(StateStore<WorkspaceState> store, Guid workspaceId)

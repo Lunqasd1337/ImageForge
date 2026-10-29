@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -50,10 +50,26 @@ public sealed class EngineService : IEngineService, IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
-            : options.RemoveAppx.Count > 0 ? "plan without .reg" : "plan M1 marker");
+            : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count > 0
+                ? "plan without .reg" : "plan M1 marker");
         foreach (var family in options.RemoveAppx)
         {
             _log($"plan remove appx {family}");
+        }
+
+        foreach (var capability in options.RemoveCapabilities)
+        {
+            _log($"plan remove capability {capability}");
+        }
+
+        foreach (var feature in options.DisableFeatures)
+        {
+            _log($"plan disable feature {feature}");
+        }
+
+        foreach (var feature in options.EnableFeatures)
+        {
+            _log($"plan enable feature {feature}");
         }
 
         var plan = _session.Plan(options);
@@ -77,7 +93,8 @@ public sealed class EngineService : IEngineService, IDisposable
         _log("inspect image");
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
         var result = await _session.InspectAsync(Tee(progress), linked.Token).ConfigureAwait(false);
-        _log($"inspection revision {result.WorkspaceRevision}: {result.Packages.Count} packages, problems: {string.Join("; ", result.Problems)}");
+        _log($"inspection revision {result.WorkspaceRevision}: {result.Packages.Count} packages, {result.Features.Count} features, " +
+            $"{result.Capabilities.Count} installed capabilities, problems: {string.Join("; ", [.. result.Problems, .. result.FeatureProblems, .. result.CapabilityProblems])}");
         return result;
     }
 

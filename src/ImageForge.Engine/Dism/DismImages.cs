@@ -40,15 +40,17 @@ public sealed class DismImages : IDisposable
             progressPercent is null ? null : p => progressPercent(Percent(p)));
 
     /// <summary>
-    /// Direct parents of each named feature, through one offline session (DismGetFeatureParent; Dism.exe has no
-    /// equivalent). A feature whose parents could not be read is left out and reported.
+    /// Direct parents and the localized name of each named feature, through one offline session (DismGetFeatureParent;
+    /// Dism.exe has no equivalent). A feature whose parents could not be read is left out of the parents and reported;
+    /// a missing name is only left out.
     /// </summary>
-    public static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureParents(
+    public static (IReadOnlyDictionary<string, IReadOnlyList<string>> Parents, IReadOnlyDictionary<string, string> DisplayNames) GetFeatureDetails(
         string mountPath, IEnumerable<string> featureNames, Action<string, DismException> onFailure)
     {
         ArgumentNullException.ThrowIfNull(featureNames);
         ArgumentNullException.ThrowIfNull(onFailure);
         var parents = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         using var session = DismApi.OpenOfflineSession(mountPath);
         foreach (var name in featureNames)
         {
@@ -62,9 +64,45 @@ public sealed class DismImages : IDisposable
             {
                 onFailure(name, ex);
             }
+
+            try
+            {
+                if (DismApi.GetFeatureInfo(session, name).DisplayName is { Length: > 0 } displayName)
+                {
+                    names[name] = displayName;
+                }
+            }
+            catch (DismException)
+            {
+                // A name is only for showing; the feature stays usable without it.
+            }
         }
 
-        return parents;
+        return (parents, names);
+    }
+
+    /// <summary>Localized names of the named capabilities; one that cannot be read is left out.</summary>
+    public static IReadOnlyDictionary<string, string> GetCapabilityDisplayNames(string mountPath, IEnumerable<string> capabilityNames)
+    {
+        ArgumentNullException.ThrowIfNull(capabilityNames);
+        var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        foreach (var name in capabilityNames)
+        {
+            try
+            {
+                if (DismApi.GetCapabilityInfo(session, name).DisplayName is { Length: > 0 } displayName)
+                {
+                    names[name] = displayName;
+                }
+            }
+            catch (DismException)
+            {
+                // A name is only for showing.
+            }
+        }
+
+        return names;
     }
 
     // ManagedDism exposes DismGetFeatureParent only by package name or path; a feature of the foundation package (all

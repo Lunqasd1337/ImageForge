@@ -250,6 +250,61 @@ public sealed class WorkspaceSessionTests : IDisposable
         plan.AppxRemovals.Count.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Inspected_features_and_capabilities_are_planned_and_changed()
+    {
+        _servicing.Features["IIS-WebServerRole"] = "Disabled";
+        _servicing.Features["IIS-WebServer"] = "Disabled";
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _servicing.Features["Odd"] = "Superseded";
+        _servicing.FeatureParents["IIS-WebServerRole"] = [];
+        _servicing.FeatureParents["IIS-WebServer"] = ["IIS-WebServerRole"];
+        _servicing.FeatureParents["SMB1Protocol"] = [];
+        _servicing.FeatureParents["Odd"] = [];
+        _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"] = "Installed";
+        _servicing.Capabilities["Language.OCR~~~fr-FR~0.0.1.0"] = "Not Present";
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.FeatureProblems.ShouldBeEmpty();
+        inspection.Features.Single(f => f.Name == "SMB1Protocol").IsOn.ShouldBeTrue();
+        inspection.Features.Single(f => f.Name == "Odd").BlockedReason.ShouldNotBeNull();
+        inspection.Capabilities.ShouldHaveSingleItem().Name.ShouldBe("MathRecognizer~~~~0.0.1.0");
+
+        var plan = _session.Plan(new PlanOptions(null)
+        {
+            EnableFeatures = ["IIS-WebServer"],
+            DisableFeatures = ["SMB1Protocol"],
+            RemoveCapabilities = ["MathRecognizer~~~~0.0.1.0"],
+        });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        var changes = plan.FeatureChanges.ShouldNotBeNull();
+        changes.Enable.ShouldBe(["IIS-WebServerRole", "IIS-WebServer"]);
+        changes.Added.ShouldBe(["IIS-WebServerRole"]);
+        changes.Disable.ShouldBe(["SMB1Protocol"]);
+        plan.CapabilityRemovals.ShouldBe(["MathRecognizer~~~~0.0.1.0"]);
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Features["IIS-WebServer"].ShouldBe("Enable Pending");
+        _servicing.Features["SMB1Protocol"].ShouldBe("Disabled");
+        _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"].ShouldBe("Not Present");
+    }
+
+    [Fact]
+    public async Task Features_with_unread_parents_cannot_be_changed()
+    {
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.Features.ShouldBeEmpty();
+        inspection.FeatureProblems.ShouldHaveSingleItem();
+        _session.Plan(new PlanOptions(null) { DisableFeatures = ["SMB1Protocol"] }).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.FeatureInventoryMissing);
+    }
+
     private static RegFileInput RegFile(string body) =>
         new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 

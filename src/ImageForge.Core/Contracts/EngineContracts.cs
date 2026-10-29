@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 4;
+    public const int Version = 5;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -47,8 +47,8 @@ public partial interface IEngineService
     Task<PlanSummary> PlanAsync(PlanOptions options, CancellationToken ct);
 
     /// <summary>
-    /// Copies and verifies the source if needed, mounts the copy read-only and reads its provisioned Appx packages.
-    /// Removals are planned only against the latest inventory of the open workspace.
+    /// Copies and verifies the source if needed, mounts the copy read-only and reads its provisioned Appx packages,
+    /// features with their parents and capabilities. Changes are planned only against the latest inventory.
     /// </summary>
     Task<InspectionSummary> InspectAsync(IProgress<string>? progress, CancellationToken ct);
 
@@ -60,10 +60,19 @@ public partial interface IEngineService
 
 /// <param name="RegFile">The .reg file to apply.</param>
 /// <param name="RemoveAppx">Family names of provisioned packages to remove, resolved against the latest inventory.</param>
-/// <remarks>With neither, the M1 validation marker is planned.</remarks>
+/// <remarks>With no file and no other change, the M1 validation marker is planned.</remarks>
 public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? RemoveAppx = null)
 {
     public IReadOnlyList<string> RemoveAppx { get; init; } = RemoveAppx ?? [];
+
+    /// <summary>Features to turn on; the plan adds the parents they need and shows them.</summary>
+    public IReadOnlyList<string> EnableFeatures { get; init; } = [];
+
+    /// <summary>Features to turn off; the plan adds the features that depend on them and shows them.</summary>
+    public IReadOnlyList<string> DisableFeatures { get; init; } = [];
+
+    /// <summary>Installed capabilities to remove, named as DISM lists them.</summary>
+    public IReadOnlyList<string> RemoveCapabilities { get; init; } = [];
 }
 
 public enum EngineState

@@ -1,4 +1,6 @@
 using System.Buffers;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ImageForge.Core.Features;
 
@@ -54,7 +56,18 @@ public sealed record WindowsFeature(string Name, FeatureState State, string RawS
     };
 }
 
-public sealed record FeatureInventory(IReadOnlyList<WindowsFeature> Features, IReadOnlyList<string> Problems);
+public sealed record FeatureInventory(IReadOnlyList<WindowsFeature> Features, IReadOnlyList<string> Problems)
+{
+    /// <summary>Direct parents by feature name (see <see cref="FeatureDependencies"/>); null when not read.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? Parents { get; init; }
+
+    /// <summary>Localized names by feature name, for showing; a feature may have none.</summary>
+    public IReadOnlyDictionary<string, string> DisplayNames { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>SHA-256 over the sorted names and states; a run compares it with the list it reads from its own mount.</summary>
+    public string Fingerprint => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+        string.Join('\n', Features.Select(f => $"{f.Name}={f.RawState}").Order(StringComparer.Ordinal)))));
+}
 
 /// <summary>Reads <c>Dism /English /Image:... /Get-Features</c> (list format: "Feature Name" and "State" blocks).</summary>
 public static class DismFeatureListParser

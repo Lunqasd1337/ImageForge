@@ -16,7 +16,7 @@
 
       <TextBlock Text="Реестр" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock TextWrapping="Wrap"
-                 Text="Файл .reg в формате «Windows Registry Editor Version 5.00». Без файла и без отмеченных приложений применяется проверочный маркер M1." />
+                 Text="Файл .reg в формате «Windows Registry Editor Version 5.00». Если не выбраны ни файл, ни другие изменения, применяется проверочный маркер M1." />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -39,10 +39,12 @@
                  Width="180" IsEnabled="{x:Bind ViewModel.IsAnsi, Mode=OneWay}" />
       </StackPanel>
 
-      <TextBlock Text="Приложения" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock Text="Содержимое образа" Style="{StaticResource SubtitleTextBlockStyle}" />
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Прочитать приложения" Command="{x:Bind ViewModel.InspectCommand}" />
+        <Button Content="Прочитать образ" Command="{x:Bind ViewModel.InspectCommand}" />
       </StackPanel>
+
+      <TextBlock Text="Приложения" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.AppsStatus, Mode=OneWay}" TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{x:Bind ViewModel.Apps}">
         <ItemsControl.ItemTemplate>
@@ -60,6 +62,46 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+
+      <TextBlock Text="Компоненты Windows" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock Text="{x:Bind ViewModel.FeaturesStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Список компонентов" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Features}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:FeatureItem">
+              <StackPanel Margin="0,2">
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                  </StackPanel>
+                </CheckBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
+
+      <TextBlock Text="Дополнительные компоненты" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock Text="{x:Bind ViewModel.CapabilitiesStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Список установленных" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Capabilities}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:CapabilityItem">
+              <StackPanel Margin="0,2">
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                  </StackPanel>
+                </CheckBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
 
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />

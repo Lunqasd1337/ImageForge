@@ -514,7 +514,7 @@ static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadFeatureParents(str
     Log($"Reading the parents of {inventory.Features.Count} features (DismGetFeatureParent)...");
     var watch = Stopwatch.StartNew();
     using var dism = new DismImages();
-    var parents = DismImages.GetFeatureParents(Path.GetFullPath(mountDir), inventory.Features.Select(f => f.Name),
+    var (parents, _) = DismImages.GetFeatureDetails(Path.GetFullPath(mountDir), inventory.Features.Select(f => f.Name),
         (name, ex) => Log($"PROBLEM: parents of '{name}' not read: 0x{ex.HResult:x8} {ex.Message}"));
     Log($"Parents read: {parents.Count} of {inventory.Features.Count}; features with parents: {parents.Count(p => p.Value.Count > 0)}; {watch.Elapsed.TotalSeconds:F1} s");
     return parents;

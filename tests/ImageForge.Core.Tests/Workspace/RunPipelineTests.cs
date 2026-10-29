@@ -311,6 +311,94 @@ public sealed class RunPipelineTests : IDisposable
         _servicing.Calls.ShouldContain("unmount discard");
     }
 
+    private const string Math = "MathRecognizer~~~~0.0.1.0";
+
+    [Fact]
+    public async Task Planned_features_and_capabilities_change_before_the_registry_and_dism_extras_are_logged()
+    {
+        _servicing.Features["IIS-WebServerRole"] = "Disabled";
+        _servicing.Features["IIS-WebServer"] = "Disabled";
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _servicing.FeatureParents["IIS-WebServerRole"] = [];
+        _servicing.FeatureParents["IIS-WebServer"] = ["IIS-WebServerRole"];
+        _servicing.FeatureParents["SMB1Protocol"] = [];
+        _servicing.Capabilities[Math] = "Installed";
+        var request = await FeatureRequest([new EnableWindowsFeature("IIS-WebServerRole"), new DisableWindowsFeature("SMB1Protocol"), new RemoveCapability(Math)]);
+        _servicing.AlsoEnabled.Add("IIS-WebServer");
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "capability-list", "capability-remove MathRecognizer", "capability-list",
+            "feature-list", "disable SMB1Protocol", "enable IIS-WebServerRole", "feature-list", "registry", "unmount commit", "export"]);
+        log.ShouldContain("feature IIS-WebServerRole: Disabled -> Enable Pending");
+        log.ShouldContain("feature SMB1Protocol: Enabled -> Disabled");
+        log.ShouldContain("also changed by DISM IIS-WebServer: Disabled -> Enable Pending");
+    }
+
+    [Fact]
+    public async Task Features_that_changed_since_the_preview_stop_the_run_before_any_change()
+    {
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _servicing.FeatureParents["SMB1Protocol"] = [];
+        var request = await FeatureRequest([new DisableWindowsFeature("SMB1Protocol")]);
+        _servicing.Features["TelnetClient"] = "Disabled";
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("features");
+        _servicing.Calls.ShouldNotContain(c => c.StartsWith("disable", StringComparison.Ordinal));
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    [Fact]
+    public async Task NetFx3_is_enabled_from_the_sxs_folder_of_the_media()
+    {
+        const string cab = "media/sources/sxs/microsoft-windows-netfx3-ondemand-package~31bf3856ad364e35~amd64~~.cab";
+        _dir.WriteFile(cab, "CAB");
+        _servicing.Features["NetFx3"] = "Disabled with Payload Removed";
+        _servicing.FeatureParents["NetFx3"] = [];
+        var request = await FeatureRequest([new EnableWindowsFeature("NetFx3")], mediaHasNetFx3: true);
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldContain("enable NetFx3 from sxs");
+    }
+
+    [Fact]
+    public async Task A_feature_dism_left_off_fails_the_run()
+    {
+        _servicing.Features["TelnetClient"] = "Disabled";
+        _servicing.FeatureParents["TelnetClient"] = [];
+        var request = await FeatureRequest([new EnableWindowsFeature("TelnetClient")]);
+        _servicing.IgnoreFeatureChanges = true;
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("features");
+        result.Error.ShouldNotBeNull().ShouldContain("TelnetClient");
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    private async Task<RunRequest> FeatureRequest(IReadOnlyList<ImageChange> changes, bool mediaHasNetFx3 = false)
+    {
+        var features = await _servicing.ReadFeatureDetailsAsync("m", await _servicing.GetFeaturesAsync("m", Ct), Ct);
+        var capabilities = await _servicing.GetCapabilitiesAsync("m", Ct);
+        _servicing.Calls.Clear();
+        var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, .. changes])
+            {
+                Features = features,
+                Capabilities = capabilities,
+                MediaHasNetFx3 = mediaHasNetFx3,
+            });
+        return new RunRequest(_source, _output, 1, plan.Plan.ShouldNotBeNull(string.Join("; ", plan.Diagnostics.Select(d => d.Message))));
+    }
+
     /// <param name="remove">The package to remove.</param>
     /// <param name="inventory">What the preview saw; the run compares it with the image.</param>
     private RunRequest AppxRequest(string remove, params string[] inventory)

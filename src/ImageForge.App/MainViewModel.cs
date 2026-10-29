@@ -69,11 +69,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [NotifyCanExecuteChangedFor(nameof(RecoverCommand))]
     public partial bool RecoveryRequired { get; set; }
 
-    /// <summary>Provisioned packages of the last inspection; empty until «Прочитать приложения».</summary>
+    /// <summary>Provisioned packages of the last inspection; empty until «Прочитать образ».</summary>
     public ObservableCollection<AppxItem> Apps { get; } = [];
 
     [ObservableProperty]
-    public partial string AppsStatus { get; set; } = "Список ещё не прочитан. Чтение копирует дистрибутив в рабочую папку (если копии ещё нет) и монтирует её только для чтения.";
+    public partial string AppsStatus { get; set; } = "Образ ещё не прочитан. Чтение копирует дистрибутив в рабочую папку (если копии ещё нет) и монтирует её только для чтения.";
+
+    /// <summary>Windows features of the last inspection; the check box is the wanted state.</summary>
+    public ObservableCollection<FeatureItem> Features { get; } = [];
+
+    [ObservableProperty]
+    public partial string FeaturesStatus { get; set; } = "Компоненты ещё не прочитаны.";
+
+    /// <summary>Installed capabilities of the last inspection; a check marks one for removal.</summary>
+    public ObservableCollection<CapabilityItem> Capabilities { get; } = [];
+
+    [ObservableProperty]
+    public partial string CapabilitiesStatus { get; set; } = "Дополнительные компоненты ещё не прочитаны.";
 
     public bool IsConnected => _engine is not null;
 
@@ -138,7 +150,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task InspectAsync(CancellationToken ct)
     {
         DropPlan();
-        Apps.Clear();
+        ClearInventory();
         IsBusy = true;
         try
         {
@@ -147,11 +159,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            Status = "Чтение списка приложений из образа...";
+            Status = "Чтение приложений и компонентов из образа...";
             var inspection = await _engine!.Service.InspectAsync(new UiProgress(this), ct).ConfigureAwait(true);
             if (inspection.Problems.Count > 0)
             {
-                AppsStatus = "Список не прочитан: " + string.Join("; ", inspection.Problems);
+                AppsStatus = "Образ не прочитан: " + string.Join("; ", inspection.Problems);
                 Status = AppsStatus;
                 ShowWorkspace(await _engine.Service.GetWorkspaceAsync(ct).ConfigureAwait(true));
                 return;
@@ -162,8 +174,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Apps.Add(new AppxItem(package, DropPlan));
             }
 
-            AppsStatus = $"Предустановленных приложений: {inspection.Packages.Count}. Отметьте те, что нужно удалить, и нажмите «Подготовить».";
-            Status = AppsStatus;
+            AppsStatus = $"Предустановленных приложений: {inspection.Packages.Count}. Отметьте те, что нужно удалить.";
+            ShowFeatures(inspection);
+            ShowCapabilities(inspection);
+            Status = "Образ прочитан. Отметьте изменения и нажмите «Подготовить».";
         }
         catch (RemoteInvocationException ex)
         {
@@ -214,7 +228,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return;
         }
 
-        options = options with { RemoveAppx = [.. Apps.Where(a => a.IsSelected == true).Select(a => a.Package.FamilyName).Distinct()] };
+        options = options with
+        {
+            RemoveAppx = [.. Apps.Where(a => a.IsSelected == true).Select(a => a.Package.FamilyName).Distinct()],
+            EnableFeatures = [.. Features.Where(f => f.TurnsOn).Select(f => f.Feature.Name)],
+            DisableFeatures = [.. Features.Where(f => f.TurnsOff).Select(f => f.Feature.Name)],
+            RemoveCapabilities = [.. Capabilities.Where(c => c.IsSelected == true).Select(c => c.Capability.Name)],
+        };
         IsBusy = true;
         try
         {
@@ -241,9 +261,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
             _plan = plan;
             HasPlan = true;
-            OperationPreview = string.Join(Environment.NewLine, plan.AppxRemovals.Select(DescribeRemoval).Concat(plan.Preview.Select(RegistryPreviewText.Describe)));
+            string[] lines =
+            [
+                .. plan.AppxRemovals.Select(DescribeRemoval),
+                .. plan.CapabilityRemovals.Select(DescribeCapabilityRemoval),
+                .. DescribeFeatureChanges(plan.FeatureChanges),
+                .. plan.Preview.Select(RegistryPreviewText.Describe),
+            ];
+            OperationPreview = string.Join(Environment.NewLine, lines);
             var apps = plan.AppxRemovals.Count > 0 ? $" Удаляемых приложений: {plan.AppxRemovals.Count}." : string.Empty;
-            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{encoding} Проверьте превью и нажмите «Запустить».";
+            var capabilities = plan.CapabilityRemovals.Count > 0 ? $" Удаляемых дополнительных компонентов: {plan.CapabilityRemovals.Count}." : string.Empty;
+            var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
+            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
         catch (RemoteInvocationException ex)
@@ -416,14 +445,96 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private static string DescribeRemoval(AppxPackageView package) =>
         $"Удалить приложение {package.DisplayName} ({package.PackageName})" + (package.Warning is { } warning ? $"{Environment.NewLine}  Внимание: {warning}" : string.Empty);
 
+    private string DescribeCapabilityRemoval(string name)
+    {
+        var shown = Capabilities.FirstOrDefault(c => c.Capability.Name == name)?.Title;
+        return shown is null || shown == name ? $"Удалить дополнительный компонент {name}" : $"Удалить дополнительный компонент {shown} ({name})";
+    }
+
+    private IEnumerable<string> DescribeFeatureChanges(FeatureChangeView? changes)
+    {
+        if (changes is null)
+        {
+            yield break;
+        }
+
+        foreach (var name in changes.Disable)
+        {
+            yield return $"Выключить компонент {FeatureTitle(name)}{(changes.Added.Contains(name) ? " (добавлен планом: зависит от выключаемого)" : string.Empty)}";
+        }
+
+        foreach (var name in changes.Enable)
+        {
+            yield return $"Включить компонент {FeatureTitle(name)}{(changes.Added.Contains(name) ? " (добавлен планом: нужен включаемому)" : string.Empty)}";
+        }
+
+        if (changes.UsesMediaSxs)
+        {
+            yield return "  Файлы .NET Framework 3.5 будут взяты из sources\\sxs дистрибутива.";
+        }
+
+        if (changes.Enable.Count > 0)
+        {
+            yield return "  DISM может сам включить вложенные компоненты по умолчанию; они будут перечислены в журнале запуска.";
+        }
+    }
+
+    private string FeatureTitle(string name)
+    {
+        var shown = Features.FirstOrDefault(f => f.Feature.Name == name)?.Title;
+        return shown is null || shown == name ? name : $"{shown} ({name})";
+    }
+
+    private void ShowFeatures(InspectionSummary inspection)
+    {
+        if (inspection.FeatureProblems.Count > 0)
+        {
+            FeaturesStatus = "Компоненты изменить нельзя: " + string.Join("; ", inspection.FeatureProblems);
+            return;
+        }
+
+        foreach (var feature in inspection.Features)
+        {
+            Features.Add(new FeatureItem(feature, DropPlan));
+        }
+
+        FeaturesStatus = $"Компонентов: {inspection.Features.Count}, включено: {inspection.Features.Count(f => f.IsOn)}. "
+            + "Отметка означает «включён после запуска»: снимите её, чтобы выключить, поставьте, чтобы включить.";
+    }
+
+    private void ShowCapabilities(InspectionSummary inspection)
+    {
+        if (inspection.CapabilityProblems.Count > 0)
+        {
+            CapabilitiesStatus = "Дополнительные компоненты не прочитаны: " + string.Join("; ", inspection.CapabilityProblems);
+            return;
+        }
+
+        foreach (var capability in inspection.Capabilities)
+        {
+            Capabilities.Add(new CapabilityItem(capability, DropPlan));
+        }
+
+        CapabilitiesStatus = $"Установленных дополнительных компонентов: {inspection.Capabilities.Count}. Отметьте те, что нужно удалить.";
+    }
+
+    private void ClearInventory()
+    {
+        Apps.Clear();
+        Features.Clear();
+        Capabilities.Clear();
+    }
+
     private void FoldersChanged()
     {
         DropPlan();
         _opened = null;
-        if (Apps.Count > 0)
+        if (Apps.Count > 0 || Features.Count > 0 || Capabilities.Count > 0)
         {
-            Apps.Clear();
-            AppsStatus = "Папки изменились; прочитайте список приложений снова.";
+            ClearInventory();
+            AppsStatus = "Папки изменились; прочитайте образ снова.";
+            FeaturesStatus = "Компоненты ещё не прочитаны.";
+            CapabilitiesStatus = "Дополнительные компоненты ещё не прочитаны.";
         }
     }
 
@@ -438,7 +549,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _engine = null;
         _opened = null;
         DropPlan();
-        Apps.Clear();
+        ClearInventory();
         OnPropertyChanged(nameof(IsConnected));
         ConnectEngineCommand.NotifyCanExecuteChanged();
         PrepareCommand.NotifyCanExecuteChanged();

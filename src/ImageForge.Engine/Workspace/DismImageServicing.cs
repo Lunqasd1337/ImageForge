@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Safety;
 using ImageForge.Core.Servicing;
@@ -28,6 +29,49 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
 
     public Task RemoveProvisionedAppxAsync(string mountDir, PackageIdentity package, CancellationToken ct) =>
         RunCliAsync(DismCliArguments.RemoveProvisionedAppx(mountDir, package), "/Remove-ProvisionedAppxPackage");
+
+    public async Task<FeatureInventory> GetFeaturesAsync(string mountDir, CancellationToken ct)
+    {
+        var result = await RunCliAsync(DismCliArguments.GetFeatures(mountDir), "/Get-Features").ConfigureAwait(false);
+        return DismFeatureListParser.Parse(result.Output);
+    }
+
+    public Task<FeatureInventory> ReadFeatureDetailsAsync(string mountDir, FeatureInventory features, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        var failed = new List<string>();
+        var (parents, names) = DismImages.GetFeatureDetails(mountDir, features.Features.Select(f => f.Name), (name, ex) =>
+        {
+            failed.Add(name);
+            log?.Invoke($"parents of {name} not read: 0x{ex.HResult:x8} {ex.Message}");
+        });
+        log?.Invoke($"feature parents read: {parents.Count} of {features.Features.Count}");
+
+        // A partial map would hide dependents; the planner refuses feature changes without it.
+        return features with { Parents = failed.Count == 0 ? parents : null, DisplayNames = names };
+    }, CancellationToken.None);
+
+    public Task EnableFeaturesAsync(string mountDir, IReadOnlyList<string> features, string? source, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.EnableFeatures(mountDir, features, source), "/Enable-Feature");
+
+    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.DisableFeatures(mountDir, features), "/Disable-Feature");
+
+    public async Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct)
+    {
+        var result = await RunCliAsync(DismCliArguments.GetCapabilities(mountDir), "/Get-Capabilities").ConfigureAwait(false);
+        return DismCapabilityListParser.Parse(result.Output);
+    }
+
+    public Task<CapabilityInventory> ReadCapabilityNamesAsync(string mountDir, CapabilityInventory capabilities, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        var installed = capabilities.Capabilities.Where(c => c.State == CapabilityState.Installed).Select(c => c.Identity.FullName);
+        return capabilities with { DisplayNames = DismImages.GetCapabilityDisplayNames(mountDir, installed) };
+    }, CancellationToken.None);
+
+    public Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.RemoveCapability(mountDir, capability), "/Remove-Capability");
 
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>
         Task.Run(() => DismImages.Unmount(mountDir, commit, Progress(commit ? "commit" : "discard")), CancellationToken.None);

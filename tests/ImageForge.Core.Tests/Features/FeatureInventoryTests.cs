@@ -69,7 +69,7 @@ public sealed class FeatureInventoryTests
             ("Printing-PrintToPDFServices-Features", FeatureState.Enabled, "Enabled"),
             ("TelnetClient", FeatureState.Disabled, "Disabled"),
             ("NetFx3", FeatureState.DisabledWithPayloadRemoved, "Disabled with Payload Removed"),
-            ("Microsoft-Windows-Subsystem-Linux", FeatureState.Pending, "Enable Pending"),
+            ("Microsoft-Windows-Subsystem-Linux", FeatureState.EnablePending, "Enable Pending"),
             ("SMB1Protocol", FeatureState.Unknown, "Something New"),
         ]);
     }

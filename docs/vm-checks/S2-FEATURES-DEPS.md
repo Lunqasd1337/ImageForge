@@ -41,14 +41,14 @@ Get-ChildItem C:\IF\fixture\media\sources\sxs | Select-Object Name
 ```powershell
 & $X feature-enable C:\IF\scratch\mount IIS-WebSockets none
 ```
-Ожидается: строка `Enable along with it:` до вызова DISM; в строке Dism.exe несколько `/FeatureName:` в том же порядке, есть `/LimitAccess`, нет `/All`; для каждого компонента `Disabled -> Enabled` (или `Enable Pending`) без `UNEXPECTED`; `RESULT: OK`.
+Ожидается: строка `Enable along with it:` до вызова DISM; в строке Dism.exe несколько `/FeatureName:` в том же порядке, есть `/LimitAccess`, нет `/All`; для каждого компонента `Disabled -> Enabled` (или `Enable Pending`) без `UNEXPECTED`; `RESULT: OK`. Ниже — строки `ALSO CHANGED by DISM:` с компонентами IIS, которые DISM включает по умолчанию сам (`IIS-StaticContent`, `IIS-DefaultDocument` и другие): так и должно быть, их список нужен.
 
 ### 3. Выключение вместе с зависимыми
 
 ```powershell
 & $X feature-disable C:\IF\scratch\mount IIS-WebServerRole
 ```
-Ожидается: в `Disable along with it:` есть все компоненты, включённые в шаге 2 (кроме самого `IIS-WebServerRole`), `IIS-WebSockets` идёт раньше `IIS-WebServerRole`; для каждого `Enabled -> Disabled`; `RESULT: OK`.
+Ожидается: строк `PROBLEM:` нет; в `Disable along with it:` есть все компоненты, включённые в шаге 2, и те, что DISM включил сам (кроме самого `IIS-WebServerRole`), `IIS-WebSockets` идёт раньше `IIS-WebServerRole`; для каждого `-> Disabled` (или `Disable Pending`) без `UNEXPECTED`; `RESULT: OK`. Строки `ALSO CHANGED by DISM:` здесь тоже перепишите, если будут.
 
 ### 4. NetFx3: отказы без вызова DISM на изменение
 
@@ -83,3 +83,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| 0d51178e | Hyper-V | 1, 2, 4, 5 | Родители читаются: 136 из 136 за 8 с, цепочка IIS и зависимые печати верны; включение IIS-WebSockets с родителями — `IIS-WebSockets` остался `Enable Pending`; NetFx3: отказ без источника и с чужой папкой, из `sources\sxs` — `Enable Pending`. Найдено: DISM при включении `IIS-WebServerRole` сам включил ещё 9 вложенных компонентов (`IIS-HttpErrors`, `IIS-StaticContent`, `IIS-DefaultDocument`, `IIS-DirectoryBrowsing`, `IIS-RequestFiltering`, `IIS-HttpLogging`, `IIS-HttpCompressionStatic`, `IIS-ManagementConsole` и др.) в `Enable Pending`, и шаг 3 отказал на них, потому что `Pending` блокировал изменение. Исправлено: `Enable Pending` считается включённым, `Disable Pending` — выключенным; после изменения сравнивается весь список, и всё, что DISM изменил сверх запрошенного, печатается (`ALSO CHANGED by DISM`). |

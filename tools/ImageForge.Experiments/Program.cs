@@ -630,9 +630,14 @@ static async Task<bool> FeatureChange(string mountDir, string name, string? sour
     {
         var was = before.Features.Single(f => f.Name == feature);
         var now = after.Features.Single(f => f.Name == feature);
-        var expected = enable ? now.State is FeatureState.Enabled or FeatureState.Pending : now.State is FeatureState.Disabled or FeatureState.Pending;
+        var expected = enable ? now.IsOn : now.IsOff;
         ok &= expected;
         Log($"Feature '{feature}': {was.RawState} -> {now.RawState}{(expected ? string.Empty : "  UNEXPECTED")}");
+    }
+
+    foreach (var other in FeatureDependencies.Compare(before, after).Where(c => !change.Features.Contains(c.Name)))
+    {
+        Log($"ALSO CHANGED by DISM: '{other.Name}': {other.Before ?? "(not listed)"} -> {other.After ?? "(not listed)"}");
     }
 
     return ok;

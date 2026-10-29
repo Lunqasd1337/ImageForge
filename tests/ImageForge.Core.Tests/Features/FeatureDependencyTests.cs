@@ -112,17 +112,62 @@ public sealed class FeatureDependencyTests
     }
 
     [Fact]
-    public void A_missing_or_pending_feature_stops_the_change()
+    public void A_missing_or_unknown_feature_stops_the_change()
     {
-        var inventory = Inventory with
-        {
-            Features = [.. Inventory.Features.Select(f => f.Name == "IIS-WebServer" ? f with { State = FeatureState.Pending, RawState = "Enable Pending" } : f)],
-        };
+        var inventory = With(("IIS-WebServer", FeatureState.Unknown, "Something New"));
 
-        FeatureDependencies.Enable(inventory, Parents, "IIS-WebSockets").Problems.ShouldHaveSingleItem().ShouldContain("Enable Pending");
+        FeatureDependencies.Enable(inventory, Parents, "IIS-WebSockets").Problems.ShouldHaveSingleItem().ShouldContain("Something New");
         FeatureDependencies.Enable(Inventory, Parents, "NoSuchFeature").Problems.ShouldHaveSingleItem().ShouldContain("not in this image");
         FeatureDependencies.Disable(Inventory, Parents, "NoSuchFeature").Problems.ShouldHaveSingleItem().ShouldContain("not in this image");
     }
+
+    [Fact]
+    public void Enable_pending_counts_as_on()
+    {
+        // Found in the VM: an offline enable leaves some features Enable Pending until first boot.
+        var inventory = With(
+            ("IIS-WebServerRole", FeatureState.Enabled, "Enabled"),
+            ("IIS-WebServer", FeatureState.EnablePending, "Enable Pending"),
+            ("IIS-ApplicationDevelopment", FeatureState.Enabled, "Enabled"),
+            ("IIS-WebSockets", FeatureState.EnablePending, "Enable Pending"));
+
+        FeatureDependencies.Enable(inventory, Parents, "IIS-WebSockets").Features.ShouldBeEmpty();
+        FeatureDependencies.Enable(inventory, Parents, "IIS-ASPNET45").Features.ShouldBe(["NetFx4Extended-ASPNET45", "IIS-ASPNET45"]);
+        var disable = FeatureDependencies.Disable(inventory, Parents, "IIS-WebServerRole");
+        disable.Problems.ShouldBeEmpty();
+        disable.Features.ShouldBe(["IIS-WebSockets", "IIS-ApplicationDevelopment", "IIS-WebServer", "IIS-WebServerRole"]);
+    }
+
+    [Fact]
+    public void Disable_pending_counts_as_off_but_is_not_enabled_again()
+    {
+        var inventory = With(("IIS-WebServerRole", FeatureState.DisablePending, "Disable Pending"));
+
+        FeatureDependencies.Disable(inventory, Parents, "IIS-WebServerRole").Features.ShouldBeEmpty();
+        FeatureDependencies.Enable(inventory, Parents, "IIS-WebServer").Problems.ShouldHaveSingleItem().ShouldContain("Disable Pending");
+    }
+
+    [Fact]
+    public void Compare_lists_every_feature_that_changed()
+    {
+        var after = With(
+            ("IIS-WebServerRole", FeatureState.Enabled, "Enabled"),
+            ("IIS-WebSockets", FeatureState.EnablePending, "Enable Pending"));
+
+        FeatureDependencies.Compare(Inventory, after).ShouldBe(
+        [
+            new FeatureStateChange("IIS-WebServerRole", "Disabled", "Enabled"),
+            new FeatureStateChange("IIS-WebSockets", "Disabled", "Enable Pending"),
+        ]);
+        FeatureDependencies.Compare(Inventory, Inventory).ShouldBeEmpty();
+    }
+
+    private static FeatureInventory With(params (string Name, FeatureState State, string Raw)[] changes) => Inventory with
+    {
+        Features = [.. Inventory.Features.Select(f => changes.FirstOrDefault(c => c.Name == f.Name) is { Name: not null } c
+            ? f with { State = c.State, RawState = c.Raw }
+            : f)],
+    };
 
     [Fact]
     public void A_parent_cycle_stops_the_change()

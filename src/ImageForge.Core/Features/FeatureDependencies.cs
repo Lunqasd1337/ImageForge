@@ -5,6 +5,10 @@ namespace ImageForge.Core.Features;
 /// <param name="Added">The features in <see cref="Features"/> that the user did not ask for, to show before the change.</param>
 /// <param name="NeedsSource">Features in <see cref="Features"/> whose payload was removed from the image.</param>
 /// <param name="Problems">Anything that stops the change; when not empty, nothing may be changed.</param>
+/// <param name="Before">The state before; null when the feature was not listed.</param>
+/// <param name="After">The state after; null when the feature is no longer listed.</param>
+public sealed record FeatureStateChange(string Name, string? Before, string? After);
+
 public sealed record FeatureChange(
     IReadOnlyList<string> Features, IReadOnlyList<string> Added, IReadOnlyList<string> NeedsSource, IReadOnlyList<string> Problems);
 
@@ -27,7 +31,7 @@ public static class FeatureDependencies
             return Refuse($"Feature '{name}' is not in this image.");
         }
 
-        if (requested.State == FeatureState.Enabled)
+        if (requested.IsOn)
         {
             return new FeatureChange([], [], [], []);
         }
@@ -51,7 +55,7 @@ public static class FeatureDependencies
                 return;
             }
 
-            if (feature.State is FeatureState.Unknown or FeatureState.Pending)
+            if (!feature.IsOff || feature.State == FeatureState.DisablePending)
             {
                 problems.Add($"Feature '{feature.Name}' is {feature.RawState}; it cannot be enabled now.");
             }
@@ -68,7 +72,7 @@ public static class FeatureDependencies
                 {
                     problems.Add($"Parent '{parentName}' of feature '{feature.Name}' is not in this image.");
                 }
-                else if (parent.State != FeatureState.Enabled)
+                else if (!parent.IsOn)
                 {
                     Visit(parent);
                 }
@@ -94,7 +98,7 @@ public static class FeatureDependencies
             return new FeatureChange([], [], [], [$"Feature '{name}' is not in this image."]);
         }
 
-        if (requested.State is FeatureState.Disabled or FeatureState.DisabledWithPayloadRemoved)
+        if (requested.IsOff)
         {
             return new FeatureChange([], [], [], []);
         }
@@ -139,14 +143,14 @@ public static class FeatureDependencies
                 return;
             }
 
-            if (feature.State is FeatureState.Unknown or FeatureState.Pending)
+            if (!feature.IsOn)
             {
                 problems.Add($"Feature '{feature.Name}' is {feature.RawState}; it cannot be disabled now.");
             }
 
             foreach (var child in children.GetValueOrDefault(feature.Name, []))
             {
-                if (child.State is not (FeatureState.Disabled or FeatureState.DisabledWithPayloadRemoved))
+                if (!child.IsOff)
                 {
                     Visit(child);
                 }
@@ -156,6 +160,31 @@ public static class FeatureDependencies
             done.Add(feature.Name);
             order.Add(feature);
         }
+    }
+
+    /// <summary>
+    /// Every feature whose state differs between two lists of the same image. DISM also turns on default sub-features
+    /// that no API reports beforehand (found in the VM: enabling IIS-WebServerRole enabled IIS-StaticContent and
+    /// others), so a change is checked against the whole list, not only the features it named.
+    /// </summary>
+    public static IReadOnlyList<FeatureStateChange> Compare(FeatureInventory before, FeatureInventory after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        var old = Index(before);
+        var changes = new List<FeatureStateChange>();
+        foreach (var feature in after.Features)
+        {
+            var was = old.GetValueOrDefault(feature.Name);
+            if (was?.RawState != feature.RawState)
+            {
+                changes.Add(new FeatureStateChange(feature.Name, was?.RawState, feature.RawState));
+            }
+        }
+
+        changes.AddRange(before.Features.Where(f => !after.Features.Any(a => string.Equals(a.Name, f.Name, StringComparison.OrdinalIgnoreCase)))
+            .Select(f => new FeatureStateChange(f.Name, f.RawState, null)));
+        return changes;
     }
 
     private static Dictionary<string, WindowsFeature> Index(FeatureInventory inventory) =>

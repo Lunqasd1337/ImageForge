@@ -68,7 +68,7 @@ Remove-Item $P\nocat\*.cat -Force
 Отметить ещё `netkvm\netkvm.inf`, `netkvm-copy\netkvm.inf` и `viostor\viostor.inf`, поставить «Разрешить пакеты без подписи», «Подготовить».
 Ожидается:
 - статус «План готов… Удаляемых драйверов: 0, добавляемых: 3. …»;
-- в превью строки «Добавить драйвер netkvm\netkvm.inf: Net, Red Hat, Inc., 100.103.104.30200», затем «То же содержимое, добавляется один раз: netkvm-copy\netkvm.inf», «Добавить драйвер nocat\netkvm.inf … (без подписи, ForceUnsigned)», «Добавить драйвер viostor\viostor.inf: SCSIAdapter, …»;
+- в превью строки «Добавить драйвер netkvm-copy\netkvm.inf: Net, Red Hat, Inc., 100.103.104.30200» (из двух одинаковых остаётся первый по списку), затем «То же содержимое, добавляется один раз: netkvm\netkvm.inf», «Добавить драйвер nocat\netkvm.inf … (без подписи, ForceUnsigned)», «Добавить драйвер viostor\viostor.inf: SCSIAdapter, …»;
 - «Источник: C:\IF\drv» и «Внимание: Пакет nocat\netkvm.inf без подписи добавляется с ForceUnsigned…».
 
 Снимок окна с превью.
@@ -78,8 +78,8 @@ Remove-Item $P\nocat\*.cat -Force
 «Запустить», окно не закрывать.
 Ожидается в журнале:
 - шаг `drivers...`;
-- `add driver netkvm\netkvm.inf`, `add driver nocat\netkvm.inf (ForceUnsigned)`, `add driver viostor\viostor.inf`, у каждого строка `DismAddDriver …`;
-- `driver netkvm\netkvm.inf -> oemN.inf (Signed)`, `driver nocat\netkvm.inf -> oemN.inf (Unsigned)`, `driver viostor\viostor.inf -> oemN.inf (Signed)`;
+- `add driver netkvm-copy\netkvm.inf`, `add driver nocat\netkvm.inf (ForceUnsigned)`, `add driver viostor\viostor.inf`, у каждого строка `DismAddDriver …`;
+- после каждого добавления только его имя: `driver netkvm-copy\netkvm.inf -> oemN.inf (Signed)`, `driver nocat\netkvm.inf -> oemN.inf (Unsigned)`, `driver viostor\viostor.inf -> oemN.inf (Signed)`;
 - «Готово. Результат сохранён.», `Итог: None Published …`.
 
 Перепишите имена `oemN.inf`.
@@ -119,7 +119,7 @@ Stop-Transcript
 
 В `engine-*.log` есть строки:
 - `inspection revision …: … third-party drivers`;
-- `plan add driver netkvm\netkvm.inf from C:\IF\drv (ForceUnsigned allowed)`;
+- `plan add driver nocat\netkvm.inf from C:\IF\drv (ForceUnsigned allowed)`;
 - `plan warning: …`;
 - для второго запуска `plan remove driver … (boot-critical allowed)`.
 
@@ -134,3 +134,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| 3f7b4b71 | Hyper-V | 0–5 | Пройдены. Протокол 7; в образе фикстуры сторонних драйверов нет (чтение 2 с). Поиск: 5 INF, 4 можно добавить, arm64 без x64, nocat без подписи, оба netkvm — одно содержимое. Без ForceUnsigned — отказ «нет каталога». Превью: netkvm-copy с «То же содержимое: netkvm», nocat с ForceUnsigned и предупреждением, viostor. Запуск добавил три пакета (oem0 Signed, oem1 Unsigned, oem2 viostor Signed) и опубликовал результат. Найдено: строки журнала обоих netkvm показывали оба новых имени (сопоставление по имени INF); исправлено — список читается после каждого добавления. |

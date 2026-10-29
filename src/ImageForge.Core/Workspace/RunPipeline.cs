@@ -331,6 +331,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     // addition without one is logged, not failed.
     private async Task<bool> ChangeDriversAsync(DriverPlan plan, string mountDir, CancellationToken ct)
     {
+        // DISM may give a new package the oemN.inf name of one just removed, so a driver is the name with its store path.
+        static string Key(InstalledDriver d) => $"{d.PublishedName}|{d.OriginalFileName}";
+
         var before = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
         if (before.Problems.Count > 0 || before.Fingerprint != plan.Inventory)
         {
@@ -354,10 +357,19 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
             }
 
+            // The list is read after each addition, so every package gets exactly the names it brought.
+            var current = before;
             foreach (var addition in plan.Add)
             {
                 Log?.Invoke($"add driver {addition.InfPath}{(addition.ForceUnsigned ? " (ForceUnsigned)" : string.Empty)}");
                 await servicing.AddDriverAsync(mountDir, DriverFolder.Full(source, addition.InfPath), addition.ForceUnsigned, ct).ConfigureAwait(false);
+                var next = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
+                var known = current.Drivers.Select(Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var published = next.Drivers.Where(d => !known.Contains(Key(d))).Select(d => $"{d.PublishedName} ({d.Signature})").ToList();
+                Log?.Invoke(published.Count > 0
+                    ? $"driver {addition.InfPath} -> {string.Join(", ", published)}"
+                    : $"driver {addition.InfPath}: no new name in the image (DISM already holds this package)");
+                current = next;
             }
         }
 
@@ -365,19 +377,6 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         if (after.Problems.Count > 0)
         {
             throw new InvalidDataException($"The driver list cannot be read after the change: {string.Join("; ", after.Problems)}");
-        }
-
-        // DISM may give a new package the oemN.inf name of one just removed, so a driver is the name with its store path.
-        static string Key(InstalledDriver d) => $"{d.PublishedName}|{d.OriginalFileName}";
-        var known = before.Drivers.Select(Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var added = after.Drivers.Where(d => !known.Contains(Key(d))).ToList();
-        foreach (var addition in plan.Add)
-        {
-            var name = addition.InfPath[(addition.InfPath.LastIndexOf('\\') + 1)..];
-            var published = added.Where(d => string.Equals(d.InfName, name, StringComparison.OrdinalIgnoreCase)).Select(d => $"{d.PublishedName} ({d.Signature})").ToList();
-            Log?.Invoke(published.Count > 0
-                ? $"driver {addition.InfPath} -> {string.Join(", ", published)}"
-                : $"driver {addition.InfPath}: no new name in the image (DISM already holds this package)");
         }
 
         var removed = before.Drivers.Where(d => plan.Remove.Any(r => string.Equals(r.PublishedName, d.PublishedName, StringComparison.OrdinalIgnoreCase))).ToList();

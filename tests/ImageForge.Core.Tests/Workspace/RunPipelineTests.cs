@@ -433,9 +433,25 @@ public sealed class RunPipelineTests : IDisposable
         var result = await Pipeline(log).RunAsync(request, Ct);
 
         result.Status.ShouldBe(RunStatus.Published, result.Error);
-        _servicing.Calls.ShouldBe(["mount", "driver-list", "driver-remove oem0.inf", "driver-add netkvm.inf", "driver-list", "registry", "unmount commit", "export"]);
+        _servicing.Calls.ShouldBe(["mount", "driver-list", "driver-remove oem0.inf", "driver-add netkvm.inf", "driver-list", "driver-list", "registry", "unmount commit", "export"]);
         log.ShouldContain(@"driver net\netkvm.inf -> oem0.inf (Signed)");
         log.ShouldContain(l => l.StartsWith("remove driver oem0.inf", StringComparison.Ordinal) && l.EndsWith("(boot-critical)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Each_added_package_is_logged_with_only_the_name_it_brought()
+    {
+        var folder = DriverPackages();
+        _dir.WriteFile("drivers/nocat/netkvm.inf", Drivers.InfTests.Storage.Replace("CatalogFile = viostor.cat", string.Empty, StringComparison.Ordinal));
+        _dir.WriteFile("drivers/nocat/amd64/viostor.sys", "SYS");
+        var request = DriverRequest(folder, new AddDriverPackage(@"net\netkvm.inf"), new AddDriverPackage(@"nocat\netkvm.inf", ForceUnsigned: true));
+        var log = new List<string>();
+
+        (await Pipeline(log).RunAsync(request, Ct)).Status.ShouldBe(RunStatus.Published);
+
+        log.ShouldContain(@"driver net\netkvm.inf -> oem0.inf (Signed)");
+        log.ShouldContain(@"driver nocat\netkvm.inf -> oem1.inf (Unsigned)");
+        _servicing.Calls.ShouldContain("driver-add netkvm.inf force-unsigned");
     }
 
     [Fact]

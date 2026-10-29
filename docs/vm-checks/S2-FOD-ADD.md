@@ -1,6 +1,6 @@
 # Ручная проверка S2-FOD-ADD: добавление дополнительного компонента из папки FoD
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** без шага 3 (сборка 52943a58, Hyper-V, 29.10.2026).
 Проверяет добавление Capability (план, раздел 10) из локальной папки Features on Demand: папка `LanguagesAndOptionalFeatures` ISO «Languages and Optional Features» той же сборки, что и образ. ImageForge проверяет, что в папке есть пакеты `.cab` и `metadata\DesktopTargetCompDB_FOD_Neutral.xml.cab`. Затем добавляет только компонент, который образ показывает как `Not Present`, через DISM с `/Source` и `/LimitAccess`, без Windows Update. После добавления список читается снова и печатается всё, что DISM изменил сам. Подходит ли ISO к сборке образа, знает только DISM: шаг 3 это и показывает.
 Работа идёт с **копией** `install.wim` в `C:\IF\scratch`.
 
@@ -72,3 +72,4 @@ Stop-Transcript
 |---|---|---|---|
 | 5025ae83 | Hyper-V | 1 | На `D:` был установочный ISO, не FoD; дистрибутив без `metadata` отклонён верно. |
 | 5025ae83 | Hyper-V | 0–1 | ISO 26100.1 LOF: 4045 `.cab`, в `metadata` нет `FoDMetadata_Client.cab` (моё предположение было неверным), есть `DesktopTargetCompDB_FOD_Neutral.xml.cab` и compDB по языкам; проверка отклонила настоящую папку. Исправлено: требуется `DesktopTargetCompDB_FOD_Neutral.xml.cab`. |
+| 52943a58 | Hyper-V | 1, 2, 4 | Пройдены. ISO 24H2/25H2 (26100.1) подходит к образу 26H2 (`Image Version: 10.0.26300.9457`, DISM 10.0.26100.8972). Папка принята (4045 пакетов); OpenSSH.Client отклонён как уже установленный без вызова DISM; `OpenSSH.Server~~~~0.0.1.0: Not Present -> Installed`, других изменений DISM не сделал. Шаг 3 не проверен: в русском образе `Language.Speech~~~ru-RU` уже установлен. Уборка чистая. |

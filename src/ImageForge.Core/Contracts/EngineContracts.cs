@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 5;
+    public const int Version = 6;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -73,6 +73,12 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>Installed capabilities to remove, named as DISM lists them.</summary>
     public IReadOnlyList<string> RemoveCapabilities { get; init; } = [];
+
+    /// <summary>Capabilities listed as Not Present to add from <see cref="FodSource"/>.</summary>
+    public IReadOnlyList<string> AddCapabilities { get; init; } = [];
+
+    /// <summary>The LanguagesAndOptionalFeatures folder of the Features on Demand ISO; needed only for additions.</summary>
+    public string? FodSource { get; init; }
 }
 
 public enum EngineState

@@ -29,10 +29,13 @@ public interface IImageServicing
 
     Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct);
 
-    /// <summary>Adds the localized names of the installed capabilities; used by the inspection.</summary>
+    /// <summary>Adds the localized names of the installed and the not present capabilities; used by the inspection.</summary>
     Task<CapabilityInventory> ReadCapabilityNamesAsync(string mountDir, CapabilityInventory capabilities, CancellationToken ct);
 
     Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct);
+
+    /// <param name="source">A checked local Features on Demand folder; never Windows Update.</param>
+    Task AddCapabilityAsync(string mountDir, CapabilityIdentity capability, string source, CancellationToken ct);
 
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 

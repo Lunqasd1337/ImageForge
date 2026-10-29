@@ -17,6 +17,12 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 
     /// <summary>The source media holds the .NET Framework 3.5 payload in sources\sxs (checked by the inspection).</summary>
     public bool MediaHasNetFx3 { get; init; }
+
+    /// <summary>A Features on Demand folder that passed the check; null when none was given or it failed.</summary>
+    public string? FodSource { get; init; }
+
+    /// <summary>Why the given Features on Demand folder cannot be used; shown when an addition needs it.</summary>
+    public string? FodSourceProblem { get; init; }
 }
 
 public abstract record PlannedStep;
@@ -89,7 +95,7 @@ public sealed record ExecutionPlan(
     /// <summary>Feature changes, run after the Appx removals; null when there are none.</summary>
     public FeaturePlan? Features { get; init; }
 
-    /// <summary>Capabilities to remove, before the feature changes; null when there are none.</summary>
+    /// <summary>Capabilities to remove and add, before the feature changes; null when there are none.</summary>
     public CapabilityPlan? Capabilities { get; init; }
 }
 
@@ -100,8 +106,16 @@ public sealed record ExecutionPlan(
 /// <param name="Inventory">Fingerprint of the feature list the change was worked out from; the run checks it first.</param>
 public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory);
 
-/// <param name="Inventory">Fingerprint of the capability list the removals were checked against.</param>
-public sealed record CapabilityPlan(IReadOnlyList<CapabilityIdentity> Remove, string Inventory);
+/// <param name="Remove">Removed first, in this order.</param>
+/// <param name="Inventory">Fingerprint of the capability list the changes were checked against.</param>
+public sealed record CapabilityPlan(IReadOnlyList<CapabilityIdentity> Remove, string Inventory)
+{
+    /// <summary>Added after the removals, one DISM call each, from <see cref="Source"/>.</summary>
+    public IReadOnlyList<CapabilityIdentity> Add { get; init; } = [];
+
+    /// <summary>The Features on Demand folder; set only when something is added.</summary>
+    public string? Source { get; init; }
+}
 
 /// <param name="Warning">Shown before the removal is confirmed; null when none is known.</param>
 public sealed record AppxRemoval(PackageIdentity Package, string DisplayName, string? Warning);
@@ -130,6 +144,8 @@ public static class PlanningCodes
     public const string FeatureSourceMissing = "feature.source.missing";
     public const string CapabilityInventoryMissing = "capability.inventory.missing";
     public const string CapabilityNotInstalled = "capability.not-installed";
+    public const string CapabilityNotAvailable = "capability.not-available";
+    public const string CapabilitySourceMissing = "capability.source.missing";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

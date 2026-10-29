@@ -107,7 +107,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
             if (request.Plan.Capabilities is { } capabilities)
             {
-                await context.Step("capabilities", () => RemoveCapabilitiesAsync(capabilities, mountDir, ct), ct).ConfigureAwait(false);
+                await context.Step("capabilities", () => ChangeCapabilitiesAsync(capabilities, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             if (request.Plan.Features is { } features)
@@ -267,7 +267,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 : $"The provisioned package list cannot be read after removal: {string.Join("; ", after.Problems)}");
     }
 
-    private async Task<bool> RemoveCapabilitiesAsync(CapabilityPlan plan, string mountDir, CancellationToken ct)
+    // DISM adds what a capability needs (Language.Speech brings Language.Basic and TextToSpeech) without saying so in
+    // advance, so the whole list is compared afterwards and logged, as with features.
+    private async Task<bool> ChangeCapabilitiesAsync(CapabilityPlan plan, string mountDir, CancellationToken ct)
     {
         var before = await servicing.GetCapabilitiesAsync(mountDir, ct).ConfigureAwait(false);
         if (before.Problems.Count > 0 || before.Fingerprint != plan.Inventory)
@@ -283,13 +285,39 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             await servicing.RemoveCapabilityAsync(mountDir, capability, ct).ConfigureAwait(false);
         }
 
+        if (plan.Add.Count > 0)
+        {
+            var source = plan.Source ?? throw new InvalidDataException("The plan adds capabilities without a Features on Demand folder.");
+            if (ImageInspection.FodFolderProblem(source) is { } problem)
+            {
+                throw new InvalidDataException($"The Features on Demand folder {source} can no longer be used: {problem}");
+            }
+
+            foreach (var capability in plan.Add)
+            {
+                Log?.Invoke($"add capability {capability.FullName} from {source}");
+                await servicing.AddCapabilityAsync(mountDir, capability, source, ct).ConfigureAwait(false);
+            }
+        }
+
         var after = await servicing.GetCapabilitiesAsync(mountDir, ct).ConfigureAwait(false);
-        var left = plan.Remove.Where(r => after.Capabilities.Any(c => c.Identity == r && c.State == CapabilityState.Installed)).Select(r => r.FullName).ToList();
-        return after.Problems.Count == 0 && left.Count == 0
-            ? true
-            : throw new InvalidDataException(left.Count > 0
-                ? $"Still installed after removal: {string.Join(", ", left)}."
-                : $"The capability list cannot be read after removal: {string.Join("; ", after.Problems)}");
+        if (after.Problems.Count > 0)
+        {
+            throw new InvalidDataException($"The capability list cannot be read after the change: {string.Join("; ", after.Problems)}");
+        }
+
+        var was = before.Capabilities.ToDictionary(c => c.Identity.FullName, c => c.RawState, StringComparer.OrdinalIgnoreCase);
+        foreach (var capability in after.Capabilities.Where(c => was.GetValueOrDefault(c.Identity.FullName) != c.RawState))
+        {
+            var requested = plan.Remove.Contains(capability.Identity) || plan.Add.Contains(capability.Identity);
+            Log?.Invoke($"{(requested ? "capability" : "also changed by DISM")} {capability.Identity.FullName}: {was.GetValueOrDefault(capability.Identity.FullName) ?? "-"} -> {capability.RawState}");
+        }
+
+        var wrong = plan.Remove.Where(r => after.Capabilities.Any(c => c.Identity == r && c.State == CapabilityState.Installed))
+            .Concat(plan.Add.Where(a => !after.Capabilities.Any(c => c.Identity == a && c.State is CapabilityState.Installed or CapabilityState.Pending)))
+            .Select(c => c.FullName)
+            .ToList();
+        return wrong.Count == 0 ? true : throw new InvalidDataException($"Capabilities not in the planned state: {string.Join(", ", wrong)}.");
     }
 
     // The change was worked out from the features of the verified copy; this mount must list the same states. DISM

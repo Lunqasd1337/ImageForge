@@ -86,6 +86,28 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
     }
 
     /// <summary>The media sxs folder inside the verified base copy; the run takes the NetFx3 payload from here.</summary>
+    /// <summary>Why the folder cannot serve as the Features on Demand source, or null when it can (see <see cref="FeatureSources.FodProblem"/>).</summary>
+    public static string? FodFolderProblem(string folder)
+    {
+        ArgumentNullException.ThrowIfNull(folder);
+        try
+        {
+            if (!Path.IsPathFullyQualified(folder) || !Directory.Exists(folder))
+            {
+                return "папка не найдена (нужен полный путь)";
+            }
+
+            var metadata = Path.Combine(folder, FeatureSources.FodMetadataFolder);
+            return FeatureSources.FodProblem(
+                Directory.EnumerateFiles(folder).Select(Path.GetFileName).OfType<string>().ToList(),
+                Directory.Exists(metadata) ? [.. Directory.EnumerateFiles(metadata).Select(Path.GetFileName).OfType<string>()] : null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return ex.Message;
+        }
+    }
+
     public static string MediaSxs(IWorkspacePaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);

@@ -87,6 +87,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial string CapabilitiesStatus { get; set; } = "Дополнительные компоненты ещё не прочитаны.";
 
+    // Every capability that can be added; AvailableCapabilities shows those matching the filter, marks are kept here.
+    private readonly List<CapabilityItem> _available = [];
+
+    /// <summary>Not present capabilities matching <see cref="AvailableFilter"/>; a check marks one for adding.</summary>
+    public ObservableCollection<CapabilityItem> AvailableCapabilities { get; } = [];
+
+    [ObservableProperty]
+    public partial string AvailableFilter { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string AvailableStatus { get; set; } = string.Empty;
+
+    /// <summary>The LanguagesAndOptionalFeatures folder of the Features on Demand ISO; needed only for additions.</summary>
+    [ObservableProperty]
+    public partial string FodPath { get; set; } = string.Empty;
+
     public bool IsConnected => _engine is not null;
 
     public bool HasResult => PublishedPath.Length > 0;
@@ -109,6 +125,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnRegFileEncodingIndexChanged(int value) => DropPlan();
 
     partial void OnAnsiCodePageChanged(string value) => DropPlan();
+
+    partial void OnFodPathChanged(string value) => DropPlan();
+
+    partial void OnAvailableFilterChanged(string value) => ShowAvailable();
 
     [RelayCommand]
     private void ClearRegFile() => RegFilePath = string.Empty;
@@ -234,6 +254,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             EnableFeatures = [.. Features.Where(f => f.TurnsOn).Select(f => f.Feature.Name)],
             DisableFeatures = [.. Features.Where(f => f.TurnsOff).Select(f => f.Feature.Name)],
             RemoveCapabilities = [.. Capabilities.Where(c => c.IsSelected == true).Select(c => c.Capability.Name)],
+            AddCapabilities = [.. _available.Where(c => c.IsSelected == true).Select(c => c.Capability.Name)],
+            FodSource = FodPath.Trim().Trim('"') is { Length: > 0 } fod ? fod : null,
         };
         IsBusy = true;
         try
@@ -265,12 +287,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             [
                 .. plan.AppxRemovals.Select(DescribeRemoval),
                 .. plan.CapabilityRemovals.Select(DescribeCapabilityRemoval),
+                .. DescribeCapabilityAdditions(plan),
                 .. DescribeFeatureChanges(plan.FeatureChanges),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
             var apps = plan.AppxRemovals.Count > 0 ? $" Удаляемых приложений: {plan.AppxRemovals.Count}." : string.Empty;
-            var capabilities = plan.CapabilityRemovals.Count > 0 ? $" Удаляемых дополнительных компонентов: {plan.CapabilityRemovals.Count}." : string.Empty;
+            var capabilities = (plan.CapabilityRemovals.Count > 0 ? $" Удаляемых дополнительных компонентов: {plan.CapabilityRemovals.Count}." : string.Empty)
+                + (plan.CapabilityAdditions.Count > 0 ? $" Добавляемых: {plan.CapabilityAdditions.Count}." : string.Empty);
             var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
             Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
@@ -451,6 +475,45 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         return shown is null || shown == name ? $"Удалить дополнительный компонент {name}" : $"Удалить дополнительный компонент {shown} ({name})";
     }
 
+    private IEnumerable<string> DescribeCapabilityAdditions(PlanSummary plan)
+    {
+        foreach (var name in plan.CapabilityAdditions)
+        {
+            var shown = _available.FirstOrDefault(c => c.Capability.Name == name)?.Title;
+            yield return shown is null || shown == name ? $"Добавить дополнительный компонент {name}" : $"Добавить дополнительный компонент {shown} ({name})";
+        }
+
+        if (plan.CapabilityAdditions.Count > 0)
+        {
+            yield return $"  Источник: {plan.FodSource}";
+            yield return "  DISM может сам добавить нужные им компоненты (например, базовый языковой пакет); они будут перечислены в журнале запуска.";
+        }
+    }
+
+    private void ShowAvailable()
+    {
+        var filter = AvailableFilter.Trim();
+        AvailableCapabilities.Clear();
+        foreach (var item in _available.Where(c => filter.Length == 0
+            || c.Title.Contains(filter, StringComparison.CurrentCultureIgnoreCase)
+            || c.Details.Contains(filter, StringComparison.OrdinalIgnoreCase)))
+        {
+            AvailableCapabilities.Add(item);
+        }
+
+        ShowAvailableStatus();
+    }
+
+    private void ShowAvailableStatus() =>
+        AvailableStatus = _available.Count == 0 ? string.Empty
+            : $"Можно добавить: {_available.Count}, показано: {AvailableCapabilities.Count}, отмечено: {_available.Count(c => c.IsSelected == true)}.";
+
+    private void AvailableSelectionChanged()
+    {
+        DropPlan();
+        ShowAvailableStatus();
+    }
+
     private IEnumerable<string> DescribeFeatureChanges(FeatureChangeView? changes)
     {
         if (changes is null)
@@ -515,6 +578,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Capabilities.Add(new CapabilityItem(capability, DropPlan));
         }
 
+        _available.AddRange(inspection.AvailableCapabilities.Select(c => new CapabilityItem(c, AvailableSelectionChanged)));
+        ShowAvailable();
         CapabilitiesStatus = $"Установленных дополнительных компонентов: {inspection.Capabilities.Count}. Отметьте те, что нужно удалить.";
     }
 
@@ -523,6 +588,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Apps.Clear();
         Features.Clear();
         Capabilities.Clear();
+        _available.Clear();
+        ShowAvailable();
     }
 
     private void FoldersChanged()

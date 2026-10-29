@@ -124,6 +124,20 @@ internal sealed class FakeServicing : IImageServicing
         return Task.FromResult(capabilities);
     }
 
+    /// <summary>Capabilities DISM installs by itself whenever it adds one (language dependencies).</summary>
+    public List<string> AlsoAdded { get; } = [];
+
+    public Task AddCapabilityAsync(string mountDir, CapabilityIdentity capability, string source, CancellationToken ct)
+    {
+        Calls.Add($"capability-add {capability.Name} from {Path.GetFileName(source)}");
+        foreach (var name in AlsoAdded.Append(capability.FullName))
+        {
+            Capabilities[name] = "Installed";
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct)
     {
         Calls.Add("capability-remove " + capability.Name);

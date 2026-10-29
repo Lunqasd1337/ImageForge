@@ -725,6 +725,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         _available.Clear();
         ShowAvailable();
         ImageDrivers.Clear();
+
+        // Package choices and the boot-critical approval were made for the image that is gone.
+        foreach (var package in DriverPackages)
+        {
+            package.IsSelected = false;
+        }
+
+        AllowBootCritical = false;
     }
 
     private void FoldersChanged()

@@ -9,13 +9,16 @@ public sealed class AppxPlanningTests
 {
     private static readonly Guid PlanId = Guid.Parse("8d7c1b7e-0000-4000-8000-000000000003");
 
-    internal static ProvisionedAppxPackage Package(string fullName)
+    /// <summary>A package whose manifest was read: no dependencies unless given.</summary>
+    internal static ProvisionedAppxPackage Package(string fullName, bool framework = false, params string[] dependsOn)
     {
         var identity = PackageIdentity.Parse(fullName).ShouldNotBeNull();
-        return new ProvisionedAppxPackage(identity.Name, identity);
+        return new ProvisionedAppxPackage(identity.Name, identity) { Facts = new AppxPackageFacts(framework, dependsOn) };
     }
 
-    internal static AppxInventory Inventory(params string[] fullNames) => new([.. fullNames.Select(Package)], []);
+    internal static AppxInventory Inventory(params string[] fullNames) => Inventory(fullNames.Select(n => Package(n)).ToArray());
+
+    internal static AppxInventory Inventory(params ProvisionedAppxPackage[] packages) => new(packages, []) { InboxDependencies = [] };
 
     private const string Clipchamp = "Clipchamp.Clipchamp_4.3.10120.0_neutral_~_yxz26nhyzhsrt";
     private const string Weather = "Microsoft.BingWeather_4.54.63029.0_neutral_~_8wekyb3d8bbwe";
@@ -77,12 +80,98 @@ public sealed class AppxPlanningTests
         result.Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxNotProvisioned);
     }
 
-    [Fact]
-    public void A_framework_is_blocked_because_its_dependents_are_not_resolved_yet()
-    {
-        var result = Plan(Inventory(VcLibs), new RemoveProvisionedAppx("Microsoft.VCLibs.140.00_8wekyb3d8bbwe"));
+    private const string Gaming = "Microsoft.GamingApp_2026.514.51.0_neutral_~_8wekyb3d8bbwe";
+    private const string Tcui = "Microsoft.Xbox.TCUI_1.23.28005.0_neutral_~_8wekyb3d8bbwe";
+    private const string VcLibsFamily = "Microsoft.VCLibs.140.00_8wekyb3d8bbwe";
+    private const string TcuiFamily = "Microsoft.Xbox.TCUI_8wekyb3d8bbwe";
 
-        result.Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxFrameworkBlocked);
+    [Fact]
+    public void A_framework_nothing_depends_on_can_be_removed()
+    {
+        var plan = Plan(Inventory(Package(VcLibs, framework: true), Package(Clipchamp)), new RemoveProvisionedAppx(VcLibsFamily)).Plan.ShouldNotBeNull();
+
+        plan.AppxRemovals.ShouldHaveSingleItem().Package.FullName.ShouldBe(VcLibs);
+    }
+
+    [Fact]
+    public void A_package_a_remaining_app_needs_is_blocked_and_the_app_is_named()
+    {
+        var result = Plan(Inventory(Package(Tcui), Package(Gaming, false, TcuiFamily)), new RemoveProvisionedAppx(TcuiFamily));
+
+        var diagnostic = result.Diagnostics.ShouldHaveSingleItem();
+        diagnostic.Code.ShouldBe(PlanningCodes.AppxRequiredByKept);
+        diagnostic.Message.ShouldContain("Microsoft.GamingApp");
+    }
+
+    [Fact]
+    public void Dependents_are_removed_before_what_they_depend_on()
+    {
+        var plan = Plan(
+            Inventory(Package(Tcui), Package(Gaming, false, TcuiFamily)),
+            new RemoveProvisionedAppx(TcuiFamily),
+            new RemoveProvisionedAppx("Microsoft.GamingApp_8wekyb3d8bbwe")).Plan.ShouldNotBeNull();
+
+        plan.AppxRemovals.Select(r => r.Package.FullName).ShouldBe([Gaming, Tcui]);
+    }
+
+    [Fact]
+    public void A_dependency_cycle_is_blocked()
+    {
+        var result = Plan(
+            Inventory(Package(Tcui, false, "Microsoft.GamingApp_8wekyb3d8bbwe"), Package(Gaming, false, TcuiFamily)),
+            new RemoveProvisionedAppx(TcuiFamily),
+            new RemoveProvisionedAppx("Microsoft.GamingApp_8wekyb3d8bbwe"));
+
+        result.Diagnostics.ShouldContain(d => d.Code == PlanningCodes.AppxDependencyCycle);
+    }
+
+    [Fact]
+    public void A_package_whose_manifest_was_not_read_is_blocked()
+    {
+        var identity = PackageIdentity.Parse(Clipchamp)!;
+        var unknown = new ProvisionedAppxPackage(identity.Name, identity) { FactsProblem = "AppxManifest.xml is missing" };
+
+        var diagnostic = Plan(Inventory(unknown), new RemoveProvisionedAppx("Clipchamp.Clipchamp_yxz26nhyzhsrt")).Diagnostics.ShouldHaveSingleItem();
+
+        diagnostic.Code.ShouldBe(PlanningCodes.AppxDependenciesUnknown);
+        diagnostic.Message.ShouldContain("AppxManifest.xml is missing");
+    }
+
+    [Fact]
+    public void A_framework_is_blocked_while_another_package_has_unknown_dependencies()
+    {
+        var identity = PackageIdentity.Parse(Clipchamp)!;
+        var unknown = new ProvisionedAppxPackage(identity.Name, identity) { FactsProblem = "missing" };
+
+        Plan(Inventory(Package(VcLibs, framework: true), unknown), new RemoveProvisionedAppx(VcLibsFamily))
+            .Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxFrameworkBlocked);
+    }
+
+    [Fact]
+    public void A_package_an_inbox_app_needs_is_blocked()
+    {
+        var inventory = Inventory(Package(VcLibs, framework: true)) with { InboxDependencies = [VcLibsFamily] };
+
+        Plan(inventory, new RemoveProvisionedAppx(VcLibsFamily)).Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxRequiredByInbox);
+    }
+
+    [Fact]
+    public void A_bundle_with_unknown_own_dependencies_can_be_removed_but_holds_back_frameworks()
+    {
+        var identity = PackageIdentity.Parse(Clipchamp)!;
+        var bundleOnly = new ProvisionedAppxPackage(identity.Name, identity) { Facts = new AppxPackageFacts(false, null), FactsProblem = "missing" };
+
+        Plan(Inventory(bundleOnly, Package(Weather)), new RemoveProvisionedAppx("Clipchamp.Clipchamp_yxz26nhyzhsrt")).Diagnostics.ShouldBeEmpty();
+        Plan(Inventory(bundleOnly, Package(VcLibs, framework: true)), new RemoveProvisionedAppx(VcLibsFamily))
+            .Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxFrameworkBlocked);
+    }
+
+    [Fact]
+    public void A_framework_is_blocked_when_the_inbox_apps_were_not_read()
+    {
+        var inventory = Inventory(Package(VcLibs, framework: true)) with { InboxDependencies = null };
+
+        Plan(inventory, new RemoveProvisionedAppx(VcLibsFamily)).Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxFrameworkBlocked);
     }
 
     [Fact]

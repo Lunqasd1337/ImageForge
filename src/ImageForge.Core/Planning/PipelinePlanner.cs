@@ -31,16 +31,16 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
         var diagnostics = new List<PlanningDiagnostic>();
         var changes = new List<RegistryWritePreview>();
-        var removals = new List<AppxRemoval>();
+        var requested = new List<(AppxRemoval Removal, int Index)>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
             if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
                 foreach (var removal in PlanAppxRemoval(remove, request.Appx, i, diagnostics))
                 {
-                    if (!removals.Any(r => r.Package == removal.Package))
+                    if (!requested.Any(r => r.Removal.Package == removal.Package))
                     {
-                        removals.Add(removal);
+                        requested.Add((removal, i));
                     }
                 }
             }
@@ -50,6 +50,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             }
         }
 
+        var removals = diagnostics.Count == 0 && requested.Count > 0 ? OrderAppxRemovals(requested, request.Appx!, diagnostics) : [];
         if (diagnostics.Count > 0)
         {
             return new PlanResult(null, diagnostics);
@@ -112,15 +113,80 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             return [];
         }
 
-        if (matches.Any(m => AppxFrameworks.IsFramework(m.Identity)))
+        return matches.Select(m => new AppxRemoval(m.Identity, m.DisplayName, AppxWarnings.For(m.Identity)));
+    }
+
+    /// <summary>
+    /// Checks the removals against what the remaining packages and the inbox apps need (plan, section 8) and orders
+    /// them so that a package goes before the packages it depends on. Anything that cannot be resolved blocks.
+    /// </summary>
+    private static List<AppxRemoval> OrderAppxRemovals(
+        List<(AppxRemoval Removal, int Index)> removals, AppxInventory inventory, List<PlanningDiagnostic> diagnostics)
+    {
+        var removed = removals.Select(r => r.Removal.Package.FullName).ToHashSet(StringComparer.Ordinal);
+        var byName = inventory.Packages.ToDictionary(p => p.PackageName, StringComparer.Ordinal);
+        var kept = inventory.Packages.Where(p => !removed.Contains(p.PackageName)).ToList();
+        var blocked = false;
+        foreach (var (removal, index) in removals)
         {
-            diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.AppxFrameworkBlocked, index,
-                $"{remove.FamilyName} — библиотека, от которой зависят другие приложения; её удаление пока заблокировано."));
+            var package = byName[removal.Package.FullName];
+            var family = removal.Package.FamilyName;
+            if (package.Facts is not { } facts)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.AppxDependenciesUnknown, index, $"Зависимости {package.DisplayName} не прочитаны ({package.FactsProblem}); удаление заблокировано."));
+                blocked = true;
+                continue;
+            }
+
+            var dependents = kept.Where(k => k.Facts?.DependsOn?.Contains(family, StringComparer.OrdinalIgnoreCase) == true).Select(k => k.DisplayName).ToList();
+            if (dependents.Count > 0)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.AppxRequiredByKept, index, $"{package.DisplayName} нужна приложениям, которые остаются: {string.Join(", ", dependents)}. Отметьте и их или оставьте {package.DisplayName}."));
+                blocked = true;
+            }
+
+            if (inventory.InboxDependencies?.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.AppxRequiredByInbox, index, $"{package.DisplayName} нужна встроенным приложениям Windows; её нельзя удалить."));
+                blocked = true;
+            }
+
+            // A framework is what unread manifests would most likely depend on, so it waits until all are known.
+            if (facts.IsFramework && (inventory.InboxDependencies is null || kept.Any(k => k.Facts?.DependsOn is null)))
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.AppxFrameworkBlocked, index, $"{package.DisplayName} — библиотека, а зависимости части приложений не прочитаны; удаление заблокировано."));
+                blocked = true;
+            }
+        }
+
+        if (blocked)
+        {
             return [];
         }
 
-        return matches.Select(m => new AppxRemoval(m.Identity, m.DisplayName, AppxWarnings.For(m.Identity)));
+        // Kahn's algorithm in request order: a removal waits while a removal that depends on it is still pending.
+        var pending = removals.Select(r => r.Removal).ToList();
+        var ordered = new List<AppxRemoval>();
+        while (pending.Count > 0)
+        {
+            var next = pending.FirstOrDefault(candidate => !pending.Any(other =>
+                other != candidate && byName[other.Package.FullName].Facts!.DependsOn?.Contains(candidate.Package.FamilyName, StringComparer.OrdinalIgnoreCase) == true));
+            if (next is null)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.AppxDependencyCycle, -1, $"Приложения зависят друг от друга по кругу: {string.Join(", ", pending.Select(p => p.DisplayName))}; порядок удаления не определить."));
+                return [];
+            }
+
+            ordered.Add(next);
+            pending.Remove(next);
+        }
+
+        return ordered;
     }
 
     private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)

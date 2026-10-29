@@ -10,10 +10,16 @@ public sealed partial class AppxItem(AppxPackageView package, Action selectionCh
 
     public string Title => Package.DisplayName;
 
-    public string Details => $"{Package.Version} · {Package.Architecture} · {Package.FamilyName}";
+    public string Details => $"{Package.Version} · {Package.Architecture} · {Package.FamilyName}{(Package.IsFramework ? " · библиотека" : string.Empty)}";
 
-    /// <summary>The warning or the reason removal is blocked; empty when there is neither.</summary>
-    public string Note => Package.BlockedReason ?? (Package.Warning is { } warning ? "Внимание: " + warning : string.Empty);
+    /// <summary>Why removal is blocked, which apps need this one, and the warning; empty when there is nothing to say.</summary>
+    public string Note => Package.BlockedReason ?? string.Join(
+        Environment.NewLine,
+        new[]
+        {
+            Package.NeededBy.Count > 0 ? $"Нужна приложениям: {string.Join(", ", Package.NeededBy)}. Удалить можно только вместе с ними." : null,
+            Package.Warning is { } warning ? "Внимание: " + warning : null,
+        }.OfType<string>());
 
     public bool HasNote => Note.Length > 0;
 

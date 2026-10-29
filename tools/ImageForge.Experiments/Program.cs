@@ -301,17 +301,35 @@ static async Task<bool> AppxList(string mountDir)
         return false;
     }
 
+    inventory = AppxManifestStore.Attach(Path.GetFullPath(mountDir), inventory);
     foreach (var package in inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase))
     {
         var id = package.Identity;
-        Console.WriteLine($"  {id.Name,-50} {id.Version,-16} {id.Architecture,-8} {id.FamilyName}");
+        Console.WriteLine($"  {id.Name,-50} {id.Version,-17} {id.Architecture,-8} {id.FamilyName}");
+        if (package.Facts is { DependsOn: null })
+        {
+            Console.WriteLine("      bundle read, own dependencies unknown (removable unless others need it): " + package.FactsProblem);
+        }
+        else if (package.Facts is { } facts)
+        {
+            Console.WriteLine($"      {(facts.IsFramework ? "framework; " : string.Empty)}needs: {(facts.DependsOn!.Count == 0 ? "-" : string.Join(", ", facts.DependsOn))}");
+        }
+        else
+        {
+            Console.WriteLine("      DEPENDENCIES UNKNOWN: " + package.FactsProblem);
+        }
+
         if (AppxWarnings.For(id) is { } warning)
         {
             Console.WriteLine("      WARNING: " + warning);
         }
     }
 
-    Log($"Provisioned packages: {inventory.Packages.Count}");
+    var unknown = inventory.Packages.Count(p => p.Facts?.DependsOn is null);
+    Log(inventory.InboxDependencies is { } inbox
+        ? $"Inbox apps need: {(inbox.Count == 0 ? "-" : string.Join(", ", inbox))}"
+        : "Inbox apps: UNKNOWN (a SystemApps manifest could not be read)");
+    Log($"Provisioned packages: {inventory.Packages.Count}, dependencies unknown: {unknown}");
     return true;
 }
 

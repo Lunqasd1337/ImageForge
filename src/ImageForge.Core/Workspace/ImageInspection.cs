@@ -47,7 +47,9 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
             await servicing.MountReadOnlyAsync(Path.Combine(paths.Base, "sources", "install.wim"), index, mountDir, ct).ConfigureAwait(false);
             mounted = true;
             Log?.Invoke("appx-list...");
-            return await servicing.GetProvisionedAppxAsync(mountDir, ct).ConfigureAwait(false);
+            var inventory = await servicing.GetProvisionedAppxAsync(mountDir, ct).ConfigureAwait(false);
+            Log?.Invoke("appx-manifests...");
+            return AppxManifestStore.Attach(mountDir, inventory);
         }
         finally
         {

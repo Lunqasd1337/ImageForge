@@ -95,6 +95,10 @@ public static class PlanningCodes
     public const string AppxInventoryMissing = "appx.inventory.missing";
     public const string AppxNotProvisioned = "appx.not-provisioned";
     public const string AppxFrameworkBlocked = "appx.framework.blocked";
+    public const string AppxDependenciesUnknown = "appx.dependencies.unknown";
+    public const string AppxRequiredByKept = "appx.required-by-kept";
+    public const string AppxRequiredByInbox = "appx.required-by-inbox";
+    public const string AppxDependencyCycle = "appx.dependency-cycle";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

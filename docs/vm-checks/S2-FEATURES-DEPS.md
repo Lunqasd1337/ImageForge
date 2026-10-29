@@ -1,6 +1,6 @@
 # Ручная проверка S2-FEATURES-DEPS: родители компонентов и NetFx3 из sources\sxs
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** (сборки 0d51178e и 4d01f42b, Hyper-V, 29.10.2026).
 Проверяет вторую часть Features (план, раздел 10). ImageForge через DISM API (`DismGetFeatureParent`) читает родителей каждого компонента. При включении он добавляет выключенных родителей, при выключении — включённые зависимые компоненты. Список добавленного показывается до изменения, `/All` не используется. NetFx3 включается только из проверенной локальной папки (`sources\sxs` дистрибутива), без Windows Update. Неизвестно заранее, отдаёт ли DISM API родителей в смонтированном офлайн-образе: шаг 1 это и показывает.
 Работа идёт с **копией** `install.wim` в `C:\IF\scratch`.
 
@@ -84,3 +84,4 @@ Stop-Transcript
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
 | 0d51178e | Hyper-V | 1, 2, 4, 5 | Родители читаются: 136 из 136 за 8 с, цепочка IIS и зависимые печати верны; включение IIS-WebSockets с родителями — `IIS-WebSockets` остался `Enable Pending`; NetFx3: отказ без источника и с чужой папкой, из `sources\sxs` — `Enable Pending`. Найдено: DISM при включении `IIS-WebServerRole` сам включил ещё 9 вложенных компонентов (`IIS-HttpErrors`, `IIS-StaticContent`, `IIS-DefaultDocument`, `IIS-DirectoryBrowsing`, `IIS-RequestFiltering`, `IIS-HttpLogging`, `IIS-HttpCompressionStatic`, `IIS-ManagementConsole` и др.) в `Enable Pending`, и шаг 3 отказал на них, потому что `Pending` блокировал изменение. Исправлено: `Enable Pending` считается включённым, `Disable Pending` — выключенным; после изменения сравнивается весь список, и всё, что DISM изменил сверх запрошенного, печатается (`ALSO CHANGED by DISM`). |
+| 4d01f42b | Hyper-V | 2, 3, 6 | Пройдены: включение IIS-WebSockets с цепочкой, DISM сам включил ещё 13 компонентов IIS — все показаны строками `ALSO CHANGED by DISM`; повторное включение — `nothing to change`; выключение IIS-WebServerRole взяло все 17 включённых зависимых (в том числе добавленные DISM и `Enable Pending`), зависимые раньше родителей, итог `Disabled` / `Disable Pending`, `RESULT: OK`. Проверка пройдена целиком. |

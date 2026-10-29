@@ -49,7 +49,7 @@ Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
 & $X feature-info C:\IF\scratch\mount NetFx3
 & $X capability-info C:\IF\scratch\mount OpenSSH.Client~~~~0.0.1.0
 ```
-Ожидается: обе `RESULT: OK`, у NetFx3 есть `Display Name`, `Description`, `Restart Required` и `State`. Если `OpenSSH.Client~~~~0.0.1.0` нет в списке шага 2, возьмите любое имя оттуда.
+Ожидается: обе `RESULT: OK`, у NetFx3 есть `Display Name`, `Description`, `Restart Required` и `State`. Русские названия и описания читаются, без `?` вместо букв (`version` печатает `Dism.exe output read as code page 866`). Если `OpenSSH.Client~~~~0.0.1.0` нет в списке шага 2, возьмите любое имя оттуда.
 
 ### 4. Включить и выключить компонент
 
@@ -70,12 +70,14 @@ Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
 
 ### 6. Удаление одной Capability
 
-Возьмите установленную Capability, без которой образ обойдётся: `Print.Fax.Scan~~~~0.0.1.0`, если её нет в списке шага 2 со статусом `Installed`, то `MathRecognizer~~~~0.0.1.0`, иначе любую `Installed`, имя которой не начинается с `Language.` и не содержит `Ethernet` или `Wifi`.
+Берётся первая установленная из списка Capabilities, без которых образ обойдётся (на 26H2 `Print.Fax.Scan` уже нет):
 ```powershell
-$C = 'Print.Fax.Scan~~~~0.0.1.0'
+$I = Get-WindowsCapability -Path C:\IF\scratch\mount | Where-Object State -eq Installed | ForEach-Object Name
+$C = 'MathRecognizer~~~~0.0.1.0', 'Microsoft.Windows.WordPad~~~~0.0.1.0', 'App.StepsRecorder~~~~0.0.1.0', 'OpenSSH.Client~~~~0.0.1.0' | Where-Object { $_ -in $I } | Select-Object -First 1
+$C
 & $X capability-remove C:\IF\scratch\mount $C
 ```
-Ожидается: DISM с кодом 0, строка `Capability '...': Installed -> Not Present` (или `Uninstall Pending`), `RESULT: OK`.
+Ожидается: `$C` не пустая, DISM с кодом 0, строка `Capability '...': Installed -> Not Present` (или `Uninstall Pending`), `RESULT: OK`.
 
 ### 7. Отказы без вызова DISM на изменение
 
@@ -106,3 +108,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| b3923677 | Hyper-V | 1, 3–5, 7 | Пройдены: 136 компонентов, совпадает с DISM, неизвестных состояний нет; TelnetClient включается и выключается; NetFx3 без источника — `0x800f0912`, `RESULT: FAIL`; отказы на имена с `/All` и `/Quiet`. Не пройдено: шаг 2 не запускался; в шаге 6 `Print.Fax.Scan` нет в образе; русские названия в шаге 3 пришли как `?`: вывод DISM читался как UTF-8, а он в OEM-кодировке (866). Исправлено: вывод читается в OEM-кодировке системы, шаг 6 выбирает Capability из установленных. |

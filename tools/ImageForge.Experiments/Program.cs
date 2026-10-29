@@ -94,6 +94,7 @@ static bool PrintVersion()
     Log($"BuildId: {BuildId()}");
     Log($"OS: {Environment.OSVersion.VersionString}");
     Log($"Dism.exe: {DismCli.TrustedPath} {FileVersionInfo.GetVersionInfo(DismCli.TrustedPath).ProductVersion}");
+    Log($"Dism.exe output read as code page {DismCli.OutputEncoding.CodePage}");
     return true;
 }
 

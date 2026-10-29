@@ -733,10 +733,6 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         AllowBootCritical = false;
-
-        // Folder edits land here while the window is still pushing the TextBox value, and the
-        // checkbox missed the change in the VM; announce it again once that update is done.
-        _dispatcher.TryEnqueue(() => OnPropertyChanged(nameof(AllowBootCritical)));
     }
 
     private void FoldersChanged()

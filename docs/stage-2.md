@@ -63,3 +63,14 @@
 - Окно: «библиотека» в деталях, «Нужна приложениям: …».
 - Утилита: `appx-list` печатает зависимости и число непрочитанных.
 - Проверка в VM — [S2-APPX-DEPS](vm-checks/S2-APPX-DEPS.md).
+
+### Features и Capabilities: список, подробности, изменение по одному
+
+- Core (TDD), `ImageForge.Core.Features`:
+  - `DismFeatureListParser` — вывод `/English /Get-Features`: блоки `Feature Name` и `State`. Имя компонента — буквы, цифры, `.`, `-`, `_`. Состояния `Enabled`, `Disabled`, `Disabled with Payload Removed`, `Enable/Disable Pending`; любое другое сохраняется как есть и помечается неизвестным (такой компонент план менять не будет). Неверное имя, блок без состояния, повтор и вывод без строки об успехе — проблема.
+  - `CapabilityIdentity` — строгий разбор имени `Имя~Архитектура~Ресурс~Язык~Версия` (пустые части допустимы, `VBSCRIPT~~~~`). `DismCapabilityListParser` — `/Get-Capabilities`, состояния `Installed`, `Not Present`, `Install/Uninstall Pending`, остальные неизвестны.
+  - `DismInfoParser` — поля `/Get-FeatureInfo` и `/Get-CapabilityInfo` для показа.
+- `DismCliArguments`: включение компонента без `/All` (родители не добавляются незаметно) и всегда с `/LimitAccess` (без Windows Update); выключение без `/Remove`; удаление Capability. Имена проверяются повторно.
+- Утилита: `feature-list`, `feature-info`, `feature-enable`, `feature-disable`, `capability-list`, `capability-info`, `capability-remove` (изменение — только для того, что есть в свежем списке, затем список читается снова). Проверка в VM — [S2-FEATURES-INVENTORY](vm-checks/S2-FEATURES-INVENTORY.md).
+- Дальше: родители компонента и автоматически добавляемые действия, источники (sources\sxs для NetFx3, локальная папка FoD для добавления Capability), список в окне, изменения в плане и запуске.
+- Найдено в VM: Dism.exe пишет перенаправленный вывод в OEM-кодировке (866 на русской системе), а читался он как UTF-8, и русские названия превращались в `?`. Теперь вывод читается в OEM-кодировке системы; ASCII, по которому работают разборщики, в ней тот же.

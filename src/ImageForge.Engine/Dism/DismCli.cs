@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Windows.Win32;
 
 namespace ImageForge.Engine.Dism;
 
@@ -12,6 +13,13 @@ public static class DismCli
 {
     public static string TrustedPath => Path.Combine(Environment.SystemDirectory, "Dism.exe");
 
+    /// <summary>
+    /// Dism.exe writes redirected output in the OEM code page (866 on a Russian system, found in the VM): read as UTF-8,
+    /// localized descriptions turned into '?'. ASCII, which the parsers read, is the same in every OEM code page.
+    /// </summary>
+    public static Encoding OutputEncoding { get; } =
+        CodePagesEncodingProvider.Instance.GetEncoding((int)PInvoke.GetOEMCP()) ?? Encoding.UTF8;
+
     public static async Task<CliResult> RunAsync(IReadOnlyList<string> arguments, Action<string>? onLine, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -21,8 +29,8 @@ public static class DismCli
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
+            StandardOutputEncoding = OutputEncoding,
+            StandardErrorEncoding = OutputEncoding,
         };
         foreach (var argument in arguments)
         {

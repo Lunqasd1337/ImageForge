@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Execution;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
 using ImageForge.Core.Registry.RegFile;
@@ -38,6 +39,13 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["first-logon-export"] = ("first-logon-export <file.reg> <empty-out-dir>", a => Task.FromResult(FirstLogonExport(a[0], a[1]))),
     ["appx-list"] = ("appx-list <mount-dir>", a => AppxList(a[0])),
     ["appx-remove"] = ("appx-remove <mount-dir> <PackageName>", a => AppxRemove(a[0], a[1])),
+    ["feature-list"] = ("feature-list <mount-dir>", a => FeatureList(a[0])),
+    ["feature-info"] = ("feature-info <mount-dir> <FeatureName>", a => FeatureInfo(a[0], a[1])),
+    ["feature-enable"] = ("feature-enable <mount-dir> <FeatureName>", a => FeatureChange(a[0], a[1], enable: true)),
+    ["feature-disable"] = ("feature-disable <mount-dir> <FeatureName>", a => FeatureChange(a[0], a[1], enable: false)),
+    ["capability-list"] = ("capability-list <mount-dir>", a => CapabilityList(a[0])),
+    ["capability-info"] = ("capability-info <mount-dir> <CapabilityName>", a => CapabilityInfo(a[0], a[1])),
+    ["capability-remove"] = ("capability-remove <mount-dir> <CapabilityName>", a => CapabilityRemove(a[0], a[1])),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -86,6 +94,7 @@ static bool PrintVersion()
     Log($"BuildId: {BuildId()}");
     Log($"OS: {Environment.OSVersion.VersionString}");
     Log($"Dism.exe: {DismCli.TrustedPath} {FileVersionInfo.GetVersionInfo(DismCli.TrustedPath).ProductVersion}");
+    Log($"Dism.exe output read as code page {DismCli.OutputEncoding.CodePage}");
     return true;
 }
 
@@ -370,6 +379,199 @@ static async Task<bool> AppxRemove(string mountDir, string packageName)
     var gone = !after.Packages.Any(p => p.Identity == identity);
     Log($"Provisioned packages: {before.Packages.Count} -> {after.Packages.Count}; '{identity.Name}' {(gone ? "removed" : "STILL PRESENT")}");
     return gone && after.Packages.Count == before.Packages.Count - 1;
+}
+
+static async Task<(int ExitCode, string Output)> DismAsync(IReadOnlyList<string> arguments, bool echo)
+{
+    Log($"{DismCli.TrustedPath} {string.Join(' ', arguments)}");
+    var result = await DismCli.RunAsync(arguments, echo ? line => Console.WriteLine("  " + line) : null, CancellationToken.None).ConfigureAwait(false);
+    Log($"Dism.exe exit code {result.ExitCode}");
+    return (result.ExitCode, result.Output);
+}
+
+static async Task<FeatureInventory?> ReadFeaturesAsync(string mountDir)
+{
+    var (exitCode, output) = await DismAsync(DismCliArguments.GetFeatures(Path.GetFullPath(mountDir)), echo: false).ConfigureAwait(false);
+    if (exitCode != 0)
+    {
+        Console.WriteLine(output);
+        return null;
+    }
+
+    var inventory = DismFeatureListParser.Parse(output);
+    foreach (var problem in inventory.Problems)
+    {
+        Log("PROBLEM: " + problem);
+    }
+
+    return inventory.Problems.Count == 0 ? inventory : null;
+}
+
+static async Task<CapabilityInventory?> ReadCapabilitiesAsync(string mountDir)
+{
+    var (exitCode, output) = await DismAsync(DismCliArguments.GetCapabilities(Path.GetFullPath(mountDir)), echo: false).ConfigureAwait(false);
+    if (exitCode != 0)
+    {
+        Console.WriteLine(output);
+        return null;
+    }
+
+    var inventory = DismCapabilityListParser.Parse(output);
+    foreach (var problem in inventory.Problems)
+    {
+        Log("PROBLEM: " + problem);
+    }
+
+    return inventory.Problems.Count == 0 ? inventory : null;
+}
+
+static async Task<bool> FeatureList(string mountDir)
+{
+    if (await ReadFeaturesAsync(mountDir).ConfigureAwait(false) is not { } inventory)
+    {
+        return false;
+    }
+
+    foreach (var feature in inventory.Features.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"  {feature.Name,-60} {feature.State,-27} {feature.RawState}");
+    }
+
+    var counts = inventory.Features.GroupBy(f => f.State).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}");
+    Log($"Features: {inventory.Features.Count} ({string.Join(", ", counts)})");
+    foreach (var unknown in inventory.Features.Where(f => f.State == FeatureState.Unknown).Select(f => f.RawState).Distinct())
+    {
+        Log("UNKNOWN STATE: " + unknown);
+    }
+
+    return true;
+}
+
+static async Task<bool> CapabilityList(string mountDir)
+{
+    if (await ReadCapabilitiesAsync(mountDir).ConfigureAwait(false) is not { } inventory)
+    {
+        return false;
+    }
+
+    foreach (var capability in inventory.Capabilities.OrderBy(c => c.Identity.FullName, StringComparer.OrdinalIgnoreCase))
+    {
+        Console.WriteLine($"  {capability.Identity.FullName,-70} {capability.State,-11} {capability.RawState}");
+    }
+
+    var counts = inventory.Capabilities.GroupBy(c => c.State).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}");
+    Log($"Capabilities: {inventory.Capabilities.Count} ({string.Join(", ", counts)})");
+    foreach (var unknown in inventory.Capabilities.Where(c => c.State == CapabilityState.Unknown).Select(c => c.RawState).Distinct())
+    {
+        Log("UNKNOWN STATE: " + unknown);
+    }
+
+    return true;
+}
+
+static async Task<bool> PrintInfo(IReadOnlyList<string> arguments)
+{
+    var (exitCode, output) = await DismAsync(arguments, echo: false).ConfigureAwait(false);
+    if (exitCode != 0 || DismInfoParser.Parse(output) is not { } fields)
+    {
+        Console.WriteLine(output);
+        return false;
+    }
+
+    foreach (var (key, value) in fields)
+    {
+        Console.WriteLine($"  {key,-24} {value}");
+    }
+
+    return true;
+}
+
+static Task<bool> FeatureInfo(string mountDir, string name)
+{
+    if (!WindowsFeature.IsValidName(name))
+    {
+        Log($"'{name}' is not a valid feature name.");
+        return Task.FromResult(false);
+    }
+
+    return PrintInfo(DismCliArguments.GetFeatureInfo(Path.GetFullPath(mountDir), name));
+}
+
+static Task<bool> CapabilityInfo(string mountDir, string name)
+{
+    if (CapabilityIdentity.Parse(name) is not { } identity)
+    {
+        Log($"'{name}' is not a valid capability name.");
+        return Task.FromResult(false);
+    }
+
+    return PrintInfo(DismCliArguments.GetCapabilityInfo(Path.GetFullPath(mountDir), identity));
+}
+
+// Enables (without /All, never from Windows Update) or disables one feature, then lists again to confirm the new state.
+static async Task<bool> FeatureChange(string mountDir, string name, bool enable)
+{
+    if (!WindowsFeature.IsValidName(name))
+    {
+        Log($"'{name}' is not a valid feature name.");
+        return false;
+    }
+
+    if (await ReadFeaturesAsync(mountDir).ConfigureAwait(false) is not { } before)
+    {
+        return false;
+    }
+
+    if (before.Features.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } feature)
+    {
+        Log($"Feature '{name}' is not in this image; nothing was changed.");
+        return false;
+    }
+
+    Log($"Feature '{feature.Name}' is {feature.RawState}.");
+    var mount = Path.GetFullPath(mountDir);
+    var (exitCode, _) = await DismAsync(
+        enable ? DismCliArguments.EnableFeature(mount, feature.Name) : DismCliArguments.DisableFeature(mount, feature.Name), echo: true).ConfigureAwait(false);
+    if (exitCode != 0 || await ReadFeaturesAsync(mountDir).ConfigureAwait(false) is not { } after)
+    {
+        return false;
+    }
+
+    var now = after.Features.Single(f => f.Name == feature.Name);
+    var expected = enable ? FeatureState.Enabled : FeatureState.Disabled;
+    Log($"Feature '{now.Name}': {feature.RawState} -> {now.RawState}");
+    return now.State == expected || now.State == FeatureState.Pending;
+}
+
+// Removes one capability named exactly as capability-list printed it, then lists again to confirm it is gone.
+static async Task<bool> CapabilityRemove(string mountDir, string name)
+{
+    if (CapabilityIdentity.Parse(name) is not { } identity)
+    {
+        Log($"'{name}' is not a valid capability name.");
+        return false;
+    }
+
+    if (await ReadCapabilitiesAsync(mountDir).ConfigureAwait(false) is not { } before)
+    {
+        return false;
+    }
+
+    if (before.Capabilities.FirstOrDefault(c => c.Identity == identity) is not { State: CapabilityState.Installed })
+    {
+        Log($"Capability '{name}' is not installed in this image; nothing was removed.");
+        return false;
+    }
+
+    var (exitCode, _) = await DismAsync(DismCliArguments.RemoveCapability(Path.GetFullPath(mountDir), identity), echo: true).ConfigureAwait(false);
+    if (exitCode != 0 || await ReadCapabilitiesAsync(mountDir).ConfigureAwait(false) is not { } after)
+    {
+        return false;
+    }
+
+    var now = after.Capabilities.FirstOrDefault(c => c.Identity == identity);
+    Log($"Capability '{name}': Installed -> {now?.RawState ?? "(not listed)"}");
+    return now is null or { State: CapabilityState.NotPresent or CapabilityState.Pending };
 }
 
 // Experiment 4: the whole M1 run with an optional failure before publication.

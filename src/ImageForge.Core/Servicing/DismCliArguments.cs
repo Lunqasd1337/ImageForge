@@ -1,5 +1,6 @@
 using System.Globalization;
 using ImageForge.Core.Appx;
+using ImageForge.Core.Features;
 using ImageForge.Core.Safety;
 
 namespace ImageForge.Core.Servicing;
@@ -56,6 +57,41 @@ public static class DismCliArguments
             "/Remove-ProvisionedAppxPackage",
             "/PackageName:" + package.FullName,
         ];
+    }
+
+    public static IReadOnlyList<string> GetFeatures(string mountDirectory) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-Features"];
+
+    public static IReadOnlyList<string> GetFeatureInfo(string mountDirectory, string featureName) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-FeatureInfo", "/FeatureName:" + FeatureName(featureName)];
+
+    /// <summary>Without /All (parents are not added silently) and with /LimitAccess: never a download from Windows Update.</summary>
+    public static IReadOnlyList<string> EnableFeature(string mountDirectory, string featureName) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Enable-Feature", "/FeatureName:" + FeatureName(featureName), "/LimitAccess"];
+
+    /// <summary>Without /Remove: the payload stays in the image unless the user explicitly asks otherwise (plan, section 10).</summary>
+    public static IReadOnlyList<string> DisableFeature(string mountDirectory, string featureName) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Disable-Feature", "/FeatureName:" + FeatureName(featureName)];
+
+    public static IReadOnlyList<string> GetCapabilities(string mountDirectory) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-Capabilities"];
+
+    public static IReadOnlyList<string> GetCapabilityInfo(string mountDirectory, CapabilityIdentity capability) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-CapabilityInfo", "/CapabilityName:" + CapabilityName(capability)];
+
+    public static IReadOnlyList<string> RemoveCapability(string mountDirectory, CapabilityIdentity capability) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Remove-Capability", "/CapabilityName:" + CapabilityName(capability)];
+
+    private static string FeatureName(string name) =>
+        WindowsFeature.IsValidName(name) ? name : throw new ArgumentException($"'{name}' is not a valid feature name.", nameof(name));
+
+    // Re-validated here so that a hand-built identity cannot smuggle extra arguments into the name.
+    private static string CapabilityName(CapabilityIdentity capability)
+    {
+        ArgumentNullException.ThrowIfNull(capability);
+        return CapabilityIdentity.Parse(capability.FullName) == capability
+            ? capability.FullName
+            : throw new ArgumentException($"'{capability.FullName}' is not a valid capability name.", nameof(capability));
     }
 
     private static string LocalPath(string path, string parameterName) =>

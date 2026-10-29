@@ -105,6 +105,15 @@ public sealed record DeleteRegistryKey(string KeyPath) : ImageChange;
 /// <param name="FamilyName">Name_PublisherId, as <see cref="Appx.PackageIdentity.FamilyName"/>.</param>
 public sealed record RemoveProvisionedAppx(string FamilyName) : ImageChange;
 
+/// <summary>Turns the feature on, with every parent that is off; the planner works out and shows the parents.</summary>
+public sealed record EnableWindowsFeature(string Name) : ImageChange;
+
+/// <summary>Turns the feature off, with every feature that depends on it; the payload stays in the image.</summary>
+public sealed record DisableWindowsFeature(string Name) : ImageChange;
+
+/// <summary>Removes an installed capability (Feature on Demand), named as DISM lists it.</summary>
+public sealed record RemoveCapability(string Name) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

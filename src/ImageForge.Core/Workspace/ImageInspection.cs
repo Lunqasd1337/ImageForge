@@ -1,6 +1,11 @@
 using ImageForge.Core.Appx;
+using ImageForge.Core.Features;
 
 namespace ImageForge.Core.Workspace;
+
+/// <summary>What the inspection read from the image; plans are checked against it.</summary>
+/// <param name="MediaHasNetFx3">sources\sxs of the media copy holds the .NET Framework 3.5 package (see <see cref="FeatureSources"/>).</param>
+public sealed record ImageInventory(AppxInventory Appx, FeatureInventory Features, CapabilityInventory Capabilities, bool MediaHasNetFx3);
 
 /// <summary>
 /// Reads the inventories of the source image: the source is copied and verified into base\ (reused by the next run),
@@ -17,7 +22,7 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
         return Directory.Exists(paths.InspectMount);
     }
 
-    public async Task<AppxInventory> InspectAsync(string sourceDir, Guid workspaceId, int index, CancellationToken ct)
+    public async Task<ImageInventory> InspectAsync(string sourceDir, Guid workspaceId, int index, CancellationToken ct)
     {
         Directory.CreateDirectory(paths.Root);
         var store = new StateStore<WorkspaceState>(paths.StateFile);
@@ -49,7 +54,23 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
             Log?.Invoke("appx-list...");
             var inventory = await servicing.GetProvisionedAppxAsync(mountDir, ct).ConfigureAwait(false);
             Log?.Invoke("appx-manifests...");
-            return AppxManifestStore.Attach(mountDir, inventory);
+            inventory = AppxManifestStore.Attach(mountDir, inventory);
+            Log?.Invoke("feature-list...");
+            var features = await servicing.GetFeaturesAsync(mountDir, ct).ConfigureAwait(false);
+            if (features.Problems.Count == 0)
+            {
+                Log?.Invoke("feature-parents...");
+                features = await servicing.ReadFeatureDetailsAsync(mountDir, features, ct).ConfigureAwait(false);
+            }
+
+            Log?.Invoke("capability-list...");
+            var capabilities = await servicing.GetCapabilitiesAsync(mountDir, ct).ConfigureAwait(false);
+            if (capabilities.Problems.Count == 0)
+            {
+                capabilities = await servicing.ReadCapabilityNamesAsync(mountDir, capabilities, ct).ConfigureAwait(false);
+            }
+
+            return new ImageInventory(inventory, features, capabilities, MediaHasNetFx3(paths));
         }
         finally
         {
@@ -62,5 +83,18 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
 
             RunPipeline.TryDeleteEmptyDirectory(mountDir);
         }
+    }
+
+    /// <summary>The media sxs folder inside the verified base copy; the run takes the NetFx3 payload from here.</summary>
+    public static string MediaSxs(IWorkspacePaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return Path.Combine([paths.Base, .. FeatureSources.MediaSxsSegments]);
+    }
+
+    internal static bool MediaHasNetFx3(IWorkspacePaths paths)
+    {
+        var sxs = MediaSxs(paths);
+        return Directory.Exists(sxs) && FeatureSources.NetFx3Problem(Directory.EnumerateFiles(sxs).Select(Path.GetFileName).OfType<string>()) is null;
     }
 }

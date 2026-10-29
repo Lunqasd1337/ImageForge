@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
 using ImageForge.Core.Workspace;
@@ -54,6 +55,81 @@ internal sealed class FakeServicing : IImageServicing
 
     /// <summary>Package full name → the dependency families its manifest lists; written into every read-only mount.</summary>
     public Dictionary<string, string[]> Dependencies { get; } = [];
+
+    /// <summary>Feature name → state as DISM prints it, the same for every mounted image.</summary>
+    public Dictionary<string, string> Features { get; } = [];
+
+    /// <summary>Direct parents the DISM API reports; a feature missing here fails to read.</summary>
+    public Dictionary<string, IReadOnlyList<string>> FeatureParents { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Features DISM turns on by itself whenever it enables anything (its default sub-features).</summary>
+    public List<string> AlsoEnabled { get; } = [];
+
+    /// <summary>Enable and disable succeed but leave every feature as it was.</summary>
+    public bool IgnoreFeatureChanges { get; set; }
+
+    /// <summary>Capability name → state as DISM prints it.</summary>
+    public Dictionary<string, string> Capabilities { get; } = [];
+
+    public Task<FeatureInventory> GetFeaturesAsync(string mountDir, CancellationToken ct)
+    {
+        Calls.Add("feature-list");
+        return Task.FromResult(new FeatureInventory(
+            [.. Features.Select(f => DismFeatureListParser.Parse($"Feature Name : {f.Key}\nState : {f.Value}\n\nThe operation completed successfully.").Features.Single())], []));
+    }
+
+    public Task<FeatureInventory> ReadFeatureDetailsAsync(string mountDir, FeatureInventory features, CancellationToken ct)
+    {
+        Calls.Add("feature-parents");
+        var complete = features.Features.All(f => FeatureParents.ContainsKey(f.Name));
+        return Task.FromResult(features with
+        {
+            Parents = complete ? FeatureParents.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase) : null,
+            DisplayNames = features.Features.ToDictionary(f => f.Name, f => "Компонент " + f.Name),
+        });
+    }
+
+    public Task EnableFeaturesAsync(string mountDir, IReadOnlyList<string> features, string? source, CancellationToken ct)
+    {
+        Calls.Add($"enable {string.Join(",", features)}{(source is null ? string.Empty : " from " + Path.GetFileName(source))}");
+        foreach (var feature in IgnoreFeatureChanges ? [] : features.Concat(AlsoEnabled))
+        {
+            Features[feature] = "Enable Pending";
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct)
+    {
+        Calls.Add($"disable {string.Join(",", features)}");
+        foreach (var feature in IgnoreFeatureChanges ? [] : features)
+        {
+            Features[feature] = "Disabled";
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct)
+    {
+        Calls.Add("capability-list");
+        return Task.FromResult(new CapabilityInventory(
+            [.. Capabilities.Select(c => new Capability(CapabilityIdentity.Parse(c.Key)!, c.Value == "Installed" ? CapabilityState.Installed : CapabilityState.NotPresent, c.Value))], []));
+    }
+
+    public Task<CapabilityInventory> ReadCapabilityNamesAsync(string mountDir, CapabilityInventory capabilities, CancellationToken ct)
+    {
+        Calls.Add("capability-names");
+        return Task.FromResult(capabilities);
+    }
+
+    public Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct)
+    {
+        Calls.Add("capability-remove " + capability.Name);
+        Capabilities[capability.FullName] = "Not Present";
+        return Task.CompletedTask;
+    }
 
     public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {

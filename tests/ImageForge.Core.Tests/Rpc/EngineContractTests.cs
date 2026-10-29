@@ -35,9 +35,9 @@ public sealed class EngineContractTests : IAsyncDisposable
         _dir.Dispose();
     }
 
-    private IEngineService Connect(Func<string, string, string, IReadOnlyList<LocationProblem>> validate)
+    private IEngineService Connect(Func<string, string, string, IReadOnlyList<LocationProblem>> validate, FakeServicing? fake = null)
     {
-        var servicing = new FakeServicing();
+        var servicing = fake ?? new FakeServicing();
         servicing.Provisioned.Add("Microsoft.BingWeather_4.54.63029.0_neutral_~_8wekyb3d8bbwe");
         var session = new WorkspaceSession(_ => servicing, Guid.NewGuid, dir => new TestPaths(dir), validate);
         var (serverStream, clientStream) = FullDuplexStream.CreatePair();
@@ -108,6 +108,28 @@ public sealed class EngineContractTests : IAsyncDisposable
         good.Preview.ShouldContain(p => p.FirstLogon && p.NewValue != null && p.NewValue.Text == "y");
         bad.PlanId.ShouldBe(Guid.Empty);
         bad.FileDiagnostics.Single().Line.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Features_capabilities_and_their_plan_cross_the_channel()
+    {
+        var servicing = new FakeServicing();
+        servicing.Features["NetFx3"] = "Disabled with Payload Removed";
+        servicing.FeatureParents["NetFx3"] = [];
+        servicing.Capabilities["MathRecognizer~~~~0.0.1.0"] = "Installed";
+        _dir.WriteFile("media/sources/sxs/microsoft-windows-netfx3-ondemand-package~31bf3856ad364e35~amd64~~.cab", "CAB");
+        var engine = Connect((_, _, _) => [], servicing);
+        await engine.OpenWorkspaceAsync(new OpenWorkspaceRequest(_dir.Combine("media"), _dir.Combine("work"), _dir.Combine("out", "Win11")), Ct);
+
+        var inspection = await engine.InspectAsync(null, Ct);
+        var plan = await engine.PlanAsync(new PlanOptions(null) { EnableFeatures = ["NetFx3"], RemoveCapabilities = ["MathRecognizer~~~~0.0.1.0"] }, Ct);
+
+        var netfx = inspection.Features.ShouldHaveSingleItem();
+        netfx.DisplayName.ShouldBe("Компонент NetFx3");
+        netfx.FromMedia.ShouldBeTrue();
+        inspection.Capabilities.ShouldHaveSingleItem().State.ShouldBe("Installed");
+        plan.FeatureChanges.ShouldNotBeNull().UsesMediaSxs.ShouldBeTrue();
+        plan.CapabilityRemovals.ShouldBe(["MathRecognizer~~~~0.0.1.0"]);
     }
 
     [Fact]

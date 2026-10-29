@@ -30,11 +30,37 @@ public sealed class ImageInspectionTests : IDisposable
     {
         var inventory = await Inspection().InspectAsync(_source, Guid.NewGuid(), 1, Ct);
 
-        inventory.Packages.ShouldHaveSingleItem().PackageName.ShouldBe(Clipchamp);
-        _servicing.Calls.ShouldBe(["mount read-only", "appx-list", "unmount discard"]);
+        inventory.Appx.Packages.ShouldHaveSingleItem().PackageName.ShouldBe(Clipchamp);
+        _servicing.Calls.ShouldBe(["mount read-only", "appx-list", "feature-list", "feature-parents", "capability-list", "capability-names", "unmount discard"]);
         File.ReadAllText(Path.Combine(_paths.Base, "sources", "install.wim")).ShouldBe("WIM");
         Directory.Exists(_paths.InspectMount).ShouldBeFalse();
         new StateStore<WorkspaceState>(_paths.StateFile).Load().State!.SourceFingerprint.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Reads_features_with_parents_capabilities_and_the_netfx3_source()
+    {
+        _servicing.Features["NetFx3"] = "Disabled with Payload Removed";
+        _servicing.Features["WCF-HTTP-Activation"] = "Disabled";
+        _servicing.FeatureParents["NetFx3"] = [];
+        _servicing.FeatureParents["WCF-HTTP-Activation"] = ["NetFx3"];
+        _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"] = "Installed";
+        _dir.WriteFile("media/sources/sxs/microsoft-windows-netfx3-ondemand-package~31bf3856ad364e35~amd64~~.cab", "CAB");
+
+        var inventory = await Inspection().InspectAsync(_source, Guid.NewGuid(), 1, Ct);
+
+        inventory.Features.Features.Select(f => f.Name).ShouldBe(["NetFx3", "WCF-HTTP-Activation"]);
+        inventory.Features.Parents!["WCF-HTTP-Activation"].ShouldBe(["NetFx3"]);
+        inventory.Capabilities.Capabilities.ShouldHaveSingleItem().State.ShouldBe(ImageForge.Core.Features.CapabilityState.Installed);
+        inventory.MediaHasNetFx3.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Media_without_the_netfx3_package_is_reported()
+    {
+        _dir.WriteFile("media/sources/sxs/readme.txt", "none");
+
+        (await Inspection().InspectAsync(_source, Guid.NewGuid(), 1, Ct)).MediaHasNetFx3.ShouldBeFalse();
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Contracts;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
 using ImageForge.Core.Registry.RegFile;
@@ -33,7 +34,31 @@ public sealed record PlanSummary(
 
     /// <summary>Provisioned packages the plan removes, in order.</summary>
     public IReadOnlyList<AppxPackageView> AppxRemovals { get; init; } = [];
+
+    /// <summary>Capabilities the plan removes, by name.</summary>
+    public IReadOnlyList<string> CapabilityRemovals { get; init; } = [];
+
+    /// <summary>Feature changes, with what is added by parents and dependents; null when there are none.</summary>
+    public FeatureChangeView? FeatureChanges { get; init; }
 }
+
+/// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
+/// <param name="Enable">Turned on in this order (parents first).</param>
+/// <param name="Added">Not chosen by the user: parents and dependents the change needs.</param>
+/// <param name="UsesMediaSxs">.NET Framework 3.5 comes from sources\sxs of the media.</param>
+public sealed record FeatureChangeView(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs);
+
+/// <param name="State">As DISM prints it.</param>
+/// <param name="IsOn">On now or after first boot; the window shows it as the checkbox state.</param>
+/// <param name="BlockedReason">Why the state cannot be changed; null when it can.</param>
+public sealed record FeatureView(string Name, string DisplayName, string State, bool IsOn, string? BlockedReason)
+{
+    /// <summary>Its files are not in the image; turning it on takes them from sources\sxs of the media.</summary>
+    public bool FromMedia { get; init; }
+}
+
+/// <param name="Name">As DISM lists it, for example MathRecognizer~~~~0.0.1.0.</param>
+public sealed record CapabilityView(string Name, string DisplayName, string State);
 
 /// <param name="Warning">Shown before removal; null when none is known.</param>
 /// <param name="BlockedReason">Why the package cannot be removed at all; null when it can (alone or with its dependents).</param>
@@ -47,7 +72,18 @@ public sealed record AppxPackageView(
 }
 
 /// <param name="Problems">Why the inventory could not be read; the packages are empty then.</param>
-public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<AppxPackageView> Packages, IReadOnlyList<string> Problems);
+public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<AppxPackageView> Packages, IReadOnlyList<string> Problems)
+{
+    public IReadOnlyList<FeatureView> Features { get; init; } = [];
+
+    /// <summary>Why the feature list cannot be used; the features are empty then.</summary>
+    public IReadOnlyList<string> FeatureProblems { get; init; } = [];
+
+    /// <summary>Installed capabilities only; the others need a Features on Demand source to add.</summary>
+    public IReadOnlyList<CapabilityView> Capabilities { get; init; } = [];
+
+    public IReadOnlyList<string> CapabilityProblems { get; init; } = [];
+}
 
 public sealed record RunOutcome(
     Guid OperationId,
@@ -74,7 +110,7 @@ public sealed class WorkspaceSession(
     private readonly Lock _gate = new();
     private (OpenWorkspaceRequest Request, IWorkspacePaths Paths, Guid WorkspaceId, Guid ImageId)? _open;
     private ExecutionPlan? _plan;
-    private AppxInventory? _inventory;
+    private ImageInventory? _inventory;
     private long _revision;
     private bool _busy;
     private Task _current = Task.CompletedTask;
@@ -124,7 +160,7 @@ public sealed class WorkspaceSession(
         }
 
         var log = Report(progress);
-        AppxInventory? inventory = null;
+        ImageInventory? inventory = null;
         string? error = null;
         try
         {
@@ -148,23 +184,46 @@ public sealed class WorkspaceSession(
         lock (_gate)
         {
             _busy = false;
-            if (inventory is null || inventory.Problems.Count > 0)
+            if (inventory is null)
             {
-                return new InspectionSummary(_revision, [], inventory?.Problems ?? [error!]);
+                return new InspectionSummary(_revision, [], [error!]);
             }
 
             _inventory = inventory;
+            var appx = inventory.Appx;
+            var features = inventory.Features;
+            var capabilities = inventory.Capabilities;
+            var featureProblems = features.Problems.Count > 0 ? features.Problems
+                : features.Parents is null ? ["Зависимости части компонентов не прочитаны (подробности в журнале); изменять компоненты нельзя."]
+                : [];
             return new InspectionSummary(
                 _revision,
-                [.. inventory.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase).Select(p => View(p, inventory))],
-                []);
+                appx.Problems.Count > 0 ? [] : [.. appx.Packages.OrderBy(p => p.Identity.Name, StringComparer.OrdinalIgnoreCase).Select(p => View(p, appx))],
+                appx.Problems)
+            {
+                Features = featureProblems.Count > 0 ? [] : [.. features.Features
+                    .Select(f => View(f, features, inventory.MediaHasNetFx3))
+                    .OrderBy(f => f.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+                FeatureProblems = featureProblems,
+                Capabilities = capabilities.Problems.Count > 0 ? [] : [.. capabilities.Capabilities
+                    .Where(c => c.State == CapabilityState.Installed)
+                    .Select(c => new CapabilityView(c.Identity.FullName, capabilities.DisplayNames.GetValueOrDefault(c.Identity.FullName, c.Identity.Name), c.RawState))
+                    .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+                CapabilityProblems = capabilities.Problems,
+            };
         }
     }
 
     public PlanSummary Plan(PlanOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        List<ImageChange> removals = [.. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f))];
+        List<ImageChange> removals =
+        [
+            .. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f)),
+            .. options.RemoveCapabilities.Select(c => new RemoveCapability(c)),
+            .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f)),
+            .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
+        ];
         return options.RegFile is { } file ? PlanRegFile(file, removals)
             : removals.Count > 0 ? Plan(removals, null)
             : PlanM1();
@@ -206,12 +265,20 @@ public sealed class WorkspaceSession(
             ThrowIfBusy();
             var open = _open ?? throw new InvalidOperationException("No workspace is open.");
             var result = new PipelinePlanner(new RegistryPathMapper(), newId)
-                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, changes) { Appx = _inventory });
+                .Plan(new PlanRequest(open.WorkspaceId, _revision, open.ImageId, changes)
+                {
+                    Appx = _inventory?.Appx,
+                    Features = _inventory?.Features,
+                    Capabilities = _inventory?.Capabilities,
+                    MediaHasNetFx3 = _inventory?.MediaHasNetFx3 == true,
+                });
             _plan = result.Plan;
             return result.Plan is { } plan
                 ? new PlanSummary(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint, plan.Preview, [], null, fileEncoding)
                 {
-                    AppxRemovals = [.. plan.AppxRemovals.Select(r => View(_inventory!.Packages.Single(p => p.Identity == r.Package), _inventory))],
+                    AppxRemovals = [.. plan.AppxRemovals.Select(r => View(_inventory!.Appx.Packages.Single(p => p.Identity == r.Package), _inventory.Appx))],
+                    CapabilityRemovals = [.. plan.Capabilities?.Remove.Select(c => c.FullName) ?? []],
+                    FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
@@ -361,6 +428,19 @@ public sealed class WorkspaceSession(
             NeededBy = [.. inventory.Packages
                 .Where(p => p.Facts?.DependsOn?.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
                 .Select(p => p.DisplayName)],
+        };
+    }
+
+    private static FeatureView View(WindowsFeature feature, FeatureInventory inventory, bool mediaHasNetFx3)
+    {
+        var fromMedia = feature.State == FeatureState.DisabledWithPayloadRemoved;
+        var blocked = feature.State == FeatureState.Unknown ? $"Состояние «{feature.RawState}» не поддерживается; изменить нельзя."
+            : fromMedia && !(mediaHasNetFx3 && string.Equals(feature.Name, FeatureSources.NetFx3, StringComparison.OrdinalIgnoreCase))
+                ? "Файлов компонента нет в образе, а подходящего источника нет; включить нельзя."
+            : null;
+        return new FeatureView(feature.Name, inventory.DisplayNames.GetValueOrDefault(feature.Name, feature.Name), feature.RawState, feature.IsOn, blocked)
+        {
+            FromMedia = fromMedia && blocked is null,
         };
     }
 

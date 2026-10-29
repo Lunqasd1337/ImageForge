@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Execution;
+using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 
 namespace ImageForge.Core.Workspace;
@@ -15,6 +16,23 @@ public interface IImageServicing
     Task<AppxInventory> GetProvisionedAppxAsync(string mountDir, CancellationToken ct);
 
     Task RemoveProvisionedAppxAsync(string mountDir, PackageIdentity package, CancellationToken ct);
+
+    Task<FeatureInventory> GetFeaturesAsync(string mountDir, CancellationToken ct);
+
+    /// <summary>Adds the parents and localized names of every listed feature (DISM API); used by the inspection.</summary>
+    Task<FeatureInventory> ReadFeatureDetailsAsync(string mountDir, FeatureInventory features, CancellationToken ct);
+
+    /// <param name="source">A local folder for features without payload, or null; never Windows Update.</param>
+    Task EnableFeaturesAsync(string mountDir, IReadOnlyList<string> features, string? source, CancellationToken ct);
+
+    Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct);
+
+    Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct);
+
+    /// <summary>Adds the localized names of the installed capabilities; used by the inspection.</summary>
+    Task<CapabilityInventory> ReadCapabilityNamesAsync(string mountDir, CapabilityInventory capabilities, CancellationToken ct);
+
+    Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct);
 
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 

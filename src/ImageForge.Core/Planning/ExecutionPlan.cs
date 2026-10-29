@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
 
 namespace ImageForge.Core.Planning;
@@ -8,6 +9,14 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 {
     /// <summary>The provisioned packages read from the image; Appx removals are planned only against it.</summary>
     public AppxInventory? Appx { get; init; }
+
+    /// <summary>The features read from the image, with their parents; feature changes are planned only against it.</summary>
+    public FeatureInventory? Features { get; init; }
+
+    public CapabilityInventory? Capabilities { get; init; }
+
+    /// <summary>The source media holds the .NET Framework 3.5 payload in sources\sxs (checked by the inspection).</summary>
+    public bool MediaHasNetFx3 { get; init; }
 }
 
 public abstract record PlannedStep;
@@ -76,7 +85,23 @@ public sealed record ExecutionPlan(
 
     /// <summary>Fingerprint of the inventory the removals were resolved from; the run checks it before removing.</summary>
     public string? AppxInventory { get; init; }
+
+    /// <summary>Feature changes, run after the Appx removals; null when there are none.</summary>
+    public FeaturePlan? Features { get; init; }
+
+    /// <summary>Capabilities to remove, before the feature changes; null when there are none.</summary>
+    public CapabilityPlan? Capabilities { get; init; }
 }
+
+/// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
+/// <param name="Enable">Passed to DISM in this order, parents first.</param>
+/// <param name="Added">Features in either list that the user did not ask for, to show in the preview.</param>
+/// <param name="UsesMediaSxs">An enabled feature has no payload in the image; it comes from sources\sxs of the media copy.</param>
+/// <param name="Inventory">Fingerprint of the feature list the change was worked out from; the run checks it first.</param>
+public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory);
+
+/// <param name="Inventory">Fingerprint of the capability list the removals were checked against.</param>
+public sealed record CapabilityPlan(IReadOnlyList<CapabilityIdentity> Remove, string Inventory);
 
 /// <param name="Warning">Shown before the removal is confirmed; null when none is known.</param>
 public sealed record AppxRemoval(PackageIdentity Package, string DisplayName, string? Warning);
@@ -99,6 +124,12 @@ public static class PlanningCodes
     public const string AppxRequiredByKept = "appx.required-by-kept";
     public const string AppxRequiredByInbox = "appx.required-by-inbox";
     public const string AppxDependencyCycle = "appx.dependency-cycle";
+    public const string FeatureInventoryMissing = "feature.inventory.missing";
+    public const string FeatureBlocked = "feature.blocked";
+    public const string FeatureConflict = "feature.conflict";
+    public const string FeatureSourceMissing = "feature.source.missing";
+    public const string CapabilityInventoryMissing = "capability.inventory.missing";
+    public const string CapabilityNotInstalled = "capability.not-installed";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

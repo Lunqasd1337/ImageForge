@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
 
 namespace ImageForge.Core.Planning;
@@ -32,9 +33,19 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var diagnostics = new List<PlanningDiagnostic>();
         var changes = new List<RegistryWritePreview>();
         var requested = new List<(AppxRemoval Removal, int Index)>();
+        var featureChanges = new List<(ImageChange Change, int Index)>();
+        var capabilityRemovals = new List<(RemoveCapability Change, int Index)>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
-            if (request.Changes[i] is RemoveProvisionedAppx remove)
+            if (request.Changes[i] is EnableWindowsFeature or DisableWindowsFeature)
+            {
+                featureChanges.Add((request.Changes[i], i));
+            }
+            else if (request.Changes[i] is RemoveCapability capability)
+            {
+                capabilityRemovals.Add((capability, i));
+            }
+            else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
                 foreach (var removal in PlanAppxRemoval(remove, request.Appx, i, diagnostics))
                 {
@@ -51,6 +62,13 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         }
 
         var removals = diagnostics.Count == 0 && requested.Count > 0 ? OrderAppxRemovals(requested, request.Appx!, diagnostics) : [];
+        var features = featureChanges.Count > 0 ? PlanFeatures(featureChanges, request, diagnostics) : null;
+        var capabilities = capabilityRemovals.Count > 0 ? PlanCapabilities(capabilityRemovals, request.Capabilities, diagnostics) : null;
+        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
+        }
+
         if (diagnostics.Count > 0)
         {
             return new PlanResult(null, diagnostics);
@@ -82,6 +100,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         {
             AppxRemovals = removals,
             AppxInventory = removals.Count > 0 ? request.Appx!.Fingerprint : null,
+            Features = features,
+            Capabilities = capabilities,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -189,6 +209,110 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         return ordered;
     }
 
+    /// <summary>
+    /// Works out each requested feature change with its parents or dependents (plan, section 10) and merges them into
+    /// one disable and one enable, in order. A feature that would be both turned on and off blocks.
+    /// </summary>
+    private static FeaturePlan? PlanFeatures(List<(ImageChange Change, int Index)> changes, PlanRequest request, List<PlanningDiagnostic> diagnostics)
+    {
+        if (request.Features is not { Problems.Count: 0, Parents: { } parents } inventory)
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.FeatureInventoryMissing, changes[0].Index, "Список компонентов образа или их зависимости не прочитаны; изменить компоненты нельзя."));
+            return null;
+        }
+
+        var enable = new List<string>();
+        var disable = new List<string>();
+        var asked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var needsSource = new List<(string Feature, int Index)>();
+        var blocked = false;
+        foreach (var (change, index) in changes)
+        {
+            var (name, turnOn) = change switch
+            {
+                EnableWindowsFeature e => (e.Name, true),
+                DisableWindowsFeature d => (d.Name, false),
+                _ => throw new ArgumentOutOfRangeException(nameof(changes)),
+            };
+            var result = turnOn ? FeatureDependencies.Enable(inventory, parents, name) : FeatureDependencies.Disable(inventory, parents, name);
+            foreach (var problem in result.Problems)
+            {
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.FeatureBlocked, index, $"Компонент {name}: {problem}"));
+                blocked = true;
+            }
+
+            asked.Add(name);
+            var target = turnOn ? enable : disable;
+            target.AddRange(result.Features.Where(f => !target.Contains(f, StringComparer.OrdinalIgnoreCase)));
+            needsSource.AddRange(result.NeedsSource.Select(f => (f, index)));
+        }
+
+        // A feature to enable needs all its ancestors on, including those already on that a disable turns off.
+        var needed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<string>(enable);
+        while (queue.TryDequeue(out var feature))
+        {
+            if (needed.Add(feature))
+            {
+                foreach (var parent in parents.GetValueOrDefault(feature, []))
+                {
+                    queue.Enqueue(parent);
+                }
+            }
+        }
+
+        foreach (var conflict in disable.Where(needed.Contains))
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.FeatureConflict, -1, $"Компонент {conflict} нужно и включить, и выключить; уберите одно из изменений."));
+            blocked = true;
+        }
+
+        foreach (var (feature, index) in needsSource.DistinctBy(n => n.Feature, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(feature, FeatureSources.NetFx3, StringComparison.OrdinalIgnoreCase) || !request.MediaHasNetFx3)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.FeatureSourceMissing, index,
+                    $"Файлов компонента {feature} нет в образе, а в sources\\sxs дистрибутива нет подходящего пакета; загрузка из Windows Update не используется."));
+                blocked = true;
+            }
+        }
+
+        return blocked || (enable.Count == 0 && disable.Count == 0)
+            ? null
+            : new FeaturePlan(disable, enable, [.. disable.Concat(enable).Where(f => !asked.Contains(f))], needsSource.Count > 0, inventory.Fingerprint);
+    }
+
+    private static CapabilityPlan? PlanCapabilities(
+        List<(RemoveCapability Change, int Index)> removals, CapabilityInventory? inventory, List<PlanningDiagnostic> diagnostics)
+    {
+        if (inventory is not { Problems.Count: 0 })
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.CapabilityInventoryMissing, removals[0].Index, "Список дополнительных компонентов (Capabilities) не прочитан; удалить их нельзя."));
+            return null;
+        }
+
+        var remove = new List<CapabilityIdentity>();
+        foreach (var (change, index) in removals)
+        {
+            var capability = inventory.Capabilities.FirstOrDefault(c => string.Equals(c.Identity.FullName, change.Name, StringComparison.OrdinalIgnoreCase));
+            if (capability is not { State: CapabilityState.Installed })
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.CapabilityNotInstalled, index, $"Дополнительный компонент {change.Name} не установлен в образе."));
+            }
+            else if (!remove.Contains(capability.Identity))
+            {
+                remove.Add(capability.Identity);
+            }
+        }
+
+        return remove.Count > 0 && diagnostics.Count == 0 ? new CapabilityPlan(remove, inventory.Fingerprint) : null;
+    }
+
     private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)
     {
         var (keyPath, kind, valueName, value) = change switch
@@ -264,7 +388,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 3;
+    private const int FormatVersion = 4;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -311,6 +435,29 @@ public static class PlanFingerprint
             foreach (var removal in plan.AppxRemovals)
             {
                 Append(builder, "remove-appx", removal.Package.FullName);
+            }
+        }
+
+        if (plan.Capabilities is { } capabilities)
+        {
+            Append(builder, "capability-inventory", capabilities.Inventory);
+            foreach (var capability in capabilities.Remove)
+            {
+                Append(builder, "remove-capability", capability.FullName);
+            }
+        }
+
+        if (plan.Features is { } features)
+        {
+            Append(builder, "feature-inventory", features.Inventory, features.UsesMediaSxs);
+            foreach (var feature in features.Disable)
+            {
+                Append(builder, "disable-feature", feature);
+            }
+
+            foreach (var feature in features.Enable)
+            {
+                Append(builder, "enable-feature", feature);
             }
         }
 

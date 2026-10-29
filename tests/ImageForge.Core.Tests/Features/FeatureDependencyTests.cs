@@ -5,7 +5,7 @@ namespace ImageForge.Core.Tests.Features;
 public sealed class FeatureDependencyTests
 {
     // IIS-WebSockets -> IIS-ApplicationDevelopment -> IIS-WebServer -> IIS-WebServerRole; NetFx4 is already on.
-    private static readonly FeatureInventory Inventory = new(
+    internal static readonly FeatureInventory Inventory = new(
     [
         new("IIS-WebServerRole", FeatureState.Disabled, "Disabled"),
         new("IIS-WebServer", FeatureState.Disabled, "Disabled"),
@@ -22,7 +22,7 @@ public sealed class FeatureDependencyTests
         new("Printing-Foundation-LPDPrintService", FeatureState.Disabled, "Disabled"),
     ], []);
 
-    private static readonly Dictionary<string, IReadOnlyList<string>> Parents = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly Dictionary<string, IReadOnlyList<string>> Parents = new(StringComparer.OrdinalIgnoreCase)
     {
         ["IIS-WebServerRole"] = [],
         ["IIS-WebServer"] = ["IIS-WebServerRole"],

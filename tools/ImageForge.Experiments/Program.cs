@@ -47,6 +47,7 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["capability-list"] = ("capability-list <mount-dir>", a => CapabilityList(a[0])),
     ["capability-info"] = ("capability-info <mount-dir> <CapabilityName>", a => CapabilityInfo(a[0], a[1])),
     ["capability-remove"] = ("capability-remove <mount-dir> <CapabilityName>", a => CapabilityRemove(a[0], a[1])),
+    ["capability-add"] = ("capability-add <mount-dir> <CapabilityName> <fod-dir>", a => CapabilityAdd(a[0], a[1], a[2])),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -672,6 +673,56 @@ static async Task<bool> CapabilityRemove(string mountDir, string name)
     var now = after.Capabilities.FirstOrDefault(c => c.Identity == identity);
     Log($"Capability '{name}': Installed -> {now?.RawState ?? "(not listed)"}");
     return now is null or { State: CapabilityState.NotPresent or CapabilityState.Pending };
+}
+
+static async Task<bool> CapabilityAdd(string mountDir, string name, string source)
+{
+    if (CapabilityIdentity.Parse(name) is not { } identity)
+    {
+        Log($"'{name}' is not a valid capability name.");
+        return false;
+    }
+
+    var fod = Path.GetFullPath(source);
+    var metadata = Path.Combine(fod, FeatureSources.FodMetadataFolder);
+    var problem = Directory.Exists(fod)
+        ? FeatureSources.FodProblem(
+            Directory.EnumerateFiles(fod).Select(Path.GetFileName).OfType<string>().ToList(),
+            Directory.Exists(metadata) ? [.. Directory.EnumerateFiles(metadata).Select(Path.GetFileName).OfType<string>()] : null)
+        : "The folder does not exist.";
+    if (problem is not null)
+    {
+        Log($"REFUSED: {fod}: {problem}");
+        return false;
+    }
+
+    Log($"Source {fod}: {Directory.EnumerateFiles(fod, "*.cab").Count()} package files, metadata present");
+    if (await ReadCapabilitiesAsync(mountDir).ConfigureAwait(false) is not { } before)
+    {
+        return false;
+    }
+
+    if (before.Capabilities.FirstOrDefault(c => c.Identity == identity) is not { State: CapabilityState.NotPresent })
+    {
+        Log($"REFUSED: capability '{name}' is not listed as Not Present in this image; nothing was added.");
+        return false;
+    }
+
+    var (exitCode, _) = await DismAsync(DismCliArguments.AddCapability(Path.GetFullPath(mountDir), identity, fod), echo: true).ConfigureAwait(false);
+    if (exitCode != 0 || await ReadCapabilitiesAsync(mountDir).ConfigureAwait(false) is not { } after)
+    {
+        return false;
+    }
+
+    var now = after.Capabilities.FirstOrDefault(c => c.Identity == identity);
+    Log($"Capability '{name}': Not Present -> {now?.RawState ?? "(not listed)"}");
+    var was = before.Capabilities.ToDictionary(c => c.Identity.FullName, c => c.RawState, StringComparer.OrdinalIgnoreCase);
+    foreach (var other in after.Capabilities.Where(c => c.Identity != identity && was.GetValueOrDefault(c.Identity.FullName) != c.RawState))
+    {
+        Log($"ALSO CHANGED by DISM: {other.Identity.FullName}: {was.GetValueOrDefault(other.Identity.FullName) ?? "(not listed)"} -> {other.RawState}");
+    }
+
+    return now is { State: CapabilityState.Installed or CapabilityState.Pending };
 }
 
 // Experiment 4: the whole M1 run with an optional failure before publication.

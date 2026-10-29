@@ -167,6 +167,9 @@ public sealed class FeatureInventoryTests
             .ShouldBe(["/English", @"/Image:C:\IF\m", "/Get-CapabilityInfo", "/CapabilityName:OpenSSH.Client~~~~0.0.1.0"]);
         DismCliArguments.RemoveCapability(@"C:\IF\m", id)
             .ShouldBe(["/English", @"/Image:C:\IF\m", "/Remove-Capability", "/CapabilityName:OpenSSH.Client~~~~0.0.1.0"]);
+        DismCliArguments.AddCapability(@"C:\IF\m", id, @"D:\LanguagesAndOptionalFeatures")
+            .ShouldBe(["/English", @"/Image:C:\IF\m", "/Add-Capability", "/CapabilityName:OpenSSH.Client~~~~0.0.1.0",
+                @"/Source:D:\LanguagesAndOptionalFeatures", "/LimitAccess"]);
     }
 
     [Theory]
@@ -193,6 +196,16 @@ public sealed class FeatureInventoryTests
         var forged = new CapabilityIdentity("OpenSSH.Client~~~~0.0.1.0 /Quiet", "OpenSSH.Client", "", "", "", "0.0.1.0");
 
         Should.Throw<ArgumentException>(() => DismCliArguments.RemoveCapability(@"C:\IF\m", forged));
+        Should.Throw<ArgumentException>(() => DismCliArguments.AddCapability(@"C:\IF\m", forged, @"D:\fod"));
+    }
+
+    [Fact]
+    public void A_capability_is_added_only_from_a_local_folder()
+    {
+        var id = CapabilityIdentity.Parse("OpenSSH.Server~~~~0.0.1.0")!;
+
+        Should.Throw<ArgumentException>(() => DismCliArguments.AddCapability(@"C:\IF\m", id, @"\\server\fod"));
+        Should.Throw<ArgumentException>(() => DismCliArguments.AddCapability(@"C:\IF\m", id, "fod"));
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 # Ручная проверка S2-FEATURES-UI: компоненты Windows и дополнительные компоненты из окна
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** (сборка cce1f5a4, Hyper-V, 29.10.2026).
 Проверяет третью часть Features (план, раздел 10). «Прочитать образ» теперь читает не только приложения, но и компоненты Windows с родителями и установленные дополнительные компоненты (Capabilities). В окне отметка у компонента означает «включён после запуска». План добавляет нужных родителей при включении и зависимые компоненты при выключении и показывает их в превью. NetFx3 включается только из `sources\sxs` дистрибутива. Запуск сверяет списки образа с теми, по которым строилось превью, применяет изменения, читает список снова и пишет в журнал всё, что DISM изменил сверх запрошенного. Результат сверяется `feature-list` и `capability-list` по опубликованному образу.
 
 ## Сборка
@@ -94,3 +94,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| cce1f5a4 | Hyper-V | 1–5 | Пройдены. Превью: удаление MathRecognizer; выключение Printing-Foundation-InternetPrinting-Client (добавлен планом, идёт первым) и Printing-Foundation-Features; включение NetFx3 и цепочки IIS-WebServerRole → IIS-WebServer → IIS-ApplicationDevelopment (добавлены планом) → IIS-WebSockets; строки про sources\sxs и вложенные компоненты. Запуск: capabilities, затем features; DISM вызван одной командой с `/Source:…\base\sources\sxs /LimitAccess`; DISM сам включил ещё 13 компонентов IIS, все записаны строками `also changed by DISM`. Сверка опубликованного образа: IIS-WebServerRole `Enabled`, IIS-WebSockets и NetFx3 `Enable Pending`, оба Printing-Foundation `Disabled`, MathRecognizer `Not Present`; `mounts` → `none`, `host-check` → `RESULT: OK`. Журнал движка (шаг 6) не присылали. |

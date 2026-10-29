@@ -55,12 +55,15 @@ Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
 ```powershell
 New-Item -ItemType Directory C:\IF\scratch\nocat -Force | Out-Null
 Copy-Item $D\NetKVM\w11\amd64\* C:\IF\scratch\nocat -Force
-Remove-Item C:\IF\scratch\nocat\*.cat
+Get-ChildItem C:\IF\scratch\nocat | ForEach-Object { $_.IsReadOnly = $false }
+Remove-Item C:\IF\scratch\nocat\*.cat -Force
 & $X driver-add C:\IF\scratch\mount C:\IF\scratch\nocat\netkvm.inf signed-only
 (Get-Content C:\IF\scratch\nocat\netkvm.inf) | Where-Object { $_ -notmatch '^\s*CatalogFile' } | Set-Content C:\IF\scratch\nocat\netkvm.inf
 & $X driver-add C:\IF\scratch\mount C:\IF\scratch\nocat\netkvm.inf signed-only
 & $X driver-remove C:\IF\scratch\mount oem999.inf normal
 ```
+Файлы, скопированные с ISO, остаются только для чтения, поэтому с них снимается атрибут (иначе `.cat` не удаляется и пакет проходит проверку целым).
+
 Ожидается:
 - первая `driver-add`: `PROBLEM: Нет файла каталога netkvm.cat`, `REFUSED: the package has problems`;
 - вторая: `catalog (none: UNSIGNED)`, `REFUSED: the package has no catalog`;
@@ -113,3 +116,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| 3536560a | Hyper-V | 0–3 | ISO virtio-win 100.103.104.30200 (22.07.2026). Шаг 1 пройден: netkvm (`Net`) и viostor (`SCSIAdapter`) разобраны верно, без проблем. Весь ISO без ошибок; 102 `PROBLEM` только у папок x86/i386/ARM64 (нет x64), найдены группы одинаковых INF (w10/2k16/2k19/2k22 и т. п.). Шаг 2: сторонних 0, inbox 717, из них BootCritical 264; чтение со inbox 19 с, без — 2–4 с. Шаг 3 не проверен: скопированные с ISO файлы только для чтения, `.cat` не удалился, и пакет целиком добавился как `oem0.inf` (`Signed`). Повторное добавление того же пакета DISM принимает молча, нового имени не появляется. Отказ для `oem999.inf` верный. Команды шага 3 исправлены (снятие атрибута). |

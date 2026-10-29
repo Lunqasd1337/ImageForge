@@ -1,14 +1,14 @@
 # Ручная проверка S2-FOD-ADD: добавление дополнительного компонента из папки FoD
 
 Статус: **Ожидает проверки**.
-Проверяет добавление Capability (план, раздел 10) из локальной папки Features on Demand: папка `LanguagesAndOptionalFeatures` ISO «Languages and Optional Features» той же сборки, что и образ. ImageForge проверяет, что в папке есть пакеты `.cab` и `metadata\FoDMetadata_Client.cab`. Затем добавляет только компонент, который образ показывает как `Not Present`, через DISM с `/Source` и `/LimitAccess`, без Windows Update. После добавления список читается снова и печатается всё, что DISM изменил сам. Подходит ли ISO к сборке образа, знает только DISM: шаг 3 это и показывает.
+Проверяет добавление Capability (план, раздел 10) из локальной папки Features on Demand: папка `LanguagesAndOptionalFeatures` ISO «Languages and Optional Features» той же сборки, что и образ. ImageForge проверяет, что в папке есть пакеты `.cab` и `metadata\DesktopTargetCompDB_FOD_Neutral.xml.cab`. Затем добавляет только компонент, который образ показывает как `Not Present`, через DISM с `/Source` и `/LimitAccess`, без Windows Update. После добавления список читается снова и печатается всё, что DISM изменил сам. Подходит ли ISO к сборке образа, знает только DISM: шаг 3 это и показывает.
 Работа идёт с **копией** `install.wim` в `C:\IF\scratch`.
 
 ## Сборка и требования
 
 - `ImageForge.Experiments-<sha>` из CI этого PR, положить в `C:\IF`.
 - Сервисная VM ([Hyper-V](HYPERV.md)) на чекпоинте `fixture-ready`, свободно не меньше 15 ГБ. `& $X mounts` → `none`.
-- ISO «Languages and Optional Features» для Windows 11 26H2 (той же сборки, что фикстура) подключён в VM (в Hyper-V: DVD-дисковод → файл образа). Ниже предполагается буква `D:`; если другая, поправьте `$F`.
+- ISO «Languages and Optional Features» для Windows 11 24H2/25H2 (`26100.1.240331-1435.ge_release_amd64fre_CLIENT_LOF_PACKAGES_OEM.iso`, ссылка на [странице Microsoft](https://learn.microsoft.com/ru-ru/azure/virtual-desktop/windows-11-language-packs); отдельного ISO для 26H2 нет, 26H2 стоит на базе 26100) подключён в VM (в Hyper-V: DVD-дисковод → файл образа). Ниже предполагается буква `D:`; если другая, поправьте `$F`.
 
 PowerShell от администратора, по одной строке:
 ```powershell
@@ -24,7 +24,7 @@ Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
 & $X mount C:\IF\scratch\install.wim 1 C:\IF\scratch\mount
 & $X capability-list C:\IF\scratch\mount
 ```
-Ожидается: в `metadata` есть `FoDMetadata_Client.cab`, файлов `.cab` в корне сотни, есть пакеты OpenSSH для amd64. Монтирование `RESULT: OK`. В `capability-list` строка `OpenSSH.Server~~~~0.0.1.0 NotPresent` — перепишите итоговую строку `Capabilities: N (…)`.
+Ожидается: в `metadata` есть `DesktopTargetCompDB_FOD_Neutral.xml.cab`, файлов `.cab` в корне несколько тысяч (в ISO 26100.1 — 4045), есть пакеты OpenSSH для amd64. Монтирование `RESULT: OK`. В `capability-list` строка `OpenSSH.Server~~~~0.0.1.0 NotPresent` — перепишите итоговую строку `Capabilities: N (…)`.
 
 ## Шаги
 
@@ -70,3 +70,5 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| 5025ae83 | Hyper-V | 1 | На `D:` был установочный ISO, не FoD; дистрибутив без `metadata` отклонён верно. |
+| 5025ae83 | Hyper-V | 0–1 | ISO 26100.1 LOF: 4045 `.cab`, в `metadata` нет `FoDMetadata_Client.cab` (моё предположение было неверным), есть `DesktopTargetCompDB_FOD_Neutral.xml.cab` и compDB по языкам; проверка отклонила настоящую папку. Исправлено: требуется `DesktopTargetCompDB_FOD_Neutral.xml.cab`. |

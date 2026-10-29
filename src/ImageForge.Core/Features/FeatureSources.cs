@@ -26,11 +26,12 @@ public static class FeatureSources
     /// <summary>The subfolder of a Features on Demand folder that describes its packages to DISM.</summary>
     public const string FodMetadataFolder = "metadata";
 
-    private const string FodMetadataFile = "FoDMetadata_Client.cab";
+    // Seen in metadata of the 26100 Languages and Optional Features ISO, next to the per-language compDBs.
+    private const string FodMetadataFile = "DesktopTargetCompDB_FOD_Neutral.xml.cab";
 
     /// <summary>
     /// Why the folder cannot serve as a Features on Demand source, or null when it can: the LanguagesAndOptionalFeatures
-    /// folder of the matching ISO, with package .cab files and a metadata subfolder holding FoDMetadata_Client.cab.
+    /// folder of the matching ISO, with package .cab files and a metadata subfolder holding DesktopTargetCompDB_FOD_Neutral.xml.cab.
     /// Whether it matches the build of the image is known only to DISM, which then fails the addition.
     /// </summary>
     /// <param name="fileNames">Files directly in the folder.</param>

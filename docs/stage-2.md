@@ -95,6 +95,6 @@
 
 ### Capabilities: добавление из папки FoD
 
-- Core (TDD): `FeatureSources.FodProblem` — источник Features on Demand должен быть папкой `LanguagesAndOptionalFeatures` ISO: пакеты `.cab` и `metadata\FoDMetadata_Client.cab`. Совпадение сборки ISO и образа проверяет только DISM. `DismCliArguments.AddCapability` — только локальный абсолютный путь и всегда `/LimitAccess`.
+- Core (TDD): `FeatureSources.FodProblem` — источник Features on Demand должен быть папкой `LanguagesAndOptionalFeatures` ISO: пакеты `.cab` и `metadata\DesktopTargetCompDB_FOD_Neutral.xml.cab`. Совпадение сборки ISO и образа проверяет только DISM. `DismCliArguments.AddCapability` — только локальный абсолютный путь и всегда `/LimitAccess`.
 - Утилита: `capability-add <mount> <имя> <папка FoD>` — добавляет только компонент со статусом `Not Present`, затем читает список снова и печатает всё, что DISM изменил сам. Проверка в VM — [S2-FOD-ADD](vm-checks/S2-FOD-ADD.md).
 - Дальше: выбор папки FoD и добавление в окне, в плане и в запуске.

@@ -97,4 +97,5 @@
 
 - Core (TDD): `FeatureSources.FodProblem` — источник Features on Demand должен быть папкой `LanguagesAndOptionalFeatures` ISO: пакеты `.cab` и `metadata\DesktopTargetCompDB_FOD_Neutral.xml.cab`. Совпадение сборки ISO и образа проверяет только DISM. `DismCliArguments.AddCapability` — только локальный абсолютный путь и всегда `/LimitAccess`.
 - Утилита: `capability-add <mount> <имя> <папка FoD>` — добавляет только компонент со статусом `Not Present`, затем читает список снова и печатает всё, что DISM изменил сам. Проверка в VM — [S2-FOD-ADD](vm-checks/S2-FOD-ADD.md).
+- Найдено в VM: ISO 24H2/25H2 (26100.1) подходит к образу 26H2 (база 26100). Языковые компоненты DISM добавляет вместе с зависимостями (`Language.Speech` тянет `Language.Basic` и `Language.TextToSpeech`), заранее их не сообщая.
 - Дальше: выбор папки FoD и добавление в окне, в плане и в запуске.

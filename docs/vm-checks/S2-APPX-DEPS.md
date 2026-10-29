@@ -80,3 +80,4 @@ Stop-Transcript
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
 | c1dc75f8 | Hyper-V | 1 | Не прочитан ни один манифест (47 из 47, SystemApps тоже): файлы смонтированного WIM помечены атрибутом ReparsePoint (тег WIM, ещё не извлечённые данные), а проверка отказывала на любом reparse point. Исправлено: отказ только для символических ссылок и junction. |
+| 8eda20b1 | Hyper-V | 1 | 38 из 47 прочитаны; встроенным приложениям нужна только `Microsoft.UI.Xaml.CBS`. У 9 бандлов нет папки пакета x64, указанного в бандле (DesktopAppInstaller, StickyNotes, PowerAutomateDesktop, Todos, DevHome, WindowsAlarms, WindowsSoundRecorder, YourPhone, CrossDevice). Библиотеки (VCLibs, UI.Xaml, NET.Native, WindowsAppRuntime) не provisioned. Исправлено: перебор всех пакетов приложения бандла; бандл без найденного пакета считается не библиотекой и удаляется, если он никому не нужен. |

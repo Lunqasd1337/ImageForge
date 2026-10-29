@@ -359,7 +359,7 @@ public sealed class WorkspaceSession(
         {
             IsFramework = package.Facts?.IsFramework == true,
             NeededBy = [.. inventory.Packages
-                .Where(p => p.Facts?.DependsOn.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
+                .Where(p => p.Facts?.DependsOn?.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
                 .Select(p => p.DisplayName)],
         };
     }

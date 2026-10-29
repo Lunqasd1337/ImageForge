@@ -24,54 +24,72 @@ public static class AppxManifestStore
     private static ProvisionedAppxPackage Read(string mountRoot, ProvisionedAppxPackage package)
     {
         var id = package.Identity;
-        var bundleStatus = MountFileReader.TryReadText(
-            mountRoot, [.. WindowsApps, id.FullName, "AppxMetadata", "AppxBundleManifest.xml"], AppxManifestParser.MaxBytes, out var bundleXml);
-        string manifestFolder;
-        Version expectedVersion;
-        switch (bundleStatus)
+        switch (MountFileReader.TryReadText(
+            mountRoot, [.. WindowsApps, id.FullName, "AppxMetadata", "AppxBundleManifest.xml"], AppxManifestParser.MaxBytes, out var bundleXml))
         {
-            case MountReadStatus.Refused:
-                return Unknown(package, "the bundle manifest is behind a symbolic link or junction");
-            case MountReadStatus.TooLarge:
-                return Unknown(package, "the bundle manifest is larger than 1 MB");
-            case MountReadStatus.Denied:
-                return Unknown(package, "the bundle manifest cannot be read (access denied)");
+            case MountReadStatus.Missing:
+                return ReadApplication(mountRoot, package, id.FullName, id.Version, out var problem) is { } facts
+                    ? package with { Facts = facts, FactsProblem = null }
+                    : package with { Facts = null, FactsProblem = problem };
             case MountReadStatus.Read:
-                var bundle = AppxManifestParser.ParseBundle(bundleXml);
-                if (bundle is null || bundle.Name != id.Name || bundle.PublisherId != id.PublisherId || bundle.Version != id.Version)
-                {
-                    return Unknown(package, "AppxBundleManifest.xml does not describe this package");
-                }
-
-                var application = ArchitecturePreference
-                    .SelectMany(a => bundle.Applications.Where(p => p.Architecture == a))
-                    .Cast<(string Architecture, Version Version)?>()
-                    .FirstOrDefault();
-                if (application is not { } chosen)
-                {
-                    return Unknown(package, "the bundle has no application package for x64");
-                }
-
-                manifestFolder = $"{id.Name}_{chosen.Version.ToString(4)}_{chosen.Architecture}__{id.PublisherId}";
-                expectedVersion = chosen.Version;
                 break;
-            default:
-                manifestFolder = id.FullName;
-                expectedVersion = id.Version;
-                break;
+            case var status:
+                return package with { Facts = null, FactsProblem = $"AppxBundleManifest.xml {Describe(status)}" };
         }
 
-        return MountFileReader.TryReadText(mountRoot, [.. WindowsApps, manifestFolder, "AppxManifest.xml"], AppxManifestParser.MaxBytes, out var xml) switch
+        var bundle = AppxManifestParser.ParseBundle(bundleXml);
+        if (bundle is null || bundle.Name != id.Name || bundle.PublisherId != id.PublisherId || bundle.Version != id.Version)
         {
-            MountReadStatus.Missing => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is missing"),
-            MountReadStatus.Refused => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is behind a symbolic link or junction"),
-            MountReadStatus.TooLarge => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is larger than 1 MB"),
-            MountReadStatus.Denied => Unknown(package, $@"{manifestFolder}\AppxManifest.xml cannot be read (access denied)"),
-            _ => AppxManifestParser.ParsePackage(xml) is { } manifest && manifest.Name == id.Name && manifest.PublisherId == id.PublisherId && manifest.Version == expectedVersion
-                ? package with { Facts = new AppxPackageFacts(manifest.IsFramework, [.. manifest.Dependencies.Select(d => d.FamilyName).Distinct()]) }
-                : Unknown(package, $@"{manifestFolder}\AppxManifest.xml does not describe this package"),
+            return package with { Facts = null, FactsProblem = "AppxBundleManifest.xml does not describe this package" };
+        }
+
+        // The x64 image installs the x64 application package, else neutral, else x86; take the first one present.
+        var problems = new List<string>();
+        foreach (var (architecture, version) in ArchitecturePreference.SelectMany(a => bundle.Applications.Where(p => p.Architecture == a)))
+        {
+            var folder = $"{id.Name}_{version.ToString(4)}_{architecture}__{id.PublisherId}";
+            if (ReadApplication(mountRoot, package, folder, version, out var problem) is { } facts)
+            {
+                return package with { Facts = facts, FactsProblem = null };
+            }
+
+            problems.Add(problem!);
+        }
+
+        return package with
+        {
+            Facts = new AppxPackageFacts(IsFramework: false, DependsOn: null),
+            FactsProblem = problems.Count == 0 ? "the bundle has no application package for x64" : string.Join("; ", problems),
         };
     }
+
+    private static AppxPackageFacts? ReadApplication(string mountRoot, ProvisionedAppxPackage package, string folder, Version version, out string? problem)
+    {
+        var id = package.Identity;
+        var status = MountFileReader.TryReadText(mountRoot, [.. WindowsApps, folder, "AppxManifest.xml"], AppxManifestParser.MaxBytes, out var xml);
+        if (status != MountReadStatus.Read)
+        {
+            problem = $@"{folder}\AppxManifest.xml {Describe(status)}";
+            return null;
+        }
+
+        if (AppxManifestParser.ParsePackage(xml) is not { } manifest || manifest.Name != id.Name || manifest.PublisherId != id.PublisherId || manifest.Version != version)
+        {
+            problem = $@"{folder}\AppxManifest.xml does not describe this package";
+            return null;
+        }
+
+        problem = null;
+        return new AppxPackageFacts(manifest.IsFramework, [.. manifest.Dependencies.Select(d => d.FamilyName).Distinct()]);
+    }
+
+    private static string Describe(MountReadStatus status) => status switch
+    {
+        MountReadStatus.Missing => "is missing",
+        MountReadStatus.Refused => "is behind a symbolic link or junction",
+        MountReadStatus.TooLarge => "is larger than 1 MB",
+        _ => "cannot be read (access denied)",
+    };
 
     private static string[]? ReadInbox(string mountRoot)
     {
@@ -113,6 +131,4 @@ public static class AppxManifestStore
         return [.. dependencies];
     }
 
-    private static ProvisionedAppxPackage Unknown(ProvisionedAppxPackage package, string problem) =>
-        package with { Facts = null, FactsProblem = problem };
 }

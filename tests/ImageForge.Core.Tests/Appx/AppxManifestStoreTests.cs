@@ -55,6 +55,28 @@ public sealed class AppxManifestStoreTests : IDisposable
     }
 
     [Fact]
+    public void A_bundle_falls_back_to_the_next_application_package_present()
+    {
+        WriteBundle(_dir, Root, "Microsoft.GamingApp", "2026.514.51.0", "2026.514.51.0", "neutral", AppxManifestTests.AppManifest("Microsoft.GamingApp", "2026.514.51.0", "neutral"));
+        var manifest = Path.Combine(Root, "Program Files", "WindowsApps", "Microsoft.GamingApp_2026.514.51.0_neutral_~_8wekyb3d8bbwe", "AppxMetadata", "AppxBundleManifest.xml");
+        File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("Architecture=\"arm64\"", "Architecture=\"x64\"", StringComparison.Ordinal));
+
+        AppxManifestStore.Attach(Root, AppxPlanningTests.Inventory(Gaming)).Packages.Single().Facts.ShouldNotBeNull().DependsOn.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_bundle_without_its_application_package_is_known_not_to_be_a_framework()
+    {
+        WriteBundle(_dir, Root, "Microsoft.GamingApp", "2026.514.51.0", "2026.514.51.0", "x64", "unused");
+        Directory.Delete(Path.Combine(Root, "Program Files", "WindowsApps", "Microsoft.GamingApp_2026.514.51.0_x64__8wekyb3d8bbwe"), recursive: true);
+
+        var package = AppxManifestStore.Attach(Root, AppxPlanningTests.Inventory(Gaming)).Packages.Single();
+
+        package.Facts.ShouldBe(new AppxPackageFacts(false, null));
+        package.FactsProblem.ShouldNotBeNull().ShouldContain("_x64__8wekyb3d8bbwe");
+    }
+
+    [Fact]
     public void Reads_a_plain_package()
     {
         WritePackage(Root, Teams, AppxManifestTests.AppManifest("MSTeams", "1.0.0.1", "x64"));

@@ -139,7 +139,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
                 continue;
             }
 
-            var dependents = kept.Where(k => k.Facts?.DependsOn.Contains(family, StringComparer.OrdinalIgnoreCase) == true).Select(k => k.DisplayName).ToList();
+            var dependents = kept.Where(k => k.Facts?.DependsOn?.Contains(family, StringComparer.OrdinalIgnoreCase) == true).Select(k => k.DisplayName).ToList();
             if (dependents.Count > 0)
             {
                 diagnostics.Add(new PlanningDiagnostic(
@@ -155,7 +155,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             }
 
             // A framework is what unread manifests would most likely depend on, so it waits until all are known.
-            if (facts.IsFramework && (inventory.InboxDependencies is null || kept.Any(k => k.Facts is null)))
+            if (facts.IsFramework && (inventory.InboxDependencies is null || kept.Any(k => k.Facts?.DependsOn is null)))
             {
                 diagnostics.Add(new PlanningDiagnostic(
                     PlanningCodes.AppxFrameworkBlocked, index, $"{package.DisplayName} — библиотека, а зависимости части приложений не прочитаны; удаление заблокировано."));
@@ -174,7 +174,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         while (pending.Count > 0)
         {
             var next = pending.FirstOrDefault(candidate => !pending.Any(other =>
-                other != candidate && byName[other.Package.FullName].Facts!.DependsOn.Contains(candidate.Package.FamilyName, StringComparer.OrdinalIgnoreCase)));
+                other != candidate && byName[other.Package.FullName].Facts!.DependsOn?.Contains(candidate.Package.FamilyName, StringComparer.OrdinalIgnoreCase) == true));
             if (next is null)
             {
                 diagnostics.Add(new PlanningDiagnostic(

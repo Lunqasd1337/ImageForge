@@ -306,9 +306,13 @@ static async Task<bool> AppxList(string mountDir)
     {
         var id = package.Identity;
         Console.WriteLine($"  {id.Name,-50} {id.Version,-17} {id.Architecture,-8} {id.FamilyName}");
-        if (package.Facts is { } facts)
+        if (package.Facts is { DependsOn: null })
         {
-            Console.WriteLine($"      {(facts.IsFramework ? "framework; " : string.Empty)}needs: {(facts.DependsOn.Count == 0 ? "-" : string.Join(", ", facts.DependsOn))}");
+            Console.WriteLine("      bundle read, own dependencies unknown (removable unless others need it): " + package.FactsProblem);
+        }
+        else if (package.Facts is { } facts)
+        {
+            Console.WriteLine($"      {(facts.IsFramework ? "framework; " : string.Empty)}needs: {(facts.DependsOn!.Count == 0 ? "-" : string.Join(", ", facts.DependsOn))}");
         }
         else
         {
@@ -321,7 +325,7 @@ static async Task<bool> AppxList(string mountDir)
         }
     }
 
-    var unknown = inventory.Packages.Count(p => p.Facts is null);
+    var unknown = inventory.Packages.Count(p => p.Facts?.DependsOn is null);
     Log(inventory.InboxDependencies is { } inbox
         ? $"Inbox apps need: {(inbox.Count == 0 ? "-" : string.Join(", ", inbox))}"
         : "Inbox apps: UNKNOWN (a SystemApps manifest could not be read)");

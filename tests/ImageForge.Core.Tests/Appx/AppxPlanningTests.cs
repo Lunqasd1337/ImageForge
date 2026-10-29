@@ -156,6 +156,17 @@ public sealed class AppxPlanningTests
     }
 
     [Fact]
+    public void A_bundle_with_unknown_own_dependencies_can_be_removed_but_holds_back_frameworks()
+    {
+        var identity = PackageIdentity.Parse(Clipchamp)!;
+        var bundleOnly = new ProvisionedAppxPackage(identity.Name, identity) { Facts = new AppxPackageFacts(false, null), FactsProblem = "missing" };
+
+        Plan(Inventory(bundleOnly, Package(Weather)), new RemoveProvisionedAppx("Clipchamp.Clipchamp_yxz26nhyzhsrt")).Diagnostics.ShouldBeEmpty();
+        Plan(Inventory(bundleOnly, Package(VcLibs, framework: true)), new RemoveProvisionedAppx(VcLibsFamily))
+            .Diagnostics.ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.AppxFrameworkBlocked);
+    }
+
+    [Fact]
     public void A_framework_is_blocked_when_the_inbox_apps_were_not_read()
     {
         var inventory = Inventory(Package(VcLibs, framework: true)) with { InboxDependencies = null };

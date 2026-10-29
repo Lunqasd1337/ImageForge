@@ -5,8 +5,9 @@ using System.Text;
 namespace ImageForge.Core.Appx;
 
 /// <param name="IsFramework">The manifest marks the package as a framework other packages build on.</param>
-/// <param name="DependsOn">Family names of the packages it needs, from its manifest.</param>
-public sealed record AppxPackageFacts(bool IsFramework, IReadOnlyList<string> DependsOn);
+/// <param name="DependsOn">Family names of the packages it needs, from its manifest; null when only the bundle manifest
+/// was read (a bundle is never a framework, but what its application package needs is unknown).</param>
+public sealed record AppxPackageFacts(bool IsFramework, IReadOnlyList<string>? DependsOn);
 
 public sealed record ProvisionedAppxPackage(string DisplayName, PackageIdentity Identity)
 {

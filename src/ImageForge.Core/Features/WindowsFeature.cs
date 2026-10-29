@@ -14,8 +14,11 @@ public enum FeatureState
     /// <summary>Off, and enabling it needs a source (sources\sxs for NetFx3).</summary>
     DisabledWithPayloadRemoved,
 
-    /// <summary>Enable Pending or Disable Pending: the change finishes on first boot.</summary>
-    Pending,
+    /// <summary>Enabled in an offline image, finished on first boot (found in the VM: offline enables often end here); counts as on.</summary>
+    EnablePending,
+
+    /// <summary>Disabled in an offline image, finished on first boot; counts as off.</summary>
+    DisablePending,
 }
 
 /// <param name="RawState">The state exactly as DISM printed it.</param>
@@ -34,12 +37,19 @@ public sealed record WindowsFeature(string Name, FeatureState State, string RawS
         return name.Length is > 0 and <= 128 && char.IsAsciiLetterOrDigit(name[0]) && !name.AsSpan().ContainsAnyExcept(NameChars);
     }
 
+    /// <summary>On, or on after first boot.</summary>
+    public bool IsOn => State is FeatureState.Enabled or FeatureState.EnablePending;
+
+    /// <summary>Off, or off after first boot.</summary>
+    public bool IsOff => State is FeatureState.Disabled or FeatureState.DisabledWithPayloadRemoved or FeatureState.DisablePending;
+
     internal static FeatureState ParseState(string state) => state switch
     {
         "Enabled" => FeatureState.Enabled,
         "Disabled" => FeatureState.Disabled,
         "Disabled with Payload Removed" => FeatureState.DisabledWithPayloadRemoved,
-        "Enable Pending" or "Disable Pending" => FeatureState.Pending,
+        "Enable Pending" => FeatureState.EnablePending,
+        "Disable Pending" => FeatureState.DisablePending,
         _ => FeatureState.Unknown,
     };
 }

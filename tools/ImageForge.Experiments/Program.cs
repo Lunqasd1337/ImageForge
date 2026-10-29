@@ -41,8 +41,9 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["appx-remove"] = ("appx-remove <mount-dir> <PackageName>", a => AppxRemove(a[0], a[1])),
     ["feature-list"] = ("feature-list <mount-dir>", a => FeatureList(a[0])),
     ["feature-info"] = ("feature-info <mount-dir> <FeatureName>", a => FeatureInfo(a[0], a[1])),
-    ["feature-enable"] = ("feature-enable <mount-dir> <FeatureName>", a => FeatureChange(a[0], a[1], enable: true)),
-    ["feature-disable"] = ("feature-disable <mount-dir> <FeatureName>", a => FeatureChange(a[0], a[1], enable: false)),
+    ["feature-parents"] = ("feature-parents <mount-dir> <FeatureName>", a => FeatureParents(a[0], a[1])),
+    ["feature-enable"] = ("feature-enable <mount-dir> <FeatureName> <source-dir|none>", a => FeatureChange(a[0], a[1], a[2])),
+    ["feature-disable"] = ("feature-disable <mount-dir> <FeatureName>", a => FeatureChange(a[0], a[1], null)),
     ["capability-list"] = ("capability-list <mount-dir>", a => CapabilityList(a[0])),
     ["capability-info"] = ("capability-info <mount-dir> <CapabilityName>", a => CapabilityInfo(a[0], a[1])),
     ["capability-remove"] = ("capability-remove <mount-dir> <CapabilityName>", a => CapabilityRemove(a[0], a[1])),
@@ -508,9 +509,70 @@ static Task<bool> CapabilityInfo(string mountDir, string name)
     return PrintInfo(DismCliArguments.GetCapabilityInfo(Path.GetFullPath(mountDir), identity));
 }
 
-// Enables (without /All, never from Windows Update) or disables one feature, then lists again to confirm the new state.
-static async Task<bool> FeatureChange(string mountDir, string name, bool enable)
+static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadFeatureParents(string mountDir, FeatureInventory inventory)
 {
+    Log($"Reading the parents of {inventory.Features.Count} features (DismGetFeatureParent)...");
+    var watch = Stopwatch.StartNew();
+    using var dism = new DismImages();
+    var parents = DismImages.GetFeatureParents(Path.GetFullPath(mountDir), inventory.Features.Select(f => f.Name),
+        (name, ex) => Log($"PROBLEM: parents of '{name}' not read: 0x{ex.HResult:x8} {ex.Message}"));
+    Log($"Parents read: {parents.Count} of {inventory.Features.Count}; features with parents: {parents.Count(p => p.Value.Count > 0)}; {watch.Elapsed.TotalSeconds:F1} s");
+    return parents;
+}
+
+static void PrintChange(string verb, FeatureChange change)
+{
+    foreach (var problem in change.Problems)
+    {
+        Log("PROBLEM: " + problem);
+    }
+
+    Log(change.Features.Count == 0 && change.Problems.Count == 0
+        ? $"{verb}: nothing to change"
+        : $"{verb}: {string.Join(", ", change.Features)}");
+    if (change.Added.Count > 0)
+    {
+        Log($"{verb} along with it: {string.Join(", ", change.Added)}");
+    }
+
+    if (change.NeedsSource.Count > 0)
+    {
+        Log($"Needs a source: {string.Join(", ", change.NeedsSource)}");
+    }
+}
+
+// Shows a feature's direct parents and what enabling or disabling it would change; changes nothing.
+static async Task<bool> FeatureParents(string mountDir, string name)
+{
+    if (!WindowsFeature.IsValidName(name))
+    {
+        Log($"'{name}' is not a valid feature name.");
+        return false;
+    }
+
+    if (await ReadFeaturesAsync(mountDir).ConfigureAwait(false) is not { } inventory)
+    {
+        return false;
+    }
+
+    var parents = ReadFeatureParents(mountDir, inventory);
+    if (parents.TryGetValue(name, out var direct))
+    {
+        Log($"Direct parents of '{name}': {(direct.Count == 0 ? "-" : string.Join(", ", direct))}");
+    }
+
+    var enable = FeatureDependencies.Enable(inventory, parents, name);
+    var disable = FeatureDependencies.Disable(inventory, parents, name);
+    PrintChange("Enable", enable);
+    PrintChange("Disable", disable);
+    return parents.Count == inventory.Features.Count && enable.Problems.Count == 0 && disable.Problems.Count == 0;
+}
+
+// Enables (with its disabled parents, never from Windows Update) or disables (with its enabled dependents) one
+// feature, then lists again to confirm every feature in the change has the new state.
+static async Task<bool> FeatureChange(string mountDir, string name, string? source)
+{
+    var enable = source is not null;
     if (!WindowsFeature.IsValidName(name))
     {
         Log($"'{name}' is not a valid feature name.");
@@ -522,25 +584,63 @@ static async Task<bool> FeatureChange(string mountDir, string name, bool enable)
         return false;
     }
 
-    if (before.Features.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } feature)
+    var parents = ReadFeatureParents(mountDir, before);
+    var change = enable ? FeatureDependencies.Enable(before, parents, name) : FeatureDependencies.Disable(before, parents, name);
+    PrintChange(enable ? "Enable" : "Disable", change);
+    if (change.Problems.Count > 0 || change.Features.Count == 0)
     {
-        Log($"Feature '{name}' is not in this image; nothing was changed.");
-        return false;
+        return change.Problems.Count == 0;
     }
 
-    Log($"Feature '{feature.Name}' is {feature.RawState}.");
+    string? sourceDir = null;
+    if (change.NeedsSource.Count > 0)
+    {
+        if (source == "none")
+        {
+            Log("REFUSED: a feature without payload needs a source folder; nothing was changed.");
+            return false;
+        }
+
+        sourceDir = Path.GetFullPath(source!);
+        if (!Directory.Exists(sourceDir))
+        {
+            Log($"REFUSED: source folder {sourceDir} does not exist; nothing was changed.");
+            return false;
+        }
+
+        if (change.NeedsSource.Contains(FeatureSources.NetFx3, StringComparer.OrdinalIgnoreCase)
+            && FeatureSources.NetFx3Problem(Directory.EnumerateFiles(sourceDir).Select(Path.GetFileName)!) is { } problem)
+        {
+            Log($"REFUSED: {sourceDir}: {problem} Nothing was changed.");
+            return false;
+        }
+    }
+
     var mount = Path.GetFullPath(mountDir);
     var (exitCode, _) = await DismAsync(
-        enable ? DismCliArguments.EnableFeature(mount, feature.Name) : DismCliArguments.DisableFeature(mount, feature.Name), echo: true).ConfigureAwait(false);
+        enable ? DismCliArguments.EnableFeatures(mount, change.Features, sourceDir) : DismCliArguments.DisableFeatures(mount, change.Features),
+        echo: true).ConfigureAwait(false);
     if (exitCode != 0 || await ReadFeaturesAsync(mountDir).ConfigureAwait(false) is not { } after)
     {
         return false;
     }
 
-    var now = after.Features.Single(f => f.Name == feature.Name);
-    var expected = enable ? FeatureState.Enabled : FeatureState.Disabled;
-    Log($"Feature '{now.Name}': {feature.RawState} -> {now.RawState}");
-    return now.State == expected || now.State == FeatureState.Pending;
+    var ok = true;
+    foreach (var feature in change.Features)
+    {
+        var was = before.Features.Single(f => f.Name == feature);
+        var now = after.Features.Single(f => f.Name == feature);
+        var expected = enable ? now.IsOn : now.IsOff;
+        ok &= expected;
+        Log($"Feature '{feature}': {was.RawState} -> {now.RawState}{(expected ? string.Empty : "  UNEXPECTED")}");
+    }
+
+    foreach (var other in FeatureDependencies.Compare(before, after).Where(c => !change.Features.Contains(c.Name)))
+    {
+        Log($"ALSO CHANGED by DISM: '{other.Name}': {other.Before ?? "(not listed)"} -> {other.After ?? "(not listed)"}");
+    }
+
+    return ok;
 }
 
 // Removes one capability named exactly as capability-list printed it, then lists again to confirm it is gone.

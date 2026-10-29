@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "drivers", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -50,7 +50,8 @@ public sealed class EngineService : IEngineService, IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
-            : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.AddCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count > 0
+            : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.AddCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count
+                + options.AddDrivers.Count + options.RemoveDrivers.Count > 0
                 ? "plan without .reg" : "plan M1 marker");
         foreach (var family in options.RemoveAppx)
         {
@@ -77,9 +78,23 @@ public sealed class EngineService : IEngineService, IDisposable
             _log($"plan enable feature {feature}");
         }
 
+        foreach (var driver in options.RemoveDrivers)
+        {
+            _log($"plan remove driver {driver}{(options.AllowBootCritical ? " (boot-critical allowed)" : string.Empty)}");
+        }
+
+        foreach (var driver in options.AddDrivers)
+        {
+            _log($"plan add driver {driver} from {options.DriverFolder ?? "(no folder)"}{(options.ForceUnsigned ? " (ForceUnsigned allowed)" : string.Empty)}");
+        }
+
         var plan = _session.Plan(options);
         _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
             $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
+        foreach (var warning in plan.Drivers?.Warnings ?? [])
+        {
+            _log($"plan warning: {warning}");
+        }
         return Task.FromResult(plan);
     }
 
@@ -99,7 +114,8 @@ public sealed class EngineService : IEngineService, IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
         var result = await _session.InspectAsync(Tee(progress), linked.Token).ConfigureAwait(false);
         _log($"inspection revision {result.WorkspaceRevision}: {result.Packages.Count} packages, {result.Features.Count} features, " +
-            $"{result.Capabilities.Count} installed and {result.AvailableCapabilities.Count} available capabilities, problems: {string.Join("; ", [.. result.Problems, .. result.FeatureProblems, .. result.CapabilityProblems])}");
+            $"{result.Capabilities.Count} installed and {result.AvailableCapabilities.Count} available capabilities, {result.Drivers.Count} third-party drivers, " +
+            $"problems: {string.Join("; ", [.. result.Problems, .. result.FeatureProblems, .. result.CapabilityProblems, .. result.DriverProblems])}");
         return result;
     }
 

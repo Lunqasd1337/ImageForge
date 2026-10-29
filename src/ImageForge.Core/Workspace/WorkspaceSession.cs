@@ -1,6 +1,7 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Contracts;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
@@ -46,6 +47,9 @@ public sealed record PlanSummary(
 
     /// <summary>Feature changes, with what is added by parents and dependents; null when there are none.</summary>
     public FeatureChangeView? FeatureChanges { get; init; }
+
+    /// <summary>Driver removals and additions, with their warnings; null when there are none.</summary>
+    public DriverPlan? Drivers { get; init; }
 }
 
 /// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
@@ -92,6 +96,11 @@ public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<App
     public IReadOnlyList<CapabilityView> AvailableCapabilities { get; init; } = [];
 
     public IReadOnlyList<string> CapabilityProblems { get; init; } = [];
+
+    /// <summary>Third-party drivers of the image, which can be removed.</summary>
+    public IReadOnlyList<InstalledDriver> Drivers { get; init; } = [];
+
+    public IReadOnlyList<string> DriverProblems { get; init; } = [];
 }
 
 public sealed record RunOutcome(
@@ -217,6 +226,8 @@ public sealed class WorkspaceSession(
                 Capabilities = CapabilityViews(capabilities, CapabilityState.Installed),
                 AvailableCapabilities = CapabilityViews(capabilities, CapabilityState.NotPresent),
                 CapabilityProblems = capabilities.Problems,
+                Drivers = inventory.Drivers.Problems.Count > 0 ? [] : [.. inventory.Drivers.Drivers.OrderBy(d => d.PublishedName, StringComparer.OrdinalIgnoreCase)],
+                DriverProblems = inventory.Drivers.Problems,
             };
         }
     }
@@ -231,10 +242,21 @@ public sealed class WorkspaceSession(
             .. options.AddCapabilities.Select(c => new AddCapability(c)),
             .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f)),
             .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
+            .. options.RemoveDrivers.Select(d => new RemoveDriverPackage(d, options.AllowBootCritical)),
+            .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
         var source = fod is null ? null : new FodChoice(fod, ImageInspection.FodFolderProblem(fod));
+        if (options.AddDrivers.Count > 0)
+        {
+            // Scanned again here, so the hashes in the plan are those of the files as they are now.
+            source = (source ?? new FodChoice(null, null)) with
+            {
+                Drivers = string.IsNullOrWhiteSpace(options.DriverFolder) ? null : DriverFolder.Scan(options.DriverFolder.Trim()),
+            };
+        }
+
         return options.RegFile is { } file ? PlanRegFile(file, removals, source)
             : removals.Count > 0 ? Plan(removals, null, source)
             : PlanM1();
@@ -284,8 +306,10 @@ public sealed class WorkspaceSession(
                     Features = _inventory?.Features,
                     Capabilities = _inventory?.Capabilities,
                     MediaHasNetFx3 = _inventory?.MediaHasNetFx3 == true,
-                    FodSource = fod is { Problem: null } ? fod.Folder : null,
+                    FodSource = fod is { Folder: { } folder, Problem: null } ? folder : null,
                     FodSourceProblem = fod?.Problem,
+                    Drivers = _inventory?.Drivers,
+                    DriverSource = fod?.Drivers,
                 });
             _plan = result.Plan;
             return result.Plan is { } plan
@@ -296,6 +320,7 @@ public sealed class WorkspaceSession(
                     CapabilityAdditions = [.. plan.Capabilities?.Add.Select(c => c.FullName) ?? []],
                     FodSource = plan.Capabilities?.Source,
                     FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
+                    Drivers = plan.Drivers,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
@@ -473,5 +498,11 @@ public sealed class WorkspaceSession(
         new(operationId, rejection, null, null, null, null);
 }
 
-/// <param name="Problem">Why the folder cannot be used; null when it passed the check.</param>
-internal sealed record FodChoice(string Folder, string? Problem);
+/// <summary>The folders the plan takes files from, checked before the lock is taken.</summary>
+/// <param name="Folder">The Features on Demand folder; null when no capability is added.</param>
+/// <param name="Problem">Why that folder cannot be used; null when it passed the check.</param>
+internal sealed record FodChoice(string? Folder, string? Problem)
+{
+    /// <summary>The scanned driver folder; null when no driver is added or no folder was given.</summary>
+    public DriverFolder? Drivers { get; init; }
+}

@@ -136,6 +136,64 @@
         </StackPanel>
       </Expander>
 
+      <TextBlock Text="Драйверы" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock Text="{x:Bind ViewModel.DriversStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Сторонние драйверы образа" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <ItemsControl ItemsSource="{x:Bind ViewModel.ImageDrivers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:InstalledDriverItem">
+              <StackPanel Margin="0,2">
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                  </StackPanel>
+                </CheckBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
+      <CheckBox Content="Разрешить удаление драйверов, нужных для загрузки (образ может перестать загружаться)"
+                IsChecked="{x:Bind ViewModel.AllowBootCritical, Mode=TwoWay}" />
+
+      <TextBlock Text="Добавить драйверы из папки" Style="{StaticResource BodyStrongTextBlockStyle}" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Папка с пакетами драйверов (INF вместе с .cat и .sys); вложенные папки просматриваются. Пакеты добавляются в образ 1 install.wim." />
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox Header="Папка драйверов (например E:\NetKVM\w11\amd64)" Text="{x:Bind ViewModel.DriverPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseDriverFolder_Click" />
+        <Button Grid.Column="2" Content="Найти пакеты" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanDriversCommand}" />
+      </Grid>
+      <TextBlock Text="{x:Bind ViewModel.DriverPackagesStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Найденные пакеты" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <ItemsControl ItemsSource="{x:Bind ViewModel.DriverPackages}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:DriverPackageItem">
+              <StackPanel Margin="0,2">
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                  </StackPanel>
+                </CheckBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
+      <CheckBox Content="Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)"
+                IsChecked="{x:Bind ViewModel.ForceUnsigned, Mode=TwoWay}" />
+
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 

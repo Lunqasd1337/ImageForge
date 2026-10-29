@@ -31,7 +31,7 @@ public sealed class ImageInspectionTests : IDisposable
         var inventory = await Inspection().InspectAsync(_source, Guid.NewGuid(), 1, Ct);
 
         inventory.Appx.Packages.ShouldHaveSingleItem().PackageName.ShouldBe(Clipchamp);
-        _servicing.Calls.ShouldBe(["mount read-only", "appx-list", "feature-list", "feature-parents", "capability-list", "capability-names", "unmount discard"]);
+        _servicing.Calls.ShouldBe(["mount read-only", "appx-list", "feature-list", "feature-parents", "capability-list", "capability-names", "driver-list", "unmount discard"]);
         File.ReadAllText(Path.Combine(_paths.Base, "sources", "install.wim")).ShouldBe("WIM");
         Directory.Exists(_paths.InspectMount).ShouldBeFalse();
         new StateStore<WorkspaceState>(_paths.StateFile).Load().State!.SourceFingerprint.ShouldNotBeNull();

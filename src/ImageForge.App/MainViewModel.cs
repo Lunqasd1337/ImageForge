@@ -5,6 +5,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ImageForge.Core.Contracts;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
@@ -103,6 +104,33 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial string FodPath { get; set; } = string.Empty;
 
+    /// <summary>Third-party drivers of the last inspection; a check marks one for removal.</summary>
+    public ObservableCollection<InstalledDriverItem> ImageDrivers { get; } = [];
+
+    [ObservableProperty]
+    public partial string DriversStatus { get; set; } = "Драйверы образа ещё не прочитаны.";
+
+    /// <summary>A folder of driver packages, searched recursively; needed only for additions.</summary>
+    [ObservableProperty]
+    public partial string DriverPath { get; set; } = string.Empty;
+
+    /// <summary>INF files found in <see cref="DriverPath"/>; a check marks one for adding.</summary>
+    public ObservableCollection<DriverPackageItem> DriverPackages { get; } = [];
+
+    [ObservableProperty]
+    public partial string DriverPackagesStatus { get; set; } = "Укажите папку с драйверами и нажмите «Найти пакеты».";
+
+    /// <summary>The user accepts adding packages without a catalog (DISM ForceUnsigned).</summary>
+    [ObservableProperty]
+    public partial bool ForceUnsigned { get; set; }
+
+    /// <summary>The user accepts removing drivers that the image needs to boot.</summary>
+    [ObservableProperty]
+    public partial bool AllowBootCritical { get; set; }
+
+    // The folder DriverPackages was found in; the engine scans it again when planning.
+    private string? _scannedDriverFolder;
+
     public bool IsConnected => _engine is not null;
 
     public bool HasResult => PublishedPath.Length > 0;
@@ -129,6 +157,45 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnFodPathChanged(string value) => DropPlan();
 
     partial void OnAvailableFilterChanged(string value) => ShowAvailable();
+
+    partial void OnDriverPathChanged(string value)
+    {
+        DropPlan();
+        DriverPackages.Clear();
+        _scannedDriverFolder = null;
+        DriverPackagesStatus = "Папка изменилась; нажмите «Найти пакеты».";
+    }
+
+    partial void OnForceUnsignedChanged(bool value) => DropPlan();
+
+    partial void OnAllowBootCriticalChanged(bool value) => DropPlan();
+
+    /// <summary>Searches the folder for INF files here, unelevated; the engine checks the chosen packages again.</summary>
+    [RelayCommand]
+    private async Task ScanDriversAsync()
+    {
+        DropPlan();
+        DriverPackages.Clear();
+        _scannedDriverFolder = null;
+        var folder = DriverPath.Trim().Trim('"');
+        DriverPackagesStatus = "Поиск пакетов...";
+        var scanned = await Task.Run(() => DriverFolder.Scan(folder)).ConfigureAwait(true);
+        if (scanned.Problem is { } problem)
+        {
+            DriverPackagesStatus = "Папка не подходит: " + problem;
+            return;
+        }
+
+        var copies = scanned.Packages.Where(p => p.ContentHash is not null).GroupBy(p => p.ContentHash!).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var package in scanned.Packages)
+        {
+            DriverPackages.Add(new DriverPackageItem(package, package.ContentHash is { } hash ? copies[hash] : 1, DriverSelectionChanged));
+        }
+
+        _scannedDriverFolder = folder;
+        Append($"Папка драйверов {folder}: INF {scanned.Packages.Count}, годных для x64 {DriverPackages.Count(p => p.CanSelect)}");
+        ShowDriverPackagesStatus();
+    }
 
     [RelayCommand]
     private void ClearRegFile() => RegFilePath = string.Empty;
@@ -197,6 +264,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             AppsStatus = $"Предустановленных приложений: {inspection.Packages.Count}. Отметьте те, что нужно удалить.";
             ShowFeatures(inspection);
             ShowCapabilities(inspection);
+            ShowDrivers(inspection);
             Status = "Образ прочитан. Отметьте изменения и нажмите «Подготовить».";
         }
         catch (RemoteInvocationException ex)
@@ -256,6 +324,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             RemoveCapabilities = [.. Capabilities.Where(c => c.IsSelected == true).Select(c => c.Capability.Name)],
             AddCapabilities = [.. _available.Where(c => c.IsSelected == true).Select(c => c.Capability.Name)],
             FodSource = FodPath.Trim().Trim('"') is { Length: > 0 } fod ? fod : null,
+            RemoveDrivers = [.. ImageDrivers.Where(d => d.IsSelected == true).Select(d => d.Driver.PublishedName)],
+            AllowBootCritical = AllowBootCritical,
+            AddDrivers = [.. DriverPackages.Where(d => d.IsSelected == true).Select(d => d.Scanned.Package.InfPath)],
+            DriverFolder = _scannedDriverFolder,
+            ForceUnsigned = ForceUnsigned,
         };
         IsBusy = true;
         try
@@ -289,6 +362,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. plan.CapabilityRemovals.Select(DescribeCapabilityRemoval),
                 .. DescribeCapabilityAdditions(plan),
                 .. DescribeFeatureChanges(plan.FeatureChanges),
+                .. DescribeDrivers(plan.Drivers),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
@@ -296,7 +370,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var capabilities = (plan.CapabilityRemovals.Count > 0 ? $" Удаляемых дополнительных компонентов: {plan.CapabilityRemovals.Count}." : string.Empty)
                 + (plan.CapabilityAdditions.Count > 0 ? $" Добавляемых: {plan.CapabilityAdditions.Count}." : string.Empty);
             var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
-            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{encoding} Проверьте превью и нажмите «Запустить».";
+            var drivers = plan.Drivers is { } driverPlan ? $" Удаляемых драйверов: {driverPlan.Remove.Count}, добавляемых: {driverPlan.Add.Count}." : string.Empty;
+            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
         catch (RemoteInvocationException ex)
@@ -542,6 +617,65 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static IEnumerable<string> DescribeDrivers(DriverPlan? drivers)
+    {
+        if (drivers is null)
+        {
+            yield break;
+        }
+
+        foreach (var removal in drivers.Remove)
+        {
+            yield return $"Удалить драйвер {removal.Description}{(removal.BootCritical ? " (нужен для загрузки)" : string.Empty)}";
+        }
+
+        foreach (var addition in drivers.Add)
+        {
+            yield return $"Добавить драйвер {addition.Description}{(addition.ForceUnsigned ? " (без подписи, ForceUnsigned)" : string.Empty)}";
+            if (addition.SameContent.Count > 0)
+            {
+                yield return $"  То же содержимое, добавляется один раз: {string.Join(", ", addition.SameContent)}";
+            }
+        }
+
+        if (drivers.Source is { } source)
+        {
+            yield return $"  Источник: {source}";
+        }
+
+        foreach (var warning in drivers.Warnings)
+        {
+            yield return "  Внимание: " + warning;
+        }
+    }
+
+    private void ShowDrivers(InspectionSummary inspection)
+    {
+        if (inspection.DriverProblems.Count > 0)
+        {
+            DriversStatus = "Драйверы образа не прочитаны: " + string.Join("; ", inspection.DriverProblems);
+            return;
+        }
+
+        foreach (var driver in inspection.Drivers)
+        {
+            ImageDrivers.Add(new InstalledDriverItem(driver, DropPlan));
+        }
+
+        DriversStatus = inspection.Drivers.Count == 0
+            ? "Сторонних драйверов в образе нет."
+            : $"Сторонних драйверов: {inspection.Drivers.Count}, нужных для загрузки: {inspection.Drivers.Count(d => d.BootCritical)}. Отметьте те, что нужно удалить.";
+    }
+
+    private void ShowDriverPackagesStatus() =>
+        DriverPackagesStatus = $"Найдено INF: {DriverPackages.Count}, можно добавить: {DriverPackages.Count(p => p.CanSelect)}, отмечено: {DriverPackages.Count(p => p.IsSelected == true)}.";
+
+    private void DriverSelectionChanged()
+    {
+        DropPlan();
+        ShowDriverPackagesStatus();
+    }
+
     private string FeatureTitle(string name)
     {
         var shown = Features.FirstOrDefault(f => f.Feature.Name == name)?.Title;
@@ -590,18 +724,28 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         Capabilities.Clear();
         _available.Clear();
         ShowAvailable();
+        ImageDrivers.Clear();
+
+        // Package choices and the boot-critical approval were made for the image that is gone.
+        foreach (var package in DriverPackages)
+        {
+            package.IsSelected = false;
+        }
+
+        AllowBootCritical = false;
     }
 
     private void FoldersChanged()
     {
         DropPlan();
         _opened = null;
-        if (Apps.Count > 0 || Features.Count > 0 || Capabilities.Count > 0)
+        if (Apps.Count > 0 || Features.Count > 0 || Capabilities.Count > 0 || ImageDrivers.Count > 0)
         {
             ClearInventory();
             AppsStatus = "Папки изменились; прочитайте образ снова.";
             FeaturesStatus = "Компоненты ещё не прочитаны.";
             CapabilitiesStatus = "Дополнительные компоненты ещё не прочитаны.";
+            DriversStatus = "Драйверы образа ещё не прочитаны.";
         }
     }
 

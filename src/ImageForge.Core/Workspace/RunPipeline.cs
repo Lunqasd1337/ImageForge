@@ -1,3 +1,4 @@
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -113,6 +114,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             if (request.Plan.Features is { } features)
             {
                 await context.Step("features", () => ChangeFeaturesAsync(features, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.Drivers is { } drivers)
+            {
+                await context.Step("drivers", () => ChangeDriversAsync(drivers, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             await context.Step("registry", () =>
@@ -318,6 +324,66 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             .Select(c => c.FullName)
             .ToList();
         return wrong.Count == 0 ? true : throw new InvalidDataException($"Capabilities not in the planned state: {string.Join(", ", wrong)}.");
+    }
+
+    // Removals name drivers of the image the preview read, so the list must be the same. A package is added only while
+    // its files still have the hash the preview showed. DISM adds a package it already holds without a new name, so an
+    // addition without one is logged, not failed.
+    private async Task<bool> ChangeDriversAsync(DriverPlan plan, string mountDir, CancellationToken ct)
+    {
+        // DISM may give a new package the oemN.inf name of one just removed, so a driver is the name with its store path.
+        static string Key(InstalledDriver d) => $"{d.PublishedName}|{d.OriginalFileName}";
+
+        var before = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
+        if (before.Problems.Count > 0 || before.Fingerprint != plan.Inventory)
+        {
+            throw new InvalidDataException(before.Problems.Count > 0
+                ? $"The driver list cannot be read: {string.Join("; ", before.Problems)}"
+                : "The drivers of the image changed since the preview; plan again.");
+        }
+
+        foreach (var removal in plan.Remove)
+        {
+            Log?.Invoke($"remove driver {removal.Description}{(removal.BootCritical ? " (boot-critical)" : string.Empty)}");
+            await servicing.RemoveDriverAsync(mountDir, removal.PublishedName, ct).ConfigureAwait(false);
+        }
+
+        if (plan.Add.Count > 0)
+        {
+            var source = plan.Source ?? throw new InvalidDataException("The plan adds drivers without a driver folder.");
+            var changed = plan.Add.Where(a => DriverFolder.CurrentHash(source, a.InfPath) != a.ContentHash).Select(a => a.InfPath).ToList();
+            if (changed.Count > 0)
+            {
+                throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+            }
+
+            // The list is read after each addition, so every package gets exactly the names it brought.
+            var current = before;
+            foreach (var addition in plan.Add)
+            {
+                Log?.Invoke($"add driver {addition.InfPath}{(addition.ForceUnsigned ? " (ForceUnsigned)" : string.Empty)}");
+                await servicing.AddDriverAsync(mountDir, DriverFolder.Full(source, addition.InfPath), addition.ForceUnsigned, ct).ConfigureAwait(false);
+                var next = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
+                var known = current.Drivers.Select(Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var published = next.Drivers.Where(d => !known.Contains(Key(d))).Select(d => $"{d.PublishedName} ({d.Signature})").ToList();
+                Log?.Invoke(published.Count > 0
+                    ? $"driver {addition.InfPath} -> {string.Join(", ", published)}"
+                    : $"driver {addition.InfPath}: no new name in the image (DISM already holds this package)");
+                current = next;
+            }
+        }
+
+        var after = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
+        if (after.Problems.Count > 0)
+        {
+            throw new InvalidDataException($"The driver list cannot be read after the change: {string.Join("; ", after.Problems)}");
+        }
+
+        var removed = before.Drivers.Where(d => plan.Remove.Any(r => string.Equals(r.PublishedName, d.PublishedName, StringComparison.OrdinalIgnoreCase))).ToList();
+        var left = removed.Where(r => after.Drivers.Any(d => string.Equals(Key(d), Key(r), StringComparison.OrdinalIgnoreCase)))
+            .Select(r => r.PublishedName)
+            .ToList();
+        return left.Count == 0 ? true : throw new InvalidDataException($"Drivers still in the image after removal: {string.Join(", ", left)}.");
     }
 
     // The change was worked out from the features of the verified copy; this mount must list the same states. DISM

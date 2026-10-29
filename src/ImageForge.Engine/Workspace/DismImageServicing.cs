@@ -1,4 +1,5 @@
 using ImageForge.Core.Appx;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -7,6 +8,7 @@ using ImageForge.Core.Servicing;
 using ImageForge.Core.Workspace;
 using ImageForge.Engine.Dism;
 using ImageForge.Engine.Registry;
+using Microsoft.Dism;
 
 namespace ImageForge.Engine.Workspace;
 
@@ -75,6 +77,37 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
 
     public Task AddCapabilityAsync(string mountDir, CapabilityIdentity capability, string source, CancellationToken ct) =>
         RunCliAsync(DismCliArguments.AddCapability(mountDir, capability, source), "/Add-Capability");
+
+    public Task<DriverInventory> GetDriversAsync(string mountDir, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        try
+        {
+            var drivers = DismImages.GetDrivers(mountDir, includeInbox: false);
+            log?.Invoke($"third-party drivers: {drivers.Count}");
+            return new DriverInventory([.. drivers.Select(d => new InstalledDriver(
+                d.PublishedName, d.OriginalFileName, d.ClassName, d.ProviderName, d.Version, d.Date, d.BootCritical, d.Signature))], []);
+        }
+        catch (DismException ex)
+        {
+            // The window shows why drivers cannot be changed; the rest of the inspection stays usable.
+            return new DriverInventory([], [$"DismGetDrivers 0x{ex.HResult:x8}: {ex.Message}"]);
+        }
+    }, CancellationToken.None);
+
+    public Task AddDriverAsync(string mountDir, string infPath, bool forceUnsigned, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        log?.Invoke($"DismAddDriver {infPath}{(forceUnsigned ? " ForceUnsigned" : string.Empty)}");
+        DismImages.AddDriver(mountDir, infPath, forceUnsigned);
+    }, CancellationToken.None);
+
+    public Task RemoveDriverAsync(string mountDir, string publishedName, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        log?.Invoke($"DismRemoveDriver {publishedName}");
+        DismImages.RemoveDriver(mountDir, publishedName);
+    }, CancellationToken.None);
 
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>
         Task.Run(() => DismImages.Unmount(mountDir, commit, Progress(commit ? "commit" : "discard")), CancellationToken.None);

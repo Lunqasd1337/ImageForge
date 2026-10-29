@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
@@ -419,6 +420,97 @@ public sealed class RunPipelineTests : IDisposable
         result.Error.ShouldNotBeNull().ShouldContain("metadata");
         _servicing.Calls.ShouldNotContain(c => c.StartsWith("capability-add", StringComparison.Ordinal));
         _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    [Fact]
+    public async Task Drivers_are_removed_then_added_and_their_new_names_are_logged()
+    {
+        _servicing.Drivers.Add(new InstalledDriver("oem0.inf", @"C:\m\x\old.inf", "Net", "Vendor", "1.0", DateTime.UnixEpoch, true, "Signed"));
+        var folder = DriverPackages();
+        var request = DriverRequest(folder, new RemoveDriverPackage("oem0.inf", AllowBootCritical: true), new AddDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "driver-list", "driver-remove oem0.inf", "driver-add netkvm.inf", "driver-list", "driver-list", "registry", "unmount commit", "export"]);
+        log.ShouldContain(@"driver net\netkvm.inf -> oem0.inf (Signed)");
+        log.ShouldContain(l => l.StartsWith("remove driver oem0.inf", StringComparison.Ordinal) && l.EndsWith("(boot-critical)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Each_added_package_is_logged_with_only_the_name_it_brought()
+    {
+        var folder = DriverPackages();
+        _dir.WriteFile("drivers/nocat/netkvm.inf", Drivers.InfTests.Storage.Replace("CatalogFile = viostor.cat", string.Empty, StringComparison.Ordinal));
+        _dir.WriteFile("drivers/nocat/amd64/viostor.sys", "SYS");
+        var request = DriverRequest(folder, new AddDriverPackage(@"net\netkvm.inf"), new AddDriverPackage(@"nocat\netkvm.inf", ForceUnsigned: true));
+        var log = new List<string>();
+
+        (await Pipeline(log).RunAsync(request, Ct)).Status.ShouldBe(RunStatus.Published);
+
+        log.ShouldContain(@"driver net\netkvm.inf -> oem0.inf (Signed)");
+        log.ShouldContain(@"driver nocat\netkvm.inf -> oem1.inf (Unsigned)");
+        _servicing.Calls.ShouldContain("driver-add netkvm.inf force-unsigned");
+    }
+
+    [Fact]
+    public async Task A_package_the_image_already_holds_is_logged_and_the_run_goes_on()
+    {
+        var request = DriverRequest(DriverPackages(), new AddDriverPackage(@"net\netkvm.inf"));
+        _servicing.DriverAlreadyPresent = true;
+        var log = new List<string>();
+
+        (await Pipeline(log).RunAsync(request, Ct)).Status.ShouldBe(RunStatus.Published);
+        log.ShouldContain(@"driver net\netkvm.inf: no new name in the image (DISM already holds this package)");
+    }
+
+    [Fact]
+    public async Task A_package_changed_after_the_preview_is_not_added()
+    {
+        var folder = DriverPackages();
+        var request = DriverRequest(folder, new AddDriverPackage(@"net\netkvm.inf"));
+        File.WriteAllText(Path.Combine(folder, "net", "amd64", "viostor.sys"), "replaced");
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("drivers");
+        result.Error.ShouldNotBeNull().ShouldContain(@"net\netkvm.inf");
+        _servicing.Calls.ShouldNotContain(c => c.StartsWith("driver-add", StringComparison.Ordinal));
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    [Fact]
+    public async Task Drivers_that_changed_since_the_preview_stop_the_run()
+    {
+        var request = DriverRequest(DriverPackages(), new AddDriverPackage(@"net\netkvm.inf"));
+        _servicing.Drivers.Add(new InstalledDriver("oem5.inf", @"C:\m\x\other.inf", "Net", "Vendor", "1.0", DateTime.UnixEpoch, false, "Signed"));
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.FailedStep.ShouldBe("drivers");
+        result.Error.ShouldNotBeNull().ShouldContain("plan again");
+    }
+
+    // One signed package, net\netkvm.inf, with the storage sample's catalog and file layout.
+    private string DriverPackages()
+    {
+        _dir.WriteFile("drivers/net/netkvm.inf", Drivers.InfTests.Storage);
+        _dir.WriteFile("drivers/net/viostor.cat", "CAT");
+        _dir.WriteFile("drivers/net/amd64/viostor.sys", "SYS");
+        return _dir.Combine("drivers");
+    }
+
+    private RunRequest DriverRequest(string folder, params ImageChange[] changes)
+    {
+        var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, .. changes])
+            {
+                Drivers = new DriverInventory([.. _servicing.Drivers], []),
+                DriverSource = DriverFolder.Scan(folder),
+            });
+        return new RunRequest(_source, _output, 1, plan.Plan.ShouldNotBeNull(string.Join("; ", plan.Diagnostics.Select(d => d.Message))));
     }
 
     private string Fod()

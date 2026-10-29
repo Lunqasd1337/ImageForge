@@ -117,6 +117,15 @@ public sealed record RemoveCapability(string Name) : ImageChange;
 /// <summary>Adds a capability listed as Not Present, from the Features on Demand folder given with the plan.</summary>
 public sealed record AddCapability(string Name) : ImageChange;
 
+/// <summary>Adds a driver package from the driver folder given with the plan.</summary>
+/// <param name="InfPath">Relative to that folder, as its scan lists it.</param>
+/// <param name="ForceUnsigned">Lets DISM add a package without a catalog; it may still not load in the installed system.</param>
+public sealed record AddDriverPackage(string InfPath, bool ForceUnsigned = false) : ImageChange;
+
+/// <summary>Removes a third-party driver by its name in the image (oemN.inf).</summary>
+/// <param name="AllowBootCritical">The user accepted that removing a boot-critical driver can leave the image unbootable.</param>
+public sealed record RemoveDriverPackage(string PublishedName, bool AllowBootCritical = false) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

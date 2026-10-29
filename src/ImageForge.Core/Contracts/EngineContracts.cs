@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 6;
+    public const int Version = 7;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -79,6 +79,21 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>The LanguagesAndOptionalFeatures folder of the Features on Demand ISO; needed only for additions.</summary>
     public string? FodSource { get; init; }
+
+    /// <summary>Driver packages to add, by INF path relative to <see cref="DriverFolder"/>; the engine scans it again.</summary>
+    public IReadOnlyList<string> AddDrivers { get; init; } = [];
+
+    /// <summary>The folder of driver packages; needed only for additions.</summary>
+    public string? DriverFolder { get; init; }
+
+    /// <summary>The user accepted adding the chosen packages that have no catalog (DISM ForceUnsigned).</summary>
+    public bool ForceUnsigned { get; init; }
+
+    /// <summary>Third-party drivers of the image to remove, by published name (oemN.inf).</summary>
+    public IReadOnlyList<string> RemoveDrivers { get; init; } = [];
+
+    /// <summary>The user accepted removing the chosen boot-critical drivers.</summary>
+    public bool AllowBootCritical { get; init; }
 }
 
 public enum EngineState

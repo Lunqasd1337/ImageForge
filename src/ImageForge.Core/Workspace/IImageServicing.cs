@@ -1,4 +1,5 @@
 using ImageForge.Core.Appx;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -36,6 +37,14 @@ public interface IImageServicing
 
     /// <param name="source">A checked local Features on Demand folder; never Windows Update.</param>
     Task AddCapabilityAsync(string mountDir, CapabilityIdentity capability, string source, CancellationToken ct);
+
+    /// <summary>The third-party drivers of the image (DismGetDrivers without inbox drivers).</summary>
+    Task<DriverInventory> GetDriversAsync(string mountDir, CancellationToken ct);
+
+    /// <param name="infPath">The full path of the INF in the checked driver folder.</param>
+    Task AddDriverAsync(string mountDir, string infPath, bool forceUnsigned, CancellationToken ct);
+
+    Task RemoveDriverAsync(string mountDir, string publishedName, CancellationToken ct);
 
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 

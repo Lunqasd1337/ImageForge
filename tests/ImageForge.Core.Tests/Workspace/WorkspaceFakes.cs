@@ -1,4 +1,5 @@
 using ImageForge.Core.Appx;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -142,6 +143,38 @@ internal sealed class FakeServicing : IImageServicing
     {
         Calls.Add("capability-remove " + capability.Name);
         Capabilities[capability.FullName] = "Not Present";
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The third-party drivers every mounted image reports.</summary>
+    public List<InstalledDriver> Drivers { get; } = [];
+
+    /// <summary>Additions succeed without a new published name, as when the image already holds the package.</summary>
+    public bool DriverAlreadyPresent { get; set; }
+
+    public Task<DriverInventory> GetDriversAsync(string mountDir, CancellationToken ct)
+    {
+        Calls.Add("driver-list");
+        return Task.FromResult(new DriverInventory([.. Drivers], []));
+    }
+
+    public Task AddDriverAsync(string mountDir, string infPath, bool forceUnsigned, CancellationToken ct)
+    {
+        Calls.Add($"driver-add {Path.GetFileName(infPath)}{(forceUnsigned ? " force-unsigned" : string.Empty)}");
+        if (!DriverAlreadyPresent)
+        {
+            var number = Enumerable.Range(0, 100).First(n => !Drivers.Any(d => d.PublishedName == $"oem{n}.inf"));
+            Drivers.Add(new InstalledDriver($"oem{number}.inf", @"C:\m\Windows\System32\DriverStore\FileRepository\x\" + Path.GetFileName(infPath),
+                "Net", "Vendor", "1.0", DateTime.UnixEpoch, false, forceUnsigned ? "Unsigned" : "Signed"));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveDriverAsync(string mountDir, string publishedName, CancellationToken ct)
+    {
+        Calls.Add("driver-remove " + publishedName);
+        Drivers.RemoveAll(d => d.PublishedName == publishedName);
         return Task.CompletedTask;
     }
 

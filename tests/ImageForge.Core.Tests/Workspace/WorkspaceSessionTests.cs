@@ -1,5 +1,6 @@
 using System.Text;
 using ImageForge.Core.Contracts;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Workspace;
@@ -330,6 +331,45 @@ public sealed class WorkspaceSessionTests : IDisposable
         plan.FodSource.ShouldBe(_dir.Combine("fod"));
         (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
         _servicing.Capabilities["OpenSSH.Server~~~~0.0.1.0"].ShouldBe("Installed");
+    }
+
+    [Fact]
+    public async Task Drivers_of_the_image_are_shown_and_packages_of_a_folder_are_planned_and_added()
+    {
+        _servicing.Drivers.Add(new InstalledDriver("oem0.inf", @"C:\m\x\viostor.inf", "SCSIAdapter", "Red Hat, Inc.", "1.0", DateTime.UnixEpoch, true, "Signed"));
+        _dir.WriteFile("drivers/net/netkvm.inf", Drivers.InfTests.Storage);
+        _dir.WriteFile("drivers/net/viostor.cat", "CAT");
+        _dir.WriteFile("drivers/net/amd64/viostor.sys", "SYS");
+        _dir.WriteFile("drivers/copy/netkvm.inf", Drivers.InfTests.Storage);
+        _dir.WriteFile("drivers/copy/viostor.cat", "CAT");
+        _dir.WriteFile("drivers/copy/amd64/viostor.sys", "SYS");
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.Drivers.ShouldHaveSingleItem().PublishedName.ShouldBe("oem0.inf");
+        inspection.DriverProblems.ShouldBeEmpty();
+        _session.Plan(new PlanOptions(null) { RemoveDrivers = ["oem0.inf"] }).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.DriverBootCritical);
+        _session.Plan(new PlanOptions(null) { AddDrivers = [@"net\netkvm.inf"] }).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.DriverSourceMissing);
+
+        var plan = _session.Plan(new PlanOptions(null)
+        {
+            AddDrivers = [@"net\netkvm.inf", @"copy\netkvm.inf"],
+            DriverFolder = _dir.Combine("drivers"),
+            RemoveDrivers = ["oem0.inf"],
+            AllowBootCritical = true,
+        });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        var drivers = plan.Drivers.ShouldNotBeNull();
+        drivers.Add.ShouldHaveSingleItem().SameContent.ShouldBe([@"copy\netkvm.inf"]);
+        drivers.Remove.ShouldHaveSingleItem().BootCritical.ShouldBeTrue();
+        drivers.Warnings.ShouldNotBeEmpty();
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Calls.ShouldContain("driver-remove oem0.inf");
+        _servicing.Calls.ShouldContain("driver-add netkvm.inf");
     }
 
     private static RegFileInput RegFile(string body) =>

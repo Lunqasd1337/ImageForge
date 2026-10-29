@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
 
@@ -35,6 +36,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var requested = new List<(AppxRemoval Removal, int Index)>();
         var featureChanges = new List<(ImageChange Change, int Index)>();
         var capabilityChanges = new List<(ImageChange Change, int Index)>();
+        var driverChanges = new List<(ImageChange Change, int Index)>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
             if (request.Changes[i] is EnableWindowsFeature or DisableWindowsFeature)
@@ -44,6 +46,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is RemoveCapability or AddCapability)
             {
                 capabilityChanges.Add((request.Changes[i], i));
+            }
+            else if (request.Changes[i] is AddDriverPackage or RemoveDriverPackage)
+            {
+                driverChanges.Add((request.Changes[i], i));
             }
             else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
@@ -64,7 +70,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var removals = diagnostics.Count == 0 && requested.Count > 0 ? OrderAppxRemovals(requested, request.Appx!, diagnostics) : [];
         var features = featureChanges.Count > 0 ? PlanFeatures(featureChanges, request, diagnostics) : null;
         var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
-        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null)
+        var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
+        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
         }
@@ -102,6 +109,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             AppxInventory = removals.Count > 0 ? request.Appx!.Fingerprint : null,
             Features = features,
             Capabilities = capabilities,
+            Drivers = drivers,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -344,6 +352,126 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             : null;
     }
 
+    /// <summary>
+    /// Removals need a third-party driver of the image, and consent for a boot-critical one; additions a package of the
+    /// scanned folder without problems, and ForceUnsigned for one without a catalog. Packages with the same content are
+    /// added once (plan, section 12).
+    /// </summary>
+    private static DriverPlan? PlanDrivers(List<(ImageChange Change, int Index)> changes, PlanRequest request, List<PlanningDiagnostic> diagnostics)
+    {
+        if (request.Drivers is not { Problems.Count: 0 } inventory)
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.DriverInventoryMissing, changes[0].Index, "Список драйверов образа не прочитан; изменить драйверы нельзя."));
+            return null;
+        }
+
+        var count = diagnostics.Count;
+        var remove = new List<DriverRemoval>();
+        var add = new List<DriverAddition>();
+        var warnings = new List<string>();
+        foreach (var (change, index) in changes)
+        {
+            if (change is RemoveDriverPackage removal)
+            {
+                var driver = inventory.Drivers.FirstOrDefault(d => string.Equals(d.PublishedName, removal.PublishedName, StringComparison.OrdinalIgnoreCase));
+                if (driver is null)
+                {
+                    diagnostics.Add(new PlanningDiagnostic(
+                        PlanningCodes.DriverNotInstalled, index, $"В образе нет стороннего драйвера {removal.PublishedName}."));
+                }
+                else if (driver.BootCritical && !removal.AllowBootCritical)
+                {
+                    diagnostics.Add(new PlanningDiagnostic(
+                        PlanningCodes.DriverBootCritical, index, $"Драйвер {driver.PublishedName} ({driver.InfName}) нужен для загрузки; удалить его можно только с отдельным подтверждением."));
+                }
+                else if (!remove.Any(r => r.PublishedName == driver.PublishedName))
+                {
+                    remove.Add(new DriverRemoval(driver.PublishedName, Describe(driver), driver.BootCritical));
+                    if (driver.BootCritical)
+                    {
+                        warnings.Add($"Удаляется драйвер, нужный для загрузки: {driver.PublishedName} ({driver.InfName}). Без него образ может не загрузиться.");
+                    }
+                }
+            }
+            else if (change is AddDriverPackage addition && PlanDriverAddition(addition, index, request.DriverSource, diagnostics) is { } scanned)
+            {
+                var hash = scanned.ContentHash!;
+                var same = add.FindIndex(a => a.ContentHash == hash);
+                var unsigned = scanned.Package.IsUnsigned;
+                if (same >= 0)
+                {
+                    var first = add[same];
+                    add[same] = first with
+                    {
+                        ForceUnsigned = first.ForceUnsigned || (unsigned && addition.ForceUnsigned),
+                        SameContent = string.Equals(first.InfPath, scanned.Package.InfPath, StringComparison.OrdinalIgnoreCase) || first.SameContent.Contains(scanned.Package.InfPath, StringComparer.OrdinalIgnoreCase)
+                            ? first.SameContent
+                            : [.. first.SameContent, scanned.Package.InfPath],
+                    };
+                    continue;
+                }
+
+                var inf = scanned.Package.Inf!;
+                add.Add(new DriverAddition(scanned.Package.InfPath, hash, unsigned, Describe(scanned.Package), []));
+                if (unsigned)
+                {
+                    warnings.Add($"Пакет {scanned.Package.InfPath} без подписи добавляется с ForceUnsigned: DISM не проверит подпись, и в установленной системе драйвер может не загрузиться.");
+                }
+
+                var name = scanned.Package.InfPath[(scanned.Package.InfPath.LastIndexOf('\\') + 1)..];
+                foreach (var present in inventory.Drivers.Where(d => string.Equals(d.InfName, name, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(d.Version, inf.DriverVersion, StringComparison.OrdinalIgnoreCase)))
+                {
+                    warnings.Add($"В образе уже есть {present.PublishedName} ({present.InfName} {present.Version}); такой же пакет DISM не добавит второй раз.");
+                }
+            }
+        }
+
+        return diagnostics.Count == count && remove.Count + add.Count > 0
+            ? new DriverPlan(remove, add, add.Count > 0 ? request.DriverSource!.Folder : null, inventory.Fingerprint, warnings.Distinct().ToList())
+            : null;
+    }
+
+    private static ScannedDriver? PlanDriverAddition(AddDriverPackage addition, int index, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
+    {
+        if (source is null || source.Problem is not null)
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.DriverSourceMissing, index, source?.Problem is { } problem
+                    ? $"Папка драйверов не подходит: {problem}"
+                    : "Для добавления драйверов нужна папка с пакетами; она не указана."));
+            return null;
+        }
+
+        var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.InfPath, addition.InfPath, StringComparison.OrdinalIgnoreCase));
+        if (scanned is null)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverSourceMissing, index, $"В папке драйверов нет {addition.InfPath}."));
+            return null;
+        }
+
+        if (scanned.Package.Inf is null || scanned.Package.Problems.Count > 0 || scanned.ContentHash is null)
+        {
+            var problems = scanned.Package.Problems.Count > 0 ? string.Join(" ", scanned.Package.Problems) : "файлы пакета не прочитаны.";
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverPackageInvalid, index, $"Пакет {addition.InfPath} нельзя добавить: {problems}"));
+            return null;
+        }
+
+        if (scanned.Package.IsUnsigned && !addition.ForceUnsigned)
+        {
+            diagnostics.Add(new PlanningDiagnostic(
+                PlanningCodes.DriverUnsigned, index, $"У пакета {addition.InfPath} нет каталога (подписи); добавить его можно только с ForceUnsigned."));
+            return null;
+        }
+
+        return scanned;
+    }
+
+    private static string Describe(InstalledDriver d) => $"{d.PublishedName}: {d.InfName}, {d.ClassName}, {d.Provider}, {d.Version}";
+
+    private static string Describe(DriverPackageInfo p) => $"{p.InfPath}: {p.Inf!.Class ?? "-"}, {p.Inf.Provider ?? "-"}, {p.Inf.DriverVersion ?? "-"}";
+
     private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)
     {
         var (keyPath, kind, valueName, value) = change switch
@@ -419,7 +547,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 5;
+    private const int FormatVersion = 6;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -499,6 +627,20 @@ public static class PlanFingerprint
             foreach (var feature in features.Enable)
             {
                 Append(builder, "enable-feature", feature);
+            }
+        }
+
+        if (plan.Drivers is { } drivers)
+        {
+            Append(builder, "driver-inventory", drivers.Inventory, drivers.Source ?? string.Empty);
+            foreach (var removal in drivers.Remove)
+            {
+                Append(builder, "remove-driver", removal.PublishedName);
+            }
+
+            foreach (var addition in drivers.Add)
+            {
+                Append(builder, "add-driver", addition.InfPath, addition.ContentHash, addition.ForceUnsigned);
             }
         }
 

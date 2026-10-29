@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
 
@@ -23,6 +24,12 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 
     /// <summary>Why the given Features on Demand folder cannot be used; shown when an addition needs it.</summary>
     public string? FodSourceProblem { get; init; }
+
+    /// <summary>The third-party drivers read from the image; removals are planned only against it.</summary>
+    public DriverInventory? Drivers { get; init; }
+
+    /// <summary>The scanned driver folder; additions are planned only from it.</summary>
+    public DriverFolder? DriverSource { get; init; }
 }
 
 public abstract record PlannedStep;
@@ -97,6 +104,9 @@ public sealed record ExecutionPlan(
 
     /// <summary>Capabilities to remove and add, before the feature changes; null when there are none.</summary>
     public CapabilityPlan? Capabilities { get; init; }
+
+    /// <summary>Driver packages to remove and add, after the feature changes; null when there are none.</summary>
+    public DriverPlan? Drivers { get; init; }
 }
 
 /// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
@@ -116,6 +126,20 @@ public sealed record CapabilityPlan(IReadOnlyList<CapabilityIdentity> Remove, st
     /// <summary>The Features on Demand folder; set only when something is added.</summary>
     public string? Source { get; init; }
 }
+
+/// <param name="Remove">Removed first, in this order.</param>
+/// <param name="Add">Added after the removals, one DISM call each, from <paramref name="Source"/>.</param>
+/// <param name="Inventory">Fingerprint of the driver list the removals were checked against.</param>
+/// <param name="Warnings">Shown in the preview: unsigned packages, boot-critical removals, packages DISM may already hold.</param>
+public sealed record DriverPlan(
+    IReadOnlyList<DriverRemoval> Remove, IReadOnlyList<DriverAddition> Add, string? Source, string Inventory, IReadOnlyList<string> Warnings);
+
+public sealed record DriverRemoval(string PublishedName, string Description, bool BootCritical);
+
+/// <param name="InfPath">Relative to the driver folder.</param>
+/// <param name="ContentHash">The run adds the package only while its files still have this hash.</param>
+/// <param name="SameContent">Other requested paths with the same content; added once.</param>
+public sealed record DriverAddition(string InfPath, string ContentHash, bool ForceUnsigned, string Description, IReadOnlyList<string> SameContent);
 
 /// <param name="Warning">Shown before the removal is confirmed; null when none is known.</param>
 public sealed record AppxRemoval(PackageIdentity Package, string DisplayName, string? Warning);
@@ -146,6 +170,12 @@ public static class PlanningCodes
     public const string CapabilityNotInstalled = "capability.not-installed";
     public const string CapabilityNotAvailable = "capability.not-available";
     public const string CapabilitySourceMissing = "capability.source.missing";
+    public const string DriverInventoryMissing = "driver.inventory.missing";
+    public const string DriverNotInstalled = "driver.not-installed";
+    public const string DriverBootCritical = "driver.boot-critical";
+    public const string DriverSourceMissing = "driver.source.missing";
+    public const string DriverPackageInvalid = "driver.package.invalid";
+    public const string DriverUnsigned = "driver.unsigned";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

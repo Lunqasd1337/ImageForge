@@ -1,11 +1,16 @@
 using ImageForge.Core.Appx;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 
 namespace ImageForge.Core.Workspace;
 
 /// <summary>What the inspection read from the image; plans are checked against it.</summary>
 /// <param name="MediaHasNetFx3">sources\sxs of the media copy holds the .NET Framework 3.5 package (see <see cref="FeatureSources"/>).</param>
-public sealed record ImageInventory(AppxInventory Appx, FeatureInventory Features, CapabilityInventory Capabilities, bool MediaHasNetFx3);
+public sealed record ImageInventory(AppxInventory Appx, FeatureInventory Features, CapabilityInventory Capabilities, bool MediaHasNetFx3)
+{
+    /// <summary>The third-party drivers; empty with no problems when the inventory did not read them.</summary>
+    public DriverInventory Drivers { get; init; } = new([], ["Список драйверов не прочитан."]);
+}
 
 /// <summary>
 /// Reads the inventories of the source image: the source is copied and verified into base\ (reused by the next run),
@@ -70,7 +75,9 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
                 capabilities = await servicing.ReadCapabilityNamesAsync(mountDir, capabilities, ct).ConfigureAwait(false);
             }
 
-            return new ImageInventory(inventory, features, capabilities, MediaHasNetFx3(paths));
+            Log?.Invoke("driver-list...");
+            var drivers = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
+            return new ImageInventory(inventory, features, capabilities, MediaHasNetFx3(paths)) { Drivers = drivers };
         }
         finally
         {

@@ -108,3 +108,18 @@
 - Окно: поле «Папка FoD» с выбором папки, список доступных с фильтром, в превью источник и предупреждение о зависимостях. Протокол движка 6.
 - Проверка в VM — [S2-FOD-UI](vm-checks/S2-FOD-UI.md).
 - Дальше: драйверы.
+
+### Драйверы: разбор пакетов, список образа, добавление и удаление
+
+- Core (TDD), `ImageForge.Core.Drivers`:
+  - `InfParser` читает INF: разделы, комментарии вне кавычек, перенос строк `\`, `%строки%` из `[Strings]`. Локализованный `[Strings.xxxx]` дополняет `[Strings]`, но не заменяет его.
+  - `InfText.Decode` понимает UTF-16 с BOM и без, UTF-8 с BOM и ANSI.
+  - `DriverPackage.Analyze` достаёт класс, GUID, поставщика, дату и версию, каталог (`CatalogFile.NTamd64` важнее `CatalogFile`) и архитектуры из `[Manufacturer]`. Проблемой считаются: файл не INF драйвера NT, нет раздела x64, каталог указан, но его нет, нет файла из `[SourceDisksFiles]` (путь берётся из `[SourceDisksNames]` относительно INF). Пакет без каталога помечается неподписанным.
+- Engine: `DismImages.GetDrivers` / `AddDriver` / `RemoveDriver` через офлайн-сессию DISM API.
+- Утилита:
+  - `driver-scan <папка>` ищет INF рекурсивно, проверяет пакеты и находит одинаковые INF;
+  - `driver-list <mount> third-party|all`;
+  - `driver-add <mount> <inf> signed-only|force-unsigned` сначала проверяет пакет. Пакет без каталога добавляется только с `force-unsigned`, с предупреждением;
+  - `driver-remove <mount> <oemN.inf> normal|allow-boot-critical` удаляет только сторонние драйверы, BootCritical — только с явным согласием.
+- Проверка в VM — [S2-DRIVERS-INVENTORY](vm-checks/S2-DRIVERS-INVENTORY.md).
+- Дальше: драйверы в окне, в плане и в запуске (цели install/boot/WinRE, дубликаты по содержимому).

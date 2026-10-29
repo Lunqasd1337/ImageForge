@@ -100,6 +100,13 @@ public static class DismCliArguments
     public static IReadOnlyList<string> RemoveCapability(string mountDirectory, CapabilityIdentity capability) =>
         ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Remove-Capability", "/CapabilityName:" + CapabilityName(capability)];
 
+    /// <summary>Only from a local Features on Demand folder and always /LimitAccess: never a download from Windows Update.</summary>
+    public static IReadOnlyList<string> AddCapability(string mountDirectory, CapabilityIdentity capability, string source) =>
+    [
+        "/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Add-Capability", "/CapabilityName:" + CapabilityName(capability),
+        "/Source:" + LocalPath(source, nameof(source)), "/LimitAccess",
+    ];
+
     private static void AddFeatureNames(List<string> arguments, IReadOnlyList<string> featureNames)
     {
         ArgumentNullException.ThrowIfNull(featureNames);

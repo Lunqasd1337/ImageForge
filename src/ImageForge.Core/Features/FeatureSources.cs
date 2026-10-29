@@ -23,6 +23,27 @@ public static class FeatureSources
             : "The folder has no microsoft-windows-netfx3-ondemand-package~...~amd64~~.cab.";
     }
 
+    /// <summary>The subfolder of a Features on Demand folder that describes its packages to DISM.</summary>
+    public const string FodMetadataFolder = "metadata";
+
+    private const string FodMetadataFile = "FoDMetadata_Client.cab";
+
+    /// <summary>
+    /// Why the folder cannot serve as a Features on Demand source, or null when it can: the LanguagesAndOptionalFeatures
+    /// folder of the matching ISO, with package .cab files and a metadata subfolder holding FoDMetadata_Client.cab.
+    /// Whether it matches the build of the image is known only to DISM, which then fails the addition.
+    /// </summary>
+    /// <param name="fileNames">Files directly in the folder.</param>
+    /// <param name="metadataFileNames">Files in its metadata subfolder, or null when there is none.</param>
+    public static string? FodProblem(IEnumerable<string> fileNames, IEnumerable<string>? metadataFileNames)
+    {
+        ArgumentNullException.ThrowIfNull(fileNames);
+        return metadataFileNames is null ? $"The folder has no {FodMetadataFolder} subfolder; use LanguagesAndOptionalFeatures of the Features on Demand ISO."
+            : !metadataFileNames.Contains(FodMetadataFile, StringComparer.OrdinalIgnoreCase) ? $"The {FodMetadataFolder} subfolder has no {FodMetadataFile}."
+            : !fileNames.Any(f => f.EndsWith(".cab", StringComparison.OrdinalIgnoreCase)) ? "The folder holds no package .cab files."
+            : null;
+    }
+
     private static bool IsNetFx3Package(string fileName) =>
         fileName.StartsWith("microsoft-windows-netfx3-ondemand-package~", StringComparison.OrdinalIgnoreCase)
         && fileName.Contains("~amd64~", StringComparison.OrdinalIgnoreCase)

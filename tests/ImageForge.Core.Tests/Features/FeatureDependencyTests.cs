@@ -189,4 +189,16 @@ public sealed class FeatureDependencyTests
     {
         (FeatureSources.NetFx3Problem([file, "other.cab"]) is null).ShouldBe(usable);
     }
+
+    [Fact]
+    public void A_fod_folder_needs_packages_and_its_metadata()
+    {
+        string[] cabs = ["OpenSSH-Server-Package~31bf3856ad364e35~amd64~~.cab", "Microsoft-Windows-WMIC-FoD-Package~31bf3856ad364e35~amd64~~.cab"];
+        string[] metadata = ["FoDMetadata_Client.cab", "DesktopTargetCompDB_Neutral.xml.cab"];
+
+        FeatureSources.FodProblem(cabs, metadata).ShouldBeNull();
+        FeatureSources.FodProblem(cabs, null).ShouldNotBeNull().ShouldContain("metadata");
+        FeatureSources.FodProblem(cabs, ["readme.txt"]).ShouldNotBeNull().ShouldContain("FoDMetadata_Client.cab");
+        FeatureSources.FodProblem(["readme.txt"], metadata).ShouldNotBeNull().ShouldContain(".cab");
+    }
 }

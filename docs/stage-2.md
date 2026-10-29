@@ -92,3 +92,9 @@
 - Окно: разделы «Компоненты Windows» (отметка — состояние после запуска) и «Дополнительные компоненты» (отметка — удалить). Превью показывает добавленное планом, источник NetFx3 и предупреждение о вложенных компонентах, которые может включить DISM. Протокол движка 5.
 - Проверка в VM — [S2-FEATURES-UI](vm-checks/S2-FEATURES-UI.md).
 - Дальше: добавление Capability из локальной папки FoD, затем драйверы.
+
+### Capabilities: добавление из папки FoD
+
+- Core (TDD): `FeatureSources.FodProblem` — источник Features on Demand должен быть папкой `LanguagesAndOptionalFeatures` ISO: пакеты `.cab` и `metadata\FoDMetadata_Client.cab`. Совпадение сборки ISO и образа проверяет только DISM. `DismCliArguments.AddCapability` — только локальный абсолютный путь и всегда `/LimitAccess`.
+- Утилита: `capability-add <mount> <имя> <папка FoD>` — добавляет только компонент со статусом `Not Present`, затем читает список снова и печатает всё, что DISM изменил сам. Проверка в VM — [S2-FOD-ADD](vm-checks/S2-FOD-ADD.md).
+- Дальше: выбор папки FoD и добавление в окне, в плане и в запуске.

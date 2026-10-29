@@ -5,7 +5,7 @@ namespace ImageForge.Core.Tests.Drivers;
 
 public sealed class InfTests
 {
-    internal const string Storage = """
+    internal const string StorageLf = """
         ; Sample storage miniport, comments ; and "quoted ; text" are handled
         [Version]
         Signature   = "$WINDOWS NT$"
@@ -34,6 +34,9 @@ public sealed class InfTests
         DiskName   = "VirtIO Storage %% Disk"
         DeviceDesc = "Red Hat VirtIO SCSI controller"
         """;
+
+    // INF files on disk use CRLF; tests run on it everywhere, whatever line endings the checkout gave the source.
+    internal static readonly string Storage = StorageLf.ReplaceLineEndings("\r\n");
 
     private static DriverPackageInfo Analyze(string text, params string[] present) =>
         DriverPackage.Analyze(@"amd64\viostor.inf", text, p => present.Contains(p, StringComparer.OrdinalIgnoreCase));
@@ -80,7 +83,7 @@ public sealed class InfTests
     [Fact]
     public void A_package_without_x64_or_without_a_catalog_is_reported()
     {
-        var x86 = Storage.Replace("Models, NTamd64.10.0, \\\n           NTarm64", "Models", StringComparison.Ordinal);
+        var x86 = Storage.ReplaceLineEndings("\n").Replace("Models, NTamd64.10.0, \\\n           NTarm64", "Models", StringComparison.Ordinal);
         Analyze(x86, @"amd64\viostor.cat", @"amd64\amd64\viostor.sys").Problems.ShouldContain(p => p.Contains("x64", StringComparison.Ordinal));
 
         var unsigned = Storage.Replace("CatalogFile = viostor.cat", string.Empty, StringComparison.Ordinal);

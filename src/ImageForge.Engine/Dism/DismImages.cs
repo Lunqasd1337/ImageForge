@@ -6,6 +6,19 @@ namespace ImageForge.Engine.Dism;
 
 public sealed record WimImageSummary(int Index, string Name, string EditionId, string Version, string Architecture, ulong SizeBytes);
 
+/// <param name="PublishedName">The name inside the image (oemN.inf), which removal needs.</param>
+public sealed record ImageDriver(
+    string PublishedName,
+    string OriginalFileName,
+    bool InBox,
+    bool BootCritical,
+    string ClassName,
+    string ProviderName,
+    DateTime Date,
+    string Version,
+    string Signature,
+    string CatalogFile);
+
 public sealed record MountedImageSummary(string ImageFile, int Index, string MountPath, string Mode, string Status);
 
 /// <summary>Thin, synchronous wrapper over the DISM API. One instance owns one DismApi initialization.</summary>
@@ -103,6 +116,37 @@ public sealed class DismImages : IDisposable
         }
 
         return names;
+    }
+
+    /// <summary>The driver packages of an offline image (DismGetDrivers); inbox ones only when asked.</summary>
+    public static IReadOnlyList<ImageDriver> GetDrivers(string mountPath, bool includeInbox)
+    {
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        return [.. DismApi.GetDrivers(session, includeInbox).Select(d => new ImageDriver(
+            d.PublishedName,
+            d.OriginalFileName,
+            d.InBox,
+            d.BootCritical,
+            d.ClassName,
+            d.ProviderName,
+            d.Date,
+            d.Version.ToString(),
+            d.DriverSignature.ToString(),
+            d.CatalogFile))];
+    }
+
+    /// <summary>Adds one INF package (DismAddDriver). ForceUnsigned stays off unless the user chose it with a warning.</summary>
+    public static void AddDriver(string mountPath, string infPath, bool forceUnsigned)
+    {
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        DismApi.AddDriver(session, infPath, forceUnsigned);
+    }
+
+    /// <summary>Removes a third-party package by its published name, such as oem3.inf (DismRemoveDriver).</summary>
+    public static void RemoveDriver(string mountPath, string publishedName)
+    {
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        DismApi.RemoveDriver(session, publishedName);
     }
 
     // ManagedDism exposes DismGetFeatureParent only by package name or path; a feature of the foundation package (all

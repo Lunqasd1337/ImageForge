@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
+using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -48,6 +49,10 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["capability-info"] = ("capability-info <mount-dir> <CapabilityName>", a => CapabilityInfo(a[0], a[1])),
     ["capability-remove"] = ("capability-remove <mount-dir> <CapabilityName>", a => CapabilityRemove(a[0], a[1])),
     ["capability-add"] = ("capability-add <mount-dir> <CapabilityName> <fod-dir>", a => CapabilityAdd(a[0], a[1], a[2])),
+    ["driver-scan"] = ("driver-scan <folder>", a => Task.FromResult(DriverScan(a[0]))),
+    ["driver-list"] = ("driver-list <mount-dir> third-party|all", a => Task.FromResult(DriverList(a[0], a[1]))),
+    ["driver-add"] = ("driver-add <mount-dir> <file.inf> signed-only|force-unsigned", a => Task.FromResult(DriverAdd(a[0], a[1], a[2]))),
+    ["driver-remove"] = ("driver-remove <mount-dir> <oemN.inf> normal|allow-boot-critical", a => Task.FromResult(DriverRemove(a[0], a[1], a[2]))),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -723,6 +728,179 @@ static async Task<bool> CapabilityAdd(string mountDir, string name, string sourc
     }
 
     return now is { State: CapabilityState.Installed or CapabilityState.Pending };
+}
+
+// Reads one INF from disk and checks its package next to it; paths in the result are relative to root.
+static DriverPackageInfo AnalyzeInf(string root, string inf)
+{
+    var relative = Path.GetRelativePath(root, inf);
+    return DriverPackage.Analyze(relative, InfText.Decode(File.ReadAllBytes(inf)), p => File.Exists(Path.Combine(root, p.Replace('\\', Path.DirectorySeparatorChar))));
+}
+
+static void PrintPackage(DriverPackageInfo package)
+{
+    var inf = package.Inf;
+    Log(inf is null
+        ? $"{package.InfPath}: not a driver INF"
+        : $"{package.InfPath}: class {inf.Class ?? "-"} {inf.ClassGuid ?? "-"} | provider {inf.Provider ?? "-"} | {inf.DriverDate ?? "-"} {inf.DriverVersion ?? "-"} | " +
+          $"catalog {inf.CatalogFile ?? "(none: UNSIGNED)"} | architectures {(inf.Architectures.Count == 0 ? "-" : string.Join(",", inf.Architectures))} | {package.Files.Count} files");
+    foreach (var problem in package.Problems)
+    {
+        Log("  PROBLEM: " + problem);
+    }
+}
+
+// Every *.inf under the folder, with the package checks of plan section 12; same INF content is reported once per group.
+static bool DriverScan(string folder)
+{
+    var root = Path.GetFullPath(folder);
+    if (!Directory.Exists(root))
+    {
+        Log($"{root} does not exist.");
+        return false;
+    }
+
+    var infs = Directory.EnumerateFiles(root, "*.inf", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase).ToList();
+    var packages = infs.Select(inf => AnalyzeInf(root, inf)).ToList();
+    foreach (var package in packages)
+    {
+        PrintPackage(package);
+    }
+
+    foreach (var same in infs.GroupBy(inf => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(inf)))).Where(g => g.Count() > 1))
+    {
+        Log($"SAME INF CONTENT ({same.Key[..12]}): {string.Join(", ", same.Select(inf => Path.GetRelativePath(root, inf)))}");
+    }
+
+    var drivers = packages.Count(p => p.Inf is not null);
+    Log($"INF files: {infs.Count}; driver packages: {drivers}; ready for x64: {packages.Count(p => p.Inf is not null && p.Problems.Count == 0)}; " +
+        $"unsigned: {packages.Count(p => p.IsUnsigned)}; with problems: {packages.Count(p => p.Problems.Count > 0)}");
+    return infs.Count > 0;
+}
+
+static IReadOnlyList<ImageDriver> ReadDrivers(string mountDir, bool includeInbox)
+{
+    var watch = Stopwatch.StartNew();
+    using var dism = new DismImages();
+    var drivers = DismImages.GetDrivers(Path.GetFullPath(mountDir), includeInbox);
+    Log($"Drivers read (DismGetDrivers, inbox {(includeInbox ? "included" : "excluded")}): {drivers.Count}; {watch.Elapsed.TotalSeconds:F1} s");
+    return drivers;
+}
+
+static void PrintDriver(ImageDriver d) =>
+    Log($"{d.PublishedName} | {d.OriginalFileName} | {d.ClassName} | {d.ProviderName} | {d.Date:yyyy-MM-dd} {d.Version} | {d.Signature}" +
+        $"{(d.InBox ? " | inbox" : string.Empty)}{(d.BootCritical ? " | BOOT-CRITICAL" : string.Empty)}");
+
+static bool DriverList(string mountDir, string scope)
+{
+    if (scope is not ("third-party" or "all"))
+    {
+        Log("Scope must be third-party or all.");
+        return false;
+    }
+
+    var drivers = ReadDrivers(mountDir, scope == "all");
+    foreach (var driver in drivers.OrderBy(d => d.InBox).ThenBy(d => d.PublishedName, StringComparer.OrdinalIgnoreCase))
+    {
+        PrintDriver(driver);
+    }
+
+    Log($"Third-party: {drivers.Count(d => !d.InBox)}; inbox: {drivers.Count(d => d.InBox)}; boot-critical: {drivers.Count(d => d.BootCritical)}");
+    return true;
+}
+
+// Checks the package first, adds it, and shows which published names appeared.
+static bool DriverAdd(string mountDir, string infFile, string mode)
+{
+    if (mode is not ("signed-only" or "force-unsigned"))
+    {
+        Log("Mode must be signed-only or force-unsigned.");
+        return false;
+    }
+
+    var inf = Path.GetFullPath(infFile);
+    if (!File.Exists(inf))
+    {
+        Log($"{inf} does not exist.");
+        return false;
+    }
+
+    var package = AnalyzeInf(Path.GetDirectoryName(inf)!, inf);
+    PrintPackage(package);
+    if (package.Inf is null || package.Problems.Count > 0)
+    {
+        Log("REFUSED: the package has problems; nothing was added.");
+        return false;
+    }
+
+    if (package.IsUnsigned && mode != "force-unsigned")
+    {
+        Log("REFUSED: the package has no catalog; add it only with force-unsigned.");
+        return false;
+    }
+
+    if (mode == "force-unsigned")
+    {
+        Log("WARNING: ForceUnsigned is on; DISM will not check the driver signature.");
+    }
+
+    var before = ReadDrivers(mountDir, includeInbox: false).Select(d => d.PublishedName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var watch = Stopwatch.StartNew();
+    using (new DismImages())
+    {
+        DismImages.AddDriver(Path.GetFullPath(mountDir), inf, mode == "force-unsigned");
+    }
+
+    Log($"DismAddDriver finished in {watch.Elapsed.TotalSeconds:F1} s");
+    var added = ReadDrivers(mountDir, includeInbox: false).Where(d => !before.Contains(d.PublishedName)).ToList();
+    foreach (var driver in added)
+    {
+        Log("ADDED:");
+        PrintDriver(driver);
+    }
+
+    if (added.Count == 0)
+    {
+        Log("No new published name appeared (DISM may treat the package as already present).");
+    }
+
+    return added.Count > 0;
+}
+
+static bool DriverRemove(string mountDir, string publishedName, string mode)
+{
+    if (mode is not ("normal" or "allow-boot-critical"))
+    {
+        Log("Mode must be normal or allow-boot-critical.");
+        return false;
+    }
+
+    if (ReadDrivers(mountDir, includeInbox: false).FirstOrDefault(d => string.Equals(d.PublishedName, publishedName, StringComparison.OrdinalIgnoreCase)) is not { } driver)
+    {
+        Log($"REFUSED: '{publishedName}' is not a third-party driver of this image; nothing was removed.");
+        return false;
+    }
+
+    PrintDriver(driver);
+    if (driver.BootCritical && mode != "allow-boot-critical")
+    {
+        Log("REFUSED: the driver is boot-critical; removing it can leave the image unbootable. Use allow-boot-critical to remove it anyway.");
+        return false;
+    }
+
+    if (driver.BootCritical)
+    {
+        Log("WARNING: removing a boot-critical driver.");
+    }
+
+    using (new DismImages())
+    {
+        DismImages.RemoveDriver(Path.GetFullPath(mountDir), driver.PublishedName);
+    }
+
+    var still = ReadDrivers(mountDir, includeInbox: false).Any(d => string.Equals(d.PublishedName, publishedName, StringComparison.OrdinalIgnoreCase));
+    Log($"'{publishedName}': {(still ? "STILL LISTED" : "removed")}");
+    return !still;
 }
 
 // Experiment 4: the whole M1 run with an optional failure before publication.

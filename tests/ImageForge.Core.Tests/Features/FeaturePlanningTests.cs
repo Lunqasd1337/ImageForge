@@ -122,4 +122,48 @@ public sealed class FeaturePlanningTests
         new[] { a.Fingerprint, b.Fingerprint, c.Fingerprint }.Distinct().Count().ShouldBe(3);
         PlanFingerprint.Compute(a with { Features = a.Features! with { Inventory = "other" } }).ShouldNotBe(a.Fingerprint);
     }
+
+    private const string Fod = @"E:\LanguagesAndOptionalFeatures";
+
+    private static PlanResult PlanWithFod(string? source, string? problem, params ImageChange[] changes) =>
+        new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid).Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(), changes)
+        {
+            Capabilities = Capabilities,
+            FodSource = source,
+            FodSourceProblem = problem,
+        });
+
+    [Fact]
+    public void Adds_capabilities_that_are_not_present_from_the_fod_folder()
+    {
+        var plan = PlanWithFod(Fod, null, new AddCapability("openssh.server~~~~0.0.1.0"), new RemoveCapability("MathRecognizer~~~~0.0.1.0")).Plan!;
+
+        plan.Capabilities!.Add.ShouldHaveSingleItem().FullName.ShouldBe("OpenSSH.Server~~~~0.0.1.0");
+        plan.Capabilities.Remove.ShouldHaveSingleItem().FullName.ShouldBe("MathRecognizer~~~~0.0.1.0");
+        plan.Capabilities.Source.ShouldBe(Fod);
+        plan.Capabilities.Inventory.ShouldBe(Capabilities.Fingerprint);
+    }
+
+    [Fact]
+    public void Adding_needs_a_usable_fod_folder_and_a_capability_that_is_not_present()
+    {
+        PlanWithFod(null, null, new AddCapability("OpenSSH.Server~~~~0.0.1.0")).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.CapabilitySourceMissing);
+        PlanWithFod(null, "The folder has no metadata subfolder.", new AddCapability("OpenSSH.Server~~~~0.0.1.0")).Diagnostics
+            .ShouldHaveSingleItem().Message.ShouldContain("metadata");
+        PlanWithFod(Fod, null, new AddCapability("MathRecognizer~~~~0.0.1.0")).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.CapabilityNotAvailable);
+        PlanWithFod(Fod, null, new AddCapability("NoSuch~~~~0.0.1.0")).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.CapabilityNotAvailable);
+    }
+
+    [Fact]
+    public void The_fingerprint_covers_additions_and_their_source()
+    {
+        var a = PlanWithFod(Fod, null, new AddCapability("OpenSSH.Server~~~~0.0.1.0")).Plan!;
+        var b = PlanWithFod(@"F:\fod", null, new AddCapability("OpenSSH.Server~~~~0.0.1.0")).Plan!;
+        var c = PlanWithFod(Fod, null, new RemoveCapability("MathRecognizer~~~~0.0.1.0")).Plan!;
+
+        new[] { a.Fingerprint, b.Fingerprint, c.Fingerprint }.Distinct().Count().ShouldBe(3);
+    }
 }

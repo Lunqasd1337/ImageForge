@@ -114,6 +114,9 @@ public sealed record DisableWindowsFeature(string Name) : ImageChange;
 /// <summary>Removes an installed capability (Feature on Demand), named as DISM lists it.</summary>
 public sealed record RemoveCapability(string Name) : ImageChange;
 
+/// <summary>Adds a capability listed as Not Present, from the Features on Demand folder given with the plan.</summary>
+public sealed record AddCapability(string Name) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

@@ -133,6 +133,24 @@ public sealed class EngineContractTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_capability_addition_and_its_folder_cross_the_channel()
+    {
+        var servicing = new FakeServicing();
+        servicing.Capabilities["OpenSSH.Server~~~~0.0.1.0"] = "Not Present";
+        _dir.WriteFile("fod/a.cab", "CAB");
+        _dir.WriteFile("fod/metadata/DesktopTargetCompDB_FOD_Neutral.xml.cab", "CAB");
+        var engine = Connect((_, _, _) => [], servicing);
+        await engine.OpenWorkspaceAsync(new OpenWorkspaceRequest(_dir.Combine("media"), _dir.Combine("work"), _dir.Combine("out", "Win11")), Ct);
+
+        var inspection = await engine.InspectAsync(null, Ct);
+        var plan = await engine.PlanAsync(new PlanOptions(null) { AddCapabilities = ["OpenSSH.Server~~~~0.0.1.0"], FodSource = _dir.Combine("fod") }, Ct);
+
+        inspection.AvailableCapabilities.ShouldHaveSingleItem().State.ShouldBe("Not Present");
+        plan.CapabilityAdditions.ShouldBe(["OpenSSH.Server~~~~0.0.1.0"]);
+        plan.FodSource.ShouldBe(_dir.Combine("fod"));
+    }
+
+    [Fact]
     public async Task An_inventory_and_a_removal_plan_cross_the_channel()
     {
         var engine = Connect((_, _, _) => []);

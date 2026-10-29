@@ -38,6 +38,12 @@ public sealed record PlanSummary(
     /// <summary>Capabilities the plan removes, by name.</summary>
     public IReadOnlyList<string> CapabilityRemovals { get; init; } = [];
 
+    /// <summary>Capabilities the plan adds, by name; DISM may add their dependencies too.</summary>
+    public IReadOnlyList<string> CapabilityAdditions { get; init; } = [];
+
+    /// <summary>The Features on Demand folder the additions come from; null when nothing is added.</summary>
+    public string? FodSource { get; init; }
+
     /// <summary>Feature changes, with what is added by parents and dependents; null when there are none.</summary>
     public FeatureChangeView? FeatureChanges { get; init; }
 }
@@ -79,8 +85,11 @@ public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<App
     /// <summary>Why the feature list cannot be used; the features are empty then.</summary>
     public IReadOnlyList<string> FeatureProblems { get; init; } = [];
 
-    /// <summary>Installed capabilities only; the others need a Features on Demand source to add.</summary>
+    /// <summary>Installed capabilities, which can be removed.</summary>
     public IReadOnlyList<CapabilityView> Capabilities { get; init; } = [];
+
+    /// <summary>Capabilities listed as Not Present, which can be added from a Features on Demand folder.</summary>
+    public IReadOnlyList<CapabilityView> AvailableCapabilities { get; init; } = [];
 
     public IReadOnlyList<string> CapabilityProblems { get; init; } = [];
 }
@@ -205,10 +214,8 @@ public sealed class WorkspaceSession(
                     .Select(f => View(f, features, inventory.MediaHasNetFx3))
                     .OrderBy(f => f.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
                 FeatureProblems = featureProblems,
-                Capabilities = capabilities.Problems.Count > 0 ? [] : [.. capabilities.Capabilities
-                    .Where(c => c.State == CapabilityState.Installed)
-                    .Select(c => new CapabilityView(c.Identity.FullName, capabilities.DisplayNames.GetValueOrDefault(c.Identity.FullName, c.Identity.Name), c.RawState))
-                    .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+                Capabilities = CapabilityViews(capabilities, CapabilityState.Installed),
+                AvailableCapabilities = CapabilityViews(capabilities, CapabilityState.NotPresent),
                 CapabilityProblems = capabilities.Problems,
             };
         }
@@ -221,11 +228,15 @@ public sealed class WorkspaceSession(
         [
             .. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f)),
             .. options.RemoveCapabilities.Select(c => new RemoveCapability(c)),
+            .. options.AddCapabilities.Select(c => new AddCapability(c)),
             .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f)),
             .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
         ];
-        return options.RegFile is { } file ? PlanRegFile(file, removals)
-            : removals.Count > 0 ? Plan(removals, null)
+        // The folder is checked only when something is added; it is read here, outside the lock.
+        var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
+        var source = fod is null ? null : new FodChoice(fod, ImageInspection.FodFolderProblem(fod));
+        return options.RegFile is { } file ? PlanRegFile(file, removals, source)
+            : removals.Count > 0 ? Plan(removals, null, source)
             : PlanM1();
     }
 
@@ -233,7 +244,9 @@ public sealed class WorkspaceSession(
     public PlanSummary PlanM1() => Plan([ValidationMarker.M1], null);
 
     /// <summary>Plans the changes of a .reg file. A file that cannot be read drops the previous plan.</summary>
-    public PlanSummary PlanRegFile(RegFileInput file, IReadOnlyList<ImageChange>? alsoChanges = null)
+    public PlanSummary PlanRegFile(RegFileInput file, IReadOnlyList<ImageChange>? alsoChanges = null) => PlanRegFile(file, alsoChanges, null);
+
+    private PlanSummary PlanRegFile(RegFileInput file, IReadOnlyList<ImageChange>? alsoChanges, FodChoice? fod)
     {
         ArgumentNullException.ThrowIfNull(file);
         var import = RegFileImport.Read(file);
@@ -255,10 +268,10 @@ public sealed class WorkspaceSession(
             }
         }
 
-        return Plan([.. changes, .. alsoChanges ?? []], encoding);
+        return Plan([.. changes, .. alsoChanges ?? []], encoding, fod);
     }
 
-    private PlanSummary Plan(IReadOnlyList<ImageChange> changes, string? fileEncoding)
+    private PlanSummary Plan(IReadOnlyList<ImageChange> changes, string? fileEncoding, FodChoice? fod = null)
     {
         lock (_gate)
         {
@@ -271,6 +284,8 @@ public sealed class WorkspaceSession(
                     Features = _inventory?.Features,
                     Capabilities = _inventory?.Capabilities,
                     MediaHasNetFx3 = _inventory?.MediaHasNetFx3 == true,
+                    FodSource = fod is { Problem: null } ? fod.Folder : null,
+                    FodSourceProblem = fod?.Problem,
                 });
             _plan = result.Plan;
             return result.Plan is { } plan
@@ -278,6 +293,8 @@ public sealed class WorkspaceSession(
                 {
                     AppxRemovals = [.. plan.AppxRemovals.Select(r => View(_inventory!.Appx.Packages.Single(p => p.Identity == r.Package), _inventory.Appx))],
                     CapabilityRemovals = [.. plan.Capabilities?.Remove.Select(c => c.FullName) ?? []],
+                    CapabilityAdditions = [.. plan.Capabilities?.Add.Select(c => c.FullName) ?? []],
+                    FodSource = plan.Capabilities?.Source,
                     FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
@@ -431,6 +448,12 @@ public sealed class WorkspaceSession(
         };
     }
 
+    private static List<CapabilityView> CapabilityViews(CapabilityInventory capabilities, CapabilityState state) =>
+        capabilities.Problems.Count > 0 ? [] : [.. capabilities.Capabilities
+            .Where(c => c.State == state)
+            .Select(c => new CapabilityView(c.Identity.FullName, capabilities.DisplayNames.GetValueOrDefault(c.Identity.FullName, c.Identity.Name), c.RawState))
+            .OrderBy(c => c.DisplayName, StringComparer.CurrentCultureIgnoreCase)];
+
     private static FeatureView View(WindowsFeature feature, FeatureInventory inventory, bool mediaHasNetFx3)
     {
         var fromMedia = feature.State == FeatureState.DisabledWithPayloadRemoved;
@@ -449,3 +472,6 @@ public sealed class WorkspaceSession(
     private static RunOutcome Rejected(StartPlanRejection rejection, Guid operationId = default) =>
         new(operationId, rejection, null, null, null, null);
 }
+
+/// <param name="Problem">Why the folder cannot be used; null when it passed the check.</param>
+internal sealed record FodChoice(string Folder, string? Problem);

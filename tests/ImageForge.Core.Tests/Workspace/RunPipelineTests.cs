@@ -384,7 +384,51 @@ public sealed class RunPipelineTests : IDisposable
         _servicing.Calls.ShouldContain("unmount discard");
     }
 
-    private async Task<RunRequest> FeatureRequest(IReadOnlyList<ImageChange> changes, bool mediaHasNetFx3 = false)
+    [Fact]
+    public async Task Capabilities_are_added_from_the_fod_folder_and_what_dism_adds_along_is_logged()
+    {
+        _servicing.Capabilities["Language.Speech~~~fr-FR~0.0.1.0"] = "Not Present";
+        _servicing.Capabilities["Language.Basic~~~fr-FR~0.0.1.0"] = "Not Present";
+        _servicing.Capabilities[Math] = "Installed";
+        var request = await FeatureRequest([new AddCapability("Language.Speech~~~fr-FR~0.0.1.0"), new RemoveCapability(Math)], fod: Fod());
+        _servicing.AlsoAdded.Add("Language.Basic~~~fr-FR~0.0.1.0");
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "capability-list", "capability-remove MathRecognizer", "capability-add Language.Speech from fod",
+            "capability-list", "registry", "unmount commit", "export"]);
+        log.ShouldContain("capability Language.Speech~~~fr-FR~0.0.1.0: Not Present -> Installed");
+        log.ShouldContain("capability MathRecognizer~~~~0.0.1.0: Installed -> Not Present");
+        log.ShouldContain("also changed by DISM Language.Basic~~~fr-FR~0.0.1.0: Not Present -> Installed");
+    }
+
+    [Fact]
+    public async Task A_fod_folder_that_went_away_stops_the_run_before_adding()
+    {
+        _servicing.Capabilities["OpenSSH.Server~~~~0.0.1.0"] = "Not Present";
+        var fod = Fod();
+        var request = await FeatureRequest([new AddCapability("OpenSSH.Server~~~~0.0.1.0")], fod: fod);
+        Directory.Delete(Path.Combine(fod, "metadata"), recursive: true);
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("capabilities");
+        result.Error.ShouldNotBeNull().ShouldContain("metadata");
+        _servicing.Calls.ShouldNotContain(c => c.StartsWith("capability-add", StringComparison.Ordinal));
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    private string Fod()
+    {
+        _dir.WriteFile("fod/OpenSSH-Server-Package~31bf3856ad364e35~amd64~~.cab", "CAB");
+        _dir.WriteFile("fod/metadata/DesktopTargetCompDB_FOD_Neutral.xml.cab", "CAB");
+        return _dir.Combine("fod");
+    }
+
+    private async Task<RunRequest> FeatureRequest(IReadOnlyList<ImageChange> changes, bool mediaHasNetFx3 = false, string? fod = null)
     {
         var features = await _servicing.ReadFeatureDetailsAsync("m", await _servicing.GetFeaturesAsync("m", Ct), Ct);
         var capabilities = await _servicing.GetCapabilitiesAsync("m", Ct);
@@ -395,6 +439,7 @@ public sealed class RunPipelineTests : IDisposable
                 Features = features,
                 Capabilities = capabilities,
                 MediaHasNetFx3 = mediaHasNetFx3,
+                FodSource = fod,
             });
         return new RunRequest(_source, _output, 1, plan.Plan.ShouldNotBeNull(string.Join("; ", plan.Diagnostics.Select(d => d.Message))));
     }

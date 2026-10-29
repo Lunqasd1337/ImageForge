@@ -66,12 +66,15 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
     public Task<CapabilityInventory> ReadCapabilityNamesAsync(string mountDir, CapabilityInventory capabilities, CancellationToken ct) => Task.Run(() =>
     {
         GC.KeepAlive(_session);
-        var installed = capabilities.Capabilities.Where(c => c.State == CapabilityState.Installed).Select(c => c.Identity.FullName);
-        return capabilities with { DisplayNames = DismImages.GetCapabilityDisplayNames(mountDir, installed) };
+        var shown = capabilities.Capabilities.Where(c => c.State is CapabilityState.Installed or CapabilityState.NotPresent).Select(c => c.Identity.FullName);
+        return capabilities with { DisplayNames = DismImages.GetCapabilityDisplayNames(mountDir, shown) };
     }, CancellationToken.None);
 
     public Task RemoveCapabilityAsync(string mountDir, CapabilityIdentity capability, CancellationToken ct) =>
         RunCliAsync(DismCliArguments.RemoveCapability(mountDir, capability), "/Remove-Capability");
+
+    public Task AddCapabilityAsync(string mountDir, CapabilityIdentity capability, string source, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.AddCapability(mountDir, capability, source), "/Add-Capability");
 
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>
         Task.Run(() => DismImages.Unmount(mountDir, commit, Progress(commit ? "commit" : "discard")), CancellationToken.None);

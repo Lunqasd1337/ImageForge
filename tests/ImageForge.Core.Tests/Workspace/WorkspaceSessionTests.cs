@@ -305,6 +305,33 @@ public sealed class WorkspaceSessionTests : IDisposable
             .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.FeatureInventoryMissing);
     }
 
+    [Fact]
+    public async Task Not_present_capabilities_are_added_from_a_checked_fod_folder()
+    {
+        _servicing.Capabilities["OpenSSH.Server~~~~0.0.1.0"] = "Not Present";
+        _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"] = "Installed";
+        _dir.WriteFile("fod/OpenSSH-Server-Package~31bf3856ad364e35~amd64~~.cab", "CAB");
+        _dir.WriteFile("fod/metadata/DesktopTargetCompDB_FOD_Neutral.xml.cab", "CAB");
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.AvailableCapabilities.ShouldHaveSingleItem().Name.ShouldBe("OpenSSH.Server~~~~0.0.1.0");
+        inspection.Capabilities.ShouldHaveSingleItem().Name.ShouldBe("MathRecognizer~~~~0.0.1.0");
+        _session.Plan(new PlanOptions(null) { AddCapabilities = ["OpenSSH.Server~~~~0.0.1.0"] }).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.CapabilitySourceMissing);
+        _session.Plan(new PlanOptions(null) { AddCapabilities = ["OpenSSH.Server~~~~0.0.1.0"], FodSource = _dir.Combine("media") }).Diagnostics
+            .ShouldHaveSingleItem().Message.ShouldContain("metadata");
+
+        var plan = _session.Plan(new PlanOptions(null) { AddCapabilities = ["OpenSSH.Server~~~~0.0.1.0"], FodSource = _dir.Combine("fod") });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.CapabilityAdditions.ShouldBe(["OpenSSH.Server~~~~0.0.1.0"]);
+        plan.FodSource.ShouldBe(_dir.Combine("fod"));
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Capabilities["OpenSSH.Server~~~~0.0.1.0"].ShouldBe("Installed");
+    }
+
     private static RegFileInput RegFile(string body) =>
         new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 

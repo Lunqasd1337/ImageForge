@@ -34,16 +34,16 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var changes = new List<RegistryWritePreview>();
         var requested = new List<(AppxRemoval Removal, int Index)>();
         var featureChanges = new List<(ImageChange Change, int Index)>();
-        var capabilityRemovals = new List<(RemoveCapability Change, int Index)>();
+        var capabilityChanges = new List<(ImageChange Change, int Index)>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
             if (request.Changes[i] is EnableWindowsFeature or DisableWindowsFeature)
             {
                 featureChanges.Add((request.Changes[i], i));
             }
-            else if (request.Changes[i] is RemoveCapability capability)
+            else if (request.Changes[i] is RemoveCapability or AddCapability)
             {
-                capabilityRemovals.Add((capability, i));
+                capabilityChanges.Add((request.Changes[i], i));
             }
             else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
@@ -63,7 +63,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
         var removals = diagnostics.Count == 0 && requested.Count > 0 ? OrderAppxRemovals(requested, request.Appx!, diagnostics) : [];
         var features = featureChanges.Count > 0 ? PlanFeatures(featureChanges, request, diagnostics) : null;
-        var capabilities = capabilityRemovals.Count > 0 ? PlanCapabilities(capabilityRemovals, request.Capabilities, diagnostics) : null;
+        var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
@@ -285,32 +285,63 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             : new FeaturePlan(disable, enable, [.. disable.Concat(enable).Where(f => !asked.Contains(f))], needsSource.Count > 0, inventory.Fingerprint);
     }
 
+    /// <summary>
+    /// Removals need an installed capability; additions one listed as Not Present and a checked Features on Demand
+    /// folder. What DISM adds along with it (language dependencies) is not known in advance; the run shows it.
+    /// </summary>
     private static CapabilityPlan? PlanCapabilities(
-        List<(RemoveCapability Change, int Index)> removals, CapabilityInventory? inventory, List<PlanningDiagnostic> diagnostics)
+        List<(ImageChange Change, int Index)> changes, PlanRequest request, List<PlanningDiagnostic> diagnostics)
     {
-        if (inventory is not { Problems.Count: 0 })
+        if (request.Capabilities is not { Problems.Count: 0 } inventory)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.CapabilityInventoryMissing, removals[0].Index, "Список дополнительных компонентов (Capabilities) не прочитан; удалить их нельзя."));
+                PlanningCodes.CapabilityInventoryMissing, changes[0].Index, "Список дополнительных компонентов (Capabilities) не прочитан; изменить их нельзя."));
             return null;
         }
 
         var remove = new List<CapabilityIdentity>();
-        foreach (var (change, index) in removals)
+        var add = new List<CapabilityIdentity>();
+        foreach (var (change, index) in changes)
         {
-            var capability = inventory.Capabilities.FirstOrDefault(c => string.Equals(c.Identity.FullName, change.Name, StringComparison.OrdinalIgnoreCase));
-            if (capability is not { State: CapabilityState.Installed })
+            var (name, adding) = change switch
+            {
+                AddCapability a => (a.Name, true),
+                RemoveCapability r => (r.Name, false),
+                _ => throw new ArgumentOutOfRangeException(nameof(changes)),
+            };
+            var capability = inventory.Capabilities.FirstOrDefault(c => string.Equals(c.Identity.FullName, name, StringComparison.OrdinalIgnoreCase));
+            if (!adding && capability is not { State: CapabilityState.Installed })
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.CapabilityNotInstalled, index, $"Дополнительный компонент {change.Name} не установлен в образе."));
+                    PlanningCodes.CapabilityNotInstalled, index, $"Дополнительный компонент {name} не установлен в образе."));
             }
-            else if (!remove.Contains(capability.Identity))
+            else if (adding && capability is not { State: CapabilityState.NotPresent })
             {
-                remove.Add(capability.Identity);
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.CapabilityNotAvailable, index, capability is null
+                        ? $"Дополнительного компонента {name} нет в списке образа."
+                        : $"Дополнительный компонент {name} уже в состоянии «{capability.RawState}»; добавить нельзя."));
+            }
+            else if (adding && request.FodSource is null)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.CapabilitySourceMissing, index, request.FodSourceProblem is { } problem
+                        ? $"Папка Features on Demand не подходит: {problem}"
+                        : "Для добавления нужна папка Features on Demand (LanguagesAndOptionalFeatures с ISO); она не указана."));
+            }
+            else
+            {
+                var list = adding ? add : remove;
+                if (!list.Contains(capability!.Identity))
+                {
+                    list.Add(capability.Identity);
+                }
             }
         }
 
-        return remove.Count > 0 && diagnostics.Count == 0 ? new CapabilityPlan(remove, inventory.Fingerprint) : null;
+        return diagnostics.Count == 0 && remove.Count + add.Count > 0
+            ? new CapabilityPlan(remove, inventory.Fingerprint) { Add = add, Source = add.Count > 0 ? request.FodSource : null }
+            : null;
     }
 
     private RegistryWritePreview? PlanRegistryChange(ImageChange change, int index, List<PlanningDiagnostic> diagnostics)
@@ -388,7 +419,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 4;
+    private const int FormatVersion = 5;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -444,6 +475,16 @@ public static class PlanFingerprint
             foreach (var capability in capabilities.Remove)
             {
                 Append(builder, "remove-capability", capability.FullName);
+            }
+
+            foreach (var capability in capabilities.Add)
+            {
+                Append(builder, "add-capability", capability.FullName);
+            }
+
+            if (capabilities.Source is { } source)
+            {
+                Append(builder, "fod-source", source);
             }
         }
 

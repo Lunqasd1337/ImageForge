@@ -50,7 +50,7 @@ public sealed class EngineService : IEngineService, IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
-            : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count > 0
+            : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.AddCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count > 0
                 ? "plan without .reg" : "plan M1 marker");
         foreach (var family in options.RemoveAppx)
         {
@@ -60,6 +60,11 @@ public sealed class EngineService : IEngineService, IDisposable
         foreach (var capability in options.RemoveCapabilities)
         {
             _log($"plan remove capability {capability}");
+        }
+
+        foreach (var capability in options.AddCapabilities)
+        {
+            _log($"plan add capability {capability} from {options.FodSource ?? "(no folder)"}");
         }
 
         foreach (var feature in options.DisableFeatures)
@@ -94,7 +99,7 @@ public sealed class EngineService : IEngineService, IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopping.Token);
         var result = await _session.InspectAsync(Tee(progress), linked.Token).ConfigureAwait(false);
         _log($"inspection revision {result.WorkspaceRevision}: {result.Packages.Count} packages, {result.Features.Count} features, " +
-            $"{result.Capabilities.Count} installed capabilities, problems: {string.Join("; ", [.. result.Problems, .. result.FeatureProblems, .. result.CapabilityProblems])}");
+            $"{result.Capabilities.Count} installed and {result.AvailableCapabilities.Count} available capabilities, problems: {string.Join("; ", [.. result.Problems, .. result.FeatureProblems, .. result.CapabilityProblems])}");
         return result;
     }
 

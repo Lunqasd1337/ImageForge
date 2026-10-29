@@ -103,6 +103,39 @@
         </ItemsControl>
       </Expander>
 
+      <TextBlock Text="Добавить из Features on Demand" Style="{StaticResource BodyStrongTextBlockStyle}" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Папка LanguagesAndOptionalFeatures с ISO «Languages and Optional Features» той же базовой сборки (для 24H2, 25H2 и 26H2 — 26100). Без Windows Update." />
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox Header="Папка FoD (например E:\LanguagesAndOptionalFeatures)" Text="{x:Bind ViewModel.FodPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseFodFolder_Click" />
+      </Grid>
+      <TextBlock Text="{x:Bind ViewModel.AvailableStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Список доступных для добавления" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <StackPanel Spacing="8">
+          <TextBox PlaceholderText="Фильтр: имя или часть названия, например OpenSSH или fr-FR"
+                   Text="{x:Bind ViewModel.AvailableFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+          <ItemsControl ItemsSource="{x:Bind ViewModel.AvailableCapabilities}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="local:CapabilityItem">
+                <StackPanel Margin="0,2">
+                  <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}">
+                    <StackPanel>
+                      <TextBlock Text="{x:Bind Title}" />
+                      <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                  </CheckBox>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Expander>
+
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 

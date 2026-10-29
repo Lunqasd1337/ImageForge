@@ -65,13 +65,31 @@ public static class DismCliArguments
     public static IReadOnlyList<string> GetFeatureInfo(string mountDirectory, string featureName) =>
         ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-FeatureInfo", "/FeatureName:" + FeatureName(featureName)];
 
-    /// <summary>Without /All (parents are not added silently) and with /LimitAccess: never a download from Windows Update.</summary>
-    public static IReadOnlyList<string> EnableFeature(string mountDirectory, string featureName) =>
-        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Enable-Feature", "/FeatureName:" + FeatureName(featureName), "/LimitAccess"];
+    /// <summary>
+    /// Without /All: the caller passes every parent explicitly, parents first (see FeatureDependencies), so nothing is
+    /// added that the preview did not show. Always /LimitAccess: never a download from Windows Update.
+    /// </summary>
+    /// <param name="source">A local folder for features whose payload was removed (sources\sxs for NetFx3), or null.</param>
+    public static IReadOnlyList<string> EnableFeatures(string mountDirectory, IReadOnlyList<string> featureNames, string? source = null)
+    {
+        List<string> arguments = ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Enable-Feature"];
+        AddFeatureNames(arguments, featureNames);
+        if (source is not null)
+        {
+            arguments.Add("/Source:" + LocalPath(source, nameof(source)));
+        }
+
+        arguments.Add("/LimitAccess");
+        return arguments;
+    }
 
     /// <summary>Without /Remove: the payload stays in the image unless the user explicitly asks otherwise (plan, section 10).</summary>
-    public static IReadOnlyList<string> DisableFeature(string mountDirectory, string featureName) =>
-        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Disable-Feature", "/FeatureName:" + FeatureName(featureName)];
+    public static IReadOnlyList<string> DisableFeatures(string mountDirectory, IReadOnlyList<string> featureNames)
+    {
+        List<string> arguments = ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Disable-Feature"];
+        AddFeatureNames(arguments, featureNames);
+        return arguments;
+    }
 
     public static IReadOnlyList<string> GetCapabilities(string mountDirectory) =>
         ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-Capabilities"];
@@ -81,6 +99,17 @@ public static class DismCliArguments
 
     public static IReadOnlyList<string> RemoveCapability(string mountDirectory, CapabilityIdentity capability) =>
         ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Remove-Capability", "/CapabilityName:" + CapabilityName(capability)];
+
+    private static void AddFeatureNames(List<string> arguments, IReadOnlyList<string> featureNames)
+    {
+        ArgumentNullException.ThrowIfNull(featureNames);
+        if (featureNames.Count == 0)
+        {
+            throw new ArgumentException("At least one feature name is required.", nameof(featureNames));
+        }
+
+        arguments.AddRange(featureNames.Select(n => "/FeatureName:" + FeatureName(n)));
+    }
 
     private static string FeatureName(string name) =>
         WindowsFeature.IsValidName(name) ? name : throw new ArgumentException($"'{name}' is not a valid feature name.", nameof(name));

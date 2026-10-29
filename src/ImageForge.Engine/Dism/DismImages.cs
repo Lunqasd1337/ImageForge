@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using Microsoft.Dism;
 
 namespace ImageForge.Engine.Dism;
@@ -36,6 +38,55 @@ public sealed class DismImages : IDisposable
     public static void Unmount(string mountPath, bool commit, Action<int>? progressPercent = null) =>
         DismApi.UnmountImage(mountPath, commit,
             progressPercent is null ? null : p => progressPercent(Percent(p)));
+
+    /// <summary>
+    /// Direct parents of each named feature, through one offline session (DismGetFeatureParent; Dism.exe has no
+    /// equivalent). A feature whose parents could not be read is left out and reported.
+    /// </summary>
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> GetFeatureParents(
+        string mountPath, IEnumerable<string> featureNames, Action<string, DismException> onFailure)
+    {
+        ArgumentNullException.ThrowIfNull(featureNames);
+        ArgumentNullException.ThrowIfNull(onFailure);
+        var parents = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        foreach (var name in featureNames)
+        {
+            try
+            {
+                parents[name] = [.. GetFeatureParent(session, name)
+                    .Select(f => f.FeatureName)
+                    .Where(parent => !string.Equals(parent, name, StringComparison.OrdinalIgnoreCase))];
+            }
+            catch (DismException ex)
+            {
+                onFailure(name, ex);
+            }
+        }
+
+        return parents;
+    }
+
+    // ManagedDism exposes DismGetFeatureParent only by package name or path; a feature of the foundation package (all
+    // features that /Get-Features lists) needs DismPackageNone, which only its private overload passes.
+    private static readonly MethodInfo FeatureParentMethod =
+        typeof(DismApi).GetMethod("GetFeatureParent", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new MissingMethodException(nameof(DismApi), "GetFeatureParent");
+
+    private static readonly object PackageNone = Enum.ToObject(FeatureParentMethod.GetParameters()[3].ParameterType, 0);
+
+    private static DismFeatureCollection GetFeatureParent(DismSession session, string featureName)
+    {
+        try
+        {
+            return (DismFeatureCollection)FeatureParentMethod.Invoke(null, [session, featureName, null, PackageNone])!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+    }
 
     public void Dispose()
     {

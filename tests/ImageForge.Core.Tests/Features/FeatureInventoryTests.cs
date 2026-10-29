@@ -150,9 +150,12 @@ public sealed class FeatureInventoryTests
     [Fact]
     public void Feature_and_capability_arguments_keep_downloads_off()
     {
-        var feature = DismCliArguments.EnableFeature(@"C:\IF\m", "TelnetClient");
-        feature.ShouldBe(["/English", @"/Image:C:\IF\m", "/Enable-Feature", "/FeatureName:TelnetClient", "/LimitAccess"]);
-        DismCliArguments.DisableFeature(@"C:\IF\m", "TelnetClient")
+        DismCliArguments.EnableFeatures(@"C:\IF\m", ["TelnetClient"])
+            .ShouldBe(["/English", @"/Image:C:\IF\m", "/Enable-Feature", "/FeatureName:TelnetClient", "/LimitAccess"]);
+        DismCliArguments.EnableFeatures(@"C:\IF\m", ["IIS-WebServerRole", "IIS-WebServer"], @"C:\IF\media\sources\sxs")
+            .ShouldBe(["/English", @"/Image:C:\IF\m", "/Enable-Feature", "/FeatureName:IIS-WebServerRole", "/FeatureName:IIS-WebServer",
+                @"/Source:C:\IF\media\sources\sxs", "/LimitAccess"]);
+        DismCliArguments.DisableFeatures(@"C:\IF\m", ["TelnetClient"])
             .ShouldBe(["/English", @"/Image:C:\IF\m", "/Disable-Feature", "/FeatureName:TelnetClient"]);
         DismCliArguments.GetFeatures(@"C:\IF\m").ShouldBe(["/English", @"/Image:C:\IF\m", "/Get-Features"]);
         DismCliArguments.GetFeatureInfo(@"C:\IF\m", "NetFx3")
@@ -171,9 +174,17 @@ public sealed class FeatureInventoryTests
     [InlineData("")]
     public void Feature_arguments_refuse_a_bad_name(string name)
     {
-        Should.Throw<ArgumentException>(() => DismCliArguments.EnableFeature(@"C:\IF\m", name));
-        Should.Throw<ArgumentException>(() => DismCliArguments.DisableFeature(@"C:\IF\m", name));
+        Should.Throw<ArgumentException>(() => DismCliArguments.EnableFeatures(@"C:\IF\m", ["TelnetClient", name]));
+        Should.Throw<ArgumentException>(() => DismCliArguments.DisableFeatures(@"C:\IF\m", [name]));
         Should.Throw<ArgumentException>(() => DismCliArguments.GetFeatureInfo(@"C:\IF\m", name));
+    }
+
+    [Fact]
+    public void Feature_arguments_need_a_name_and_a_local_source()
+    {
+        Should.Throw<ArgumentException>(() => DismCliArguments.EnableFeatures(@"C:\IF\m", []));
+        Should.Throw<ArgumentException>(() => DismCliArguments.EnableFeatures(@"C:\IF\m", ["NetFx3"], @"\\server\share\sxs"));
+        Should.Throw<ArgumentException>(() => DismCliArguments.EnableFeatures(@"C:\IF\m", ["NetFx3"], "sources\\sxs"));
     }
 
     [Fact]

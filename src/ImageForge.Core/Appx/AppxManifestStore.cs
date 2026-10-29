@@ -31,7 +31,9 @@ public static class AppxManifestStore
         switch (bundleStatus)
         {
             case MountReadStatus.Refused:
-                return Unknown(package, "the bundle manifest is behind a link or too large");
+                return Unknown(package, "the bundle manifest is behind a symbolic link or junction");
+            case MountReadStatus.TooLarge:
+                return Unknown(package, "the bundle manifest is larger than 1 MB");
             case MountReadStatus.Denied:
                 return Unknown(package, "the bundle manifest cannot be read (access denied)");
             case MountReadStatus.Read:
@@ -62,7 +64,8 @@ public static class AppxManifestStore
         return MountFileReader.TryReadText(mountRoot, [.. WindowsApps, manifestFolder, "AppxManifest.xml"], AppxManifestParser.MaxBytes, out var xml) switch
         {
             MountReadStatus.Missing => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is missing"),
-            MountReadStatus.Refused => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is behind a link or too large"),
+            MountReadStatus.Refused => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is behind a symbolic link or junction"),
+            MountReadStatus.TooLarge => Unknown(package, $@"{manifestFolder}\AppxManifest.xml is larger than 1 MB"),
             MountReadStatus.Denied => Unknown(package, $@"{manifestFolder}\AppxManifest.xml cannot be read (access denied)"),
             _ => AppxManifestParser.ParsePackage(xml) is { } manifest && manifest.Name == id.Name && manifest.PublisherId == id.PublisherId && manifest.Version == expectedVersion
                 ? package with { Facts = new AppxPackageFacts(manifest.IsFramework, [.. manifest.Dependencies.Select(d => d.FamilyName).Distinct()]) }
@@ -95,7 +98,7 @@ public static class AppxManifestStore
             {
                 case MountReadStatus.Missing:
                     continue;
-                case MountReadStatus.Refused or MountReadStatus.Denied:
+                case MountReadStatus.Refused or MountReadStatus.Denied or MountReadStatus.TooLarge:
                     return null;
             }
 

@@ -32,7 +32,8 @@ Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
 
 Если есть строки `DEPENDENCIES UNKNOWN` или `Inbox apps: UNKNOWN`, это не провал проверки, а то, что надо узнать: пришлите вывод и для одного такого пакета ещё
 ```powershell
-Get-ChildItem "C:\IF\scratch\mount\Program Files\WindowsApps" -Filter "<Имя пакета>*" | Select-Object Name, Attributes
+Get-ChildItem "C:\IF\scratch\mount\Program Files\WindowsApps" -Filter "MSTeams_*" | Select-Object Name, Attributes, LinkType
+Get-ChildItem "C:\IF\scratch\mount\Program Files\WindowsApps\MSTeams_*" | Select-Object Name, Attributes, LinkType
 ```
 
 ### 2. Уборка
@@ -73,3 +74,9 @@ Stop-Transcript
 ## Что прислать
 
 `C:\IF\s2-appx-deps.txt` целиком (главное — вывод шага 1), снимки окна для шагов 3 и 4.
+
+## Результаты
+
+| BuildId | VM | Шаги | Итог |
+|---|---|---|---|
+| c1dc75f8 | Hyper-V | 1 | Не прочитан ни один манифест (47 из 47, SystemApps тоже): файлы смонтированного WIM помечены атрибутом ReparsePoint (тег WIM, ещё не извлечённые данные), а проверка отказывала на любом reparse point. Исправлено: отказ только для символических ссылок и junction. |

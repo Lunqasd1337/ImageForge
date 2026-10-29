@@ -97,6 +97,14 @@ public sealed class AppxManifestStoreTests : IDisposable
     }
 
     [Fact]
+    public void An_oversized_manifest_is_not_read()
+    {
+        WritePackage(Root, Teams, AppxManifestTests.AppManifest("MSTeams", "1.0.0.1", "x64") + new string(' ', AppxManifestParser.MaxBytes));
+
+        AppxManifestStore.Attach(Root, AppxPlanningTests.Inventory(Teams)).Packages.Single().FactsProblem.ShouldNotBeNull().ShouldContain("larger");
+    }
+
+    [Fact]
     public void Inbox_apps_report_what_they_depend_on()
     {
         var folder = Path.Combine(Root, "Windows", "SystemApps", "MicrosoftWindows.Client.CBS_cw5n1h2txyewy");

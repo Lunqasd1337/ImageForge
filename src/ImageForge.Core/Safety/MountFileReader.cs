@@ -5,17 +5,23 @@ public enum MountReadStatus
     Read,
     Missing,
 
-    /// <summary>A link or reparse point on the way, a name that is not plain, or a file over the limit.</summary>
+    /// <summary>A symbolic link or junction on the way, or a name that is not plain.</summary>
     Refused,
+
+    TooLarge,
 
     /// <summary>The image's own permissions do not let the engine read it.</summary>
     Denied,
 }
 
 /// <summary>
-/// Reads a small file below a mount root without passing through a link or reparse point, so that a junction in the
+/// Reads a small file below a mount root without passing through a symbolic link or junction, so that a link in the
 /// image cannot lead the read to the host. The segments are folder and file names, never paths.
 /// </summary>
+/// <remarks>
+/// Other reparse points are read through: a mounted WIM marks its not yet extracted files with the WIM reparse tag
+/// (and compressed system files carry WOF), and those are data, not names of other places (found in the VM).
+/// </remarks>
 public static class MountFileReader
 {
     public static MountReadStatus TryReadText(string mountRoot, IReadOnlyList<string> segments, int maxBytes, out string text)
@@ -50,7 +56,7 @@ public static class MountFileReader
 
             current = Path.Combine(current, segment);
             FileSystemInfo info = i < segments.Count - 1 ? new DirectoryInfo(current) : new FileInfo(current);
-            if (info.LinkTarget is not null || (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint)))
+            if (info.LinkTarget is not null)
             {
                 return MountReadStatus.Refused;
             }
@@ -63,7 +69,7 @@ public static class MountFileReader
 
         if (new FileInfo(current).Length > maxBytes)
         {
-            return MountReadStatus.Refused;
+            return MountReadStatus.TooLarge;
         }
 
         text = File.ReadAllText(current);

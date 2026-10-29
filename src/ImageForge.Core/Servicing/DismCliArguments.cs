@@ -107,6 +107,13 @@ public static class DismCliArguments
         "/Source:" + LocalPath(source, nameof(source)), "/LimitAccess",
     ];
 
+    public static IReadOnlyList<string> GetPackages(string mountDirectory) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Get-Packages"];
+
+    /// <summary>A .msu, a .cab, or a folder of them; for a folder DISM picks the checkpoint packages a final LCU needs.</summary>
+    public static IReadOnlyList<string> AddPackage(string mountDirectory, string packagePath) =>
+        ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Add-Package", "/PackagePath:" + LocalPath(packagePath, nameof(packagePath))];
+
     private static void AddFeatureNames(List<string> arguments, IReadOnlyList<string> featureNames)
     {
         ArgumentNullException.ThrowIfNull(featureNames);

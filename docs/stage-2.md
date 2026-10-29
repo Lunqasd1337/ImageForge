@@ -144,3 +144,17 @@
   - Протокол движка 7.
 - Цель пока одна: образ 1 в `install.wim`. Загрузочные образы и WinRE будут отдельно.
 - Проверка в VM — [S2-DRIVERS-UI](vm-checks/S2-DRIVERS-UI.md).
+
+### Обновления Windows: разбор MSU/CAB, пакеты образа, установка LCU
+
+- Core (TDD), `ImageForge.Core.Updates`:
+  - `Cabinet.Read` читает таблицу файлов cabinet (MSU и CAB — это cabinet) без распаковки. Многотомный, обрезанный файл и файл без подписи `MSCF` дают проблему.
+  - `UpdateFileName.Parse` достаёт из имени KB, архитектуру и SHA-1, который есть в именах файлов Catalog.
+  - `UpdatePackage.Analyze`: MSU должен содержать пакет для установки (SSU, KB .cab, .wim или .psf), CAB должен содержать `update.mum`. Пакет не для x64 — проблема. Подпись и применимость проверяет DISM.
+  - `UpdateFolder.Scan` ищет .msu и .cab рекурсивно, считает SHA-256 и сверяет SHA-1 из имени с файлом.
+- Engine: `DismImages.GetPackages` / `AddPackage` через офлайн-сессию DISM API; `DismCliArguments.GetPackages` / `AddPackage` для Dism.exe (путь только локальный).
+- Утилита:
+  - `update-scan <папка>` показывает каждый пакет и его содержимое;
+  - `package-list <mount>`;
+  - `update-add <mount> <файл|папка> api|cli` сначала проверяет пакет, затем ставит его и показывает новые пакеты и смену состояний. Папку (LCU с checkpoint-пакетами) принимает только Dism.exe.
+- Проверка в VM — [S2-UPDATES-INVENTORY](vm-checks/S2-UPDATES-INVENTORY.md). По её итогам выбирается рецепт шага обновлений.

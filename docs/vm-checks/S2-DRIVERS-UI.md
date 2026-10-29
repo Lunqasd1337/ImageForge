@@ -1,6 +1,6 @@
 # Ручная проверка S2-DRIVERS-UI: драйверы в окне, в плане и в запуске
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** (3f7b4b71; исправление журнала добавлений — daffbadc).
 Проверяет драйверы в окне, в плане и в запуске (план, раздел 12).
 - «Прочитать образ» показывает сторонние драйверы образа.
 - «Найти пакеты» ищет INF в выбранной папке и проверяет каждый пакет, DISM при этом не вызывается.
@@ -137,3 +137,4 @@ Stop-Transcript
 | 3f7b4b71 | Hyper-V | 0–5 | Пройдены. Протокол 7; в образе фикстуры сторонних драйверов нет (чтение 2 с). Поиск: 5 INF, 4 можно добавить, arm64 без x64, nocat без подписи, оба netkvm — одно содержимое. Без ForceUnsigned — отказ «нет каталога». Превью: netkvm-copy с «То же содержимое: netkvm», nocat с ForceUnsigned и предупреждением, viostor. Запуск добавил три пакета (oem0 Signed, oem1 Unsigned, oem2 viostor Signed) и опубликовал результат. Найдено: строки журнала обоих netkvm показывали оба новых имени (сопоставление по имени INF); исправлено — список читается после каждого добавления. |
 | 3f7b4b71 | Hyper-V | 6 | Пройден. Чтение result-drv: три сторонних драйвера. Удаление viostor без подтверждения — отказ «…нужен для загрузки…». С подтверждением удалены oem1 (netkvm Unsigned) и oem2 (viostor, boot-critical), после удаления в образе один драйвер; результат опубликован в result-drv2. Найдено: отметки «Найденных пакетов» сохраняются при смене образа, и в план попадает прежний пакет; превью при этом предупреждает «В образе уже есть oem2.inf…». |
 | 3f7b4b71 | Hyper-V | 7 | Пройден. result-drv: oem0 netkvm Signed, oem1 netkvm Unsigned, oem2 viostor Signed | BOOT-CRITICAL (чтение 2,3 с). result-drv2: только oem0 netkvm Signed. `mounts` → none, `host-check` → OK. |
+| 3f7b4b71 | Hyper-V | 8 | Пройден. В журнале движка: `inspection revision 1: … 0 third-party drivers` и `revision 3: … 3 third-party drivers`, `plan add driver nocat\netkvm.inf from C:\IF\drv (ForceUnsigned allowed)`, `plan warning:` о пакете без подписи, о повторном viostor и об удалении нужного для загрузки драйвера, `plan remove driver oem2.inf (boot-critical allowed)`. Кириллица в выводе PowerShell 5.1 искажена, потому что `Get-Content` без `-Encoding UTF8` читает файл UTF-8 как ANSI; сам файл в порядке. |

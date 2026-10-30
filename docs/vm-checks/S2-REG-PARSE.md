@@ -1,6 +1,6 @@
 # Ручная проверка S2-REG-PARSE: разбор настоящих экспортов regedit
 
-Статус: **Ожидает ручной проверки**.
+Статус: **Пройдена** (40f69b16, Hyper-V, 30.10.2026).
 Проверяет загрузчик и парсер `.reg` (план, раздел 9) на файлах, которые сделал сам Windows, в формате Windows Registry Editor Version 5.00 (UTF-16LE), и что REGEDIT4 отклоняется (решение владельца от 28.10.2026). Каждое значение из файла сравнивается с живым реестром VM побайтно. Утилита реестр только читает.
 Тестовый ключ создаётся в `HKCU` **сервисной VM** и в конце удаляется. На хосте ничего не выполняется.
 
@@ -41,15 +41,9 @@ reg export "$K" C:\IF\regtest-v5.reg /y
 ```
 Ожидается: `decoded as Utf16`, у каждого значения `live matches`, `9 values compared`, `RESULT: OK`.
 
-### 3. REGEDIT4 отклоняется
+### 3. REGEDIT4
 
-1. Откройте `regedit`, перейдите к `HKEY_CURRENT_USER\Software\ImageForgeRegFileTest`.
-2. «Файл» → «Экспорт…», тип файла **«Файлы реестра Win9x/NT4 (*.reg)»**, имя `C:\IF\regtest-v4.reg`, «Выбранная ветвь».
-
-```powershell
-& $X reg-check C:\IF\regtest-v4.reg auto 1251 Software\ImageForgeRegFileTest
-```
-Ожидается: `line 1: regfile.format.unsupported`, `RESULT: FAIL`. Здесь FAIL — правильный результат.
+Не проверяется в VM: формат REGEDIT4 не поддерживается по решению владельца, его отказ покрыт тестами `RegFileLoaderTests`.
 
 ### 4. Уборка
 
@@ -66,4 +60,4 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
-| — | — | — | Ожидает ручной проверки |
+| 40f69b16 | Hyper-V | 1–2 | Пройдены. `reg export` записал UTF-16LE с BOM; `reg-check`: `decoded as Utf16`, 11 операций, все 9 значений `live matches` (кириллица в именах и данных, `;` и `\` в строке, EXPAND_SZ, MULTI_SZ, DWORD, QWORD, BINARY, NONE `00,00`, длинный BINARY с переносами), `RESULT: OK`. Файл добавлен эталоном: `tests/ImageForge.Core.Tests/Registry/Fixtures/regtest-v5.reg`, тест `RegFileFixtureTests`. Шаг 3 не выполнялся (см. выше). |

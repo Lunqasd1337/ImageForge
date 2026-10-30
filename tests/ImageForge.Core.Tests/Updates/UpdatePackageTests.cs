@@ -199,7 +199,7 @@ public sealed class WimArchiveTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     /// <summary>A WIM header and its XML resource; the offset table and metadata are not read.</summary>
-    internal static byte[] BuildWim(string xml, ushort part = 1, ushort parts = 1, uint images = 1)
+    internal static byte[] BuildWim(string xml, ushort part = 1, ushort parts = 1, uint images = 1, uint bootIndex = 0)
     {
         var xmlBytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
         using var wim = new MemoryStream();
@@ -216,7 +216,9 @@ public sealed class WimArchiveTests : IDisposable
             w.Write(images);
             w.Write(new byte[24]);
             Resource(w, (ulong)xmlBytes.Length, 208);
-            w.Write(new byte[208 - 96]);
+            w.Write(new byte[24]);
+            w.Write(bootIndex);
+            w.Write(new byte[208 - 124]);
             w.Write(xmlBytes);
         }
 
@@ -249,6 +251,13 @@ public sealed class WimArchiveTests : IDisposable
         wim.Problem.ShouldBeNull();
         wim.TotalParts.ShouldBe(1);
         wim.Images.ShouldBe([new WimArchiveImage("KB5134133", "Update", 7, 5000000000)]);
+    }
+
+    [Fact]
+    public void The_boot_index_of_a_boot_wim_is_read_from_the_header()
+    {
+        Read(BuildWim(Xml, images: 2, bootIndex: 2)).BootIndex.ShouldBe(2);
+        Read(BuildWim(Xml)).BootIndex.ShouldBe(0);
     }
 
     [Fact]

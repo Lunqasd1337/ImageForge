@@ -65,6 +65,20 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Every_edition_is_exported_in_order_and_only_the_chosen_one_is_serviced()
+    {
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(Request() with { SourceIndex = 2, ImageCount = 3 }, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.MountedIndexes.ShouldBe([2]);
+        _servicing.Exported.ShouldBe([1, 2, 3]);
+        File.ReadAllText(Path.Combine(_output, "sources", "install.wim")).ShouldBe("WIM+M1+export+2+3");
+        log.ShouldContain("export image 2 of 3 (serviced)");
+    }
+
+    [Fact]
     public async Task A_second_run_replaces_the_previous_result_and_reuses_the_verified_copy()
     {
         var log = new List<string>();

@@ -45,6 +45,41 @@ public sealed class WorkspaceSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task Pro_is_serviced_by_default_and_every_edition_is_exported()
+    {
+        File.WriteAllBytes(_dir.Combine("media/sources/install.wim"), Updates.WimArchiveTests.BuildWim(ImageEditionsTests.FixtureXml, images: 5));
+
+        var summary = _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+        (await _session.StartAsync(Start(_session.PlanM1()), null, Ct)).Status.ShouldBe(RunStatus.Published);
+
+        summary.Editions.Count.ShouldBe(5);
+        summary.ImageIndex.ShouldBe(3);
+        _servicing.MountedIndexes.ShouldBe([3, 3]);
+        _servicing.Exported.ShouldBe([1, 2, 3, 4, 5]);
+    }
+
+    [Fact]
+    public async Task A_chosen_edition_is_serviced()
+    {
+        File.WriteAllBytes(_dir.Combine("media/sources/install.wim"), Updates.WimArchiveTests.BuildWim(ImageEditionsTests.FixtureXml, images: 5));
+
+        _session.Open(_folders with { ImageIndex = 5 }).ImageIndex.ShouldBe(5);
+        await _session.InspectAsync(null, Ct);
+
+        _servicing.MountedIndexes.ShouldBe([5]);
+    }
+
+    [Fact]
+    public void An_unreadable_install_wim_falls_back_to_the_first_image()
+    {
+        var summary = _session.Open(_folders);
+
+        summary.Editions.ShouldBeEmpty();
+        summary.ImageIndex.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task A_plan_cannot_start_twice_or_after_the_workspace_changed()
     {
         _session.Open(_folders);

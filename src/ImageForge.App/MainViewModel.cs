@@ -24,6 +24,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // The folders the engine workspace was opened with; reopening forgets the inventory, so it happens only on change.
     private OpenWorkspaceRequest? _opened;
 
+    // The editions of the opened source, in the order of EditionNames; empty until the image is read.
+    private IReadOnlyList<ImageEdition> _editions = [];
+    private bool _showingEditions;
+
     [ObservableProperty]
     public partial string SourcePath { get; set; } = string.Empty;
 
@@ -32,6 +36,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     public partial string OutputPath { get; set; } = string.Empty;
+
+    /// <summary>The install.wim editions shown after the image is read; only the chosen one is changed.</summary>
+    public ObservableCollection<string> EditionNames { get; } = [];
+
+    [ObservableProperty]
+    public partial int EditionIndex { get; set; } = -1;
+
+    [ObservableProperty]
+    public partial string EditionStatus { get; set; } = "Редакции появятся после «Прочитать образ»; по умолчанию меняется Pro, остальные остаются как есть.";
 
     /// <summary>The .reg file to apply; empty plans the M1 validation marker.</summary>
     [ObservableProperty]
@@ -172,6 +185,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnWorkPathChanged(string value) => FoldersChanged();
 
     partial void OnOutputPathChanged(string value) => FoldersChanged();
+
+    // Another edition is another image: the inventory and the plan belong to the previous one.
+    partial void OnEditionIndexChanged(int value)
+    {
+        if (!_showingEditions)
+        {
+            FoldersChanged(keepEditions: true);
+            EditionStatus = "Редакция изменилась; нажмите «Прочитать образ».";
+        }
+    }
 
     partial void OnRegFilePathChanged(string value) => DropPlan();
 
@@ -357,7 +380,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Opens the engine workspace for the current folders unless it is already open for them.</summary>
     private async Task<bool> EnsureWorkspaceAsync(CancellationToken ct)
     {
-        var request = new OpenWorkspaceRequest(SourcePath.Trim(), WorkPath.Trim(), OutputPath.Trim());
+        var request = new OpenWorkspaceRequest(SourcePath.Trim(), WorkPath.Trim(), OutputPath.Trim())
+        {
+            ImageIndex = EditionIndex >= 0 && EditionIndex < _editions.Count ? _editions[EditionIndex].Index : 0,
+        };
         var workspace = request == _opened
             ? await _engine!.Service.GetWorkspaceAsync(ct).ConfigureAwait(true)
             : await _engine!.Service.OpenWorkspaceAsync(request, ct).ConfigureAwait(true);
@@ -368,7 +394,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             return false;
         }
 
-        _opened = request;
+        ShowEditions(workspace);
+        _opened = request with { ImageIndex = workspace.Editions.Count > 0 ? workspace.ImageIndex : 0 };
         ShowWorkspace(workspace);
         if (workspace.RecoveryRequired)
         {
@@ -612,6 +639,32 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             await _engine.DisposeAsync().ConfigureAwait(false);
             _engine = null;
         }
+    }
+
+    private void ShowEditions(WorkspaceSummary workspace)
+    {
+        _showingEditions = true;
+        try
+        {
+            _editions = workspace.Editions;
+            EditionNames.Clear();
+            foreach (var edition in _editions)
+            {
+                EditionNames.Add($"{edition.Index}. {edition.Name}");
+            }
+
+            EditionIndex = _editions.ToList().FindIndex(e => e.Index == workspace.ImageIndex);
+        }
+        finally
+        {
+            _showingEditions = false;
+        }
+
+        var chosen = _editions.FirstOrDefault(e => e.Index == workspace.ImageIndex);
+        EditionStatus = chosen is null
+            ? $"Редакции install.wim не прочитаны; меняется образ {workspace.ImageIndex}."
+            : $"Меняется «{chosen.Name}» (образ {chosen.Index} из {_editions.Count}); остальные редакции попадут в результат без изменений.";
+        Append(EditionStatus);
     }
 
     private void ShowWorkspace(WorkspaceSummary workspace)
@@ -889,10 +942,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         UpdatesStatus = "Обновления образа ещё не прочитаны.";
     }
 
-    private void FoldersChanged()
+    private void FoldersChanged(bool keepEditions = false)
     {
         DropPlan();
         _opened = null;
+        if (!keepEditions && _editions.Count > 0)
+        {
+            _showingEditions = true;
+            _editions = [];
+            EditionNames.Clear();
+            EditionIndex = -1;
+            _showingEditions = false;
+            EditionStatus = "Папки изменились; редакции появятся после «Прочитать образ».";
+        }
+
         if (Apps.Count > 0 || Features.Count > 0 || Capabilities.Count > 0 || ImageDrivers.Count > 0)
         {
             ClearInventory();

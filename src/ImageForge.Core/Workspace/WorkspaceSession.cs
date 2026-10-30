@@ -10,7 +10,11 @@ using ImageForge.Core.Registry.RegFile;
 
 namespace ImageForge.Core.Workspace;
 
-public sealed record OpenWorkspaceRequest(string SourceDir, string WorkDir, string OutputDir);
+public sealed record OpenWorkspaceRequest(string SourceDir, string WorkDir, string OutputDir)
+{
+    /// <summary>The install.wim image to service; 0 lets the engine choose (Pro when the source has it).</summary>
+    public int ImageIndex { get; init; }
+}
 
 /// <param name="Problems">Non-empty when the folders cannot be used; nothing is opened then.</param>
 public sealed record WorkspaceSummary(
@@ -19,7 +23,14 @@ public sealed record WorkspaceSummary(
     TargetStatus Target,
     RunRecord? LastRun,
     bool RecoveryRequired,
-    IReadOnlyList<LocationProblem> Problems);
+    IReadOnlyList<LocationProblem> Problems)
+{
+    /// <summary>The editions of the source install.wim; empty when it could not be read without DISM.</summary>
+    public IReadOnlyList<ImageEdition> Editions { get; init; } = [];
+
+    /// <summary>The image this workspace services; the other editions are kept unchanged.</summary>
+    public int ImageIndex { get; init; }
+}
 
 /// <param name="FileDiagnostics">Problems in the .reg file itself (decoding, syntax); the plan is not built then.</param>
 /// <param name="FileEncoding">How the .reg file was decoded, for the window to show; null without a file.</param>
@@ -145,6 +156,7 @@ public sealed class WorkspaceSession(
     private readonly Dictionary<Guid, Task<RunOutcome>> _operations = [];
     private readonly Lock _gate = new();
     private (OpenWorkspaceRequest Request, IWorkspacePaths Paths, Guid WorkspaceId, Guid ImageId)? _open;
+    private IReadOnlyList<ImageEdition> _editions = [];
     private ExecutionPlan? _plan;
     private ImageInventory? _inventory;
     private long _revision;
@@ -174,7 +186,8 @@ public sealed class WorkspaceSession(
             var paths = _layoutFactory(request.WorkDir);
             var state = new StateStore<WorkspaceState>(paths.StateFile).Load();
             var workspaceId = state.State?.WorkspaceId ?? newId();
-            _open = (request, paths, workspaceId, newId());
+            _editions = ImageEditions.Read(request.SourceDir);
+            _open = (request with { ImageIndex = ImageEditions.Choose(_editions, request.ImageIndex) }, paths, workspaceId, newId());
             return Summary();
         }
     }
@@ -201,7 +214,7 @@ public sealed class WorkspaceSession(
         try
         {
             var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log };
-            var task = inspection.InspectAsync(open.Request.SourceDir, open.WorkspaceId, 1, ct);
+            var task = inspection.InspectAsync(open.Request.SourceDir, open.WorkspaceId, open.Request.ImageIndex, ct);
             lock (_gate)
             {
                 _current = task;
@@ -390,7 +403,7 @@ public sealed class WorkspaceSession(
             }
 
             _busy = true;
-            var task = RunAsync(registration.OperationId, open.Request, open.Paths, _plan!, progress, ct);
+            var task = RunAsync(registration.OperationId, open.Request, Math.Max(_editions.Count, 1), open.Paths, _plan!, progress, ct);
             _operations[registration.OperationId] = task;
             _current = task;
             return task;
@@ -449,19 +462,23 @@ public sealed class WorkspaceSession(
             var recovery = loaded.Source == StateSource.Unusable
                 || lastRun?.Status is RunStatus.Running or RunStatus.RecoveryRequired
                 || ImageInspection.LeftBehind(open.Paths);
-            return new WorkspaceSummary(open.WorkspaceId, _revision, loaded.State?.Target ?? TargetStatus.Pending, lastRun, recovery, []);
+            return new WorkspaceSummary(open.WorkspaceId, _revision, loaded.State?.Target ?? TargetStatus.Pending, lastRun, recovery, [])
+            {
+                Editions = _editions,
+                ImageIndex = open.Request.ImageIndex,
+            };
         }
     }
 
     private async Task<RunOutcome> RunAsync(
-        Guid operationId, OpenWorkspaceRequest open, IWorkspacePaths paths, ExecutionPlan plan, IProgress<string>? progress, CancellationToken ct)
+        Guid operationId, OpenWorkspaceRequest open, int imageCount, IWorkspacePaths paths, ExecutionPlan plan, IProgress<string>? progress, CancellationToken ct)
     {
         await Task.Yield();
         try
         {
             var log = Report(progress);
             var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log };
-            var result = await pipeline.RunAsync(new RunRequest(open.SourceDir, open.OutputDir, 1, plan, Failure), ct).ConfigureAwait(false);
+            var result = await pipeline.RunAsync(new RunRequest(open.SourceDir, open.OutputDir, open.ImageIndex, plan, Failure) { ImageCount = imageCount }, ct).ConfigureAwait(false);
             return new RunOutcome(operationId, StartPlanRejection.None, result.Status, result.FailedStep, result.Error, result.PublishedPath);
         }
         catch (WorkspaceRecoveryRequiredException ex)

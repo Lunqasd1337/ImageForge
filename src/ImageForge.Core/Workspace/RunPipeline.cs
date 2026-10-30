@@ -14,7 +14,11 @@ public enum InjectedFailure
     BeforePublish,
 }
 
-public sealed record RunRequest(string SourceDir, string OutputDir, int SourceIndex, ExecutionPlan Plan, InjectedFailure Failure = InjectedFailure.None);
+public sealed record RunRequest(string SourceDir, string OutputDir, int SourceIndex, ExecutionPlan Plan, InjectedFailure Failure = InjectedFailure.None)
+{
+    /// <summary>How many images install.wim holds; all are exported in order, only <see cref="SourceIndex"/> is serviced.</summary>
+    public int ImageCount { get; init; } = 1;
+}
 
 public sealed record RunResult(Guid RunId, RunStatus Status, string? FailedStep, string? Error, string? PublishedPath);
 
@@ -154,7 +158,21 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             var completedEntry = await context.Step("export", async () =>
             {
                 Directory.CreateDirectory(run.Completed);
-                await servicing.ExportAsync(working, request.SourceIndex, completed, ct).ConfigureAwait(false);
+
+                // DISM appends to an existing destination, so a repeated step must not find a partial file.
+                File.Delete(completed);
+
+                // Every edition goes into the result in its order; the others are exported from the working copy unchanged.
+                for (var index = 1; index <= request.ImageCount; index++)
+                {
+                    if (request.ImageCount > 1)
+                    {
+                        Log?.Invoke($"export image {index} of {request.ImageCount}{(index == request.SourceIndex ? " (serviced)" : string.Empty)}");
+                    }
+
+                    await servicing.ExportAsync(working, index, completed, ct).ConfigureAwait(false);
+                }
+
                 var exported = await SourceManifest.ComputeAsync(run.Completed, ct).ConfigureAwait(false);
                 return exported.Entries.Single() with { RelativePath = InstallImage };
             }, ct).ConfigureAwait(false);

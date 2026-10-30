@@ -9,7 +9,11 @@ public sealed record WimArchiveImage(string? Name, string? Description, long? Fi
 
 /// <param name="Images">From the XML resource; empty when it could not be read, which is not a problem by itself.</param>
 /// <param name="Problem">Why the file is not a whole single-part WIM; null when it is.</param>
-public sealed record WimInfo(int PartNumber, int TotalParts, int ImageCount, IReadOnlyList<WimArchiveImage> Images, string? Problem);
+public sealed record WimInfo(int PartNumber, int TotalParts, int ImageCount, IReadOnlyList<WimArchiveImage> Images, string? Problem)
+{
+    /// <summary>The image Windows Setup boots from (1-based); 0 when none is marked, as in an install.wim or an MSU.</summary>
+    public int BootIndex { get; init; }
+}
 
 /// <summary>
 /// Reads the header and the XML resource of a WIM file without DISM. Newer MSU updates are WIM files rather than cabinets
@@ -55,7 +59,10 @@ public static class WimArchive
 
         var xmlSize = (long)(BitConverter.ToUInt64(span[72..]) & 0x00FF_FFFF_FFFF_FFFF);
         var xmlOffset = BitConverter.ToInt64(span[80..]);
-        return new(part, parts, count, ReadImages(stream, xmlOffset, xmlSize), null);
+        return new(part, parts, count, ReadImages(stream, xmlOffset, xmlSize), null)
+        {
+            BootIndex = (int)Math.Min(BitConverter.ToUInt32(span[120..]), int.MaxValue),
+        };
     }
 
     private static IReadOnlyList<WimArchiveImage> ReadImages(Stream stream, long offset, long size)

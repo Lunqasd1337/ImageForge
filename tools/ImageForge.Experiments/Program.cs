@@ -26,6 +26,7 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["version"] = ("version", _ => Task.FromResult(PrintVersion())),
     ["hash"] = ("hash <file>", a => Hash(a[0])),
     ["info"] = ("info <install.wim>", a => Task.FromResult(Info(a[0]))),
+    ["wim-header"] = ("wim-header <file.wim>", a => Task.FromResult(WimHeader(a[0]))),
     ["mount"] = ("mount <install.wim> <index> <empty-mount-dir>", a => Task.FromResult(Mount(a[0], int.Parse(a[1], CultureInfo.InvariantCulture), a[2]))),
     ["write-marker"] = ("write-marker <mount-dir>", a => Task.FromResult(WriteMarker(a[0]))),
     ["read-marker"] = ("read-marker <mount-dir>", a => Task.FromResult(ReadMarker(a[0]))),
@@ -57,6 +58,7 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["driver-remove"] = ("driver-remove <mount-dir> <oemN.inf> normal|allow-boot-critical", a => Task.FromResult(DriverRemove(a[0], a[1], a[2]))),
     ["update-scan"] = ("update-scan <folder>", a => Task.FromResult(UpdateScan(a[0]))),
     ["package-list"] = ("package-list <mount-dir>", a => Task.FromResult(PackageList(a[0]))),
+    ["cleanup"] = ("cleanup <mount-dir> normal|resetbase", a => CleanupAsync(a[0], a[1])),
     ["update-add"] = ("update-add <mount-dir> <file.msu|file.cab|folder> api|cli", a => UpdateAddAsync(a[0], a[1], a[2])),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
@@ -128,6 +130,27 @@ static bool Info(string wim)
     foreach (var image in DismImages.GetImages(wim))
     {
         Log($"Index {image.Index}: {image.Name} | {image.EditionId} | {image.Version} | {image.Architecture} | {image.SizeBytes} bytes");
+    }
+
+    return true;
+}
+
+// Reads the WIM header and XML without DISM: the boot index of boot.wim and the image names, for any WIM.
+static bool WimHeader(string wim)
+{
+    using var stream = File.OpenRead(wim);
+    var info = WimArchive.Read(stream);
+    Log($"{Path.GetFullPath(wim)}: {stream.Length} bytes, part {info.PartNumber}/{info.TotalParts}, images {info.ImageCount}, boot index {info.BootIndex}");
+    var index = 0;
+    foreach (var image in info.Images)
+    {
+        Log($"  image {++index}: {image.Name ?? "-"} | {image.Description ?? "-"} | files {image.FileCount?.ToString(CultureInfo.InvariantCulture) ?? "-"} | {image.TotalBytes?.ToString(CultureInfo.InvariantCulture) ?? "-"} bytes");
+    }
+
+    if (info.Problem is { } problem)
+    {
+        Log("PROBLEM: " + problem);
+        return false;
     }
 
     return true;
@@ -1299,6 +1322,24 @@ static bool UpdateScan(string folder)
         $"CAB: {scanned.Packages.Count(p => p.Package.Kind == UpdateKind.Cab)}; with problems: {scanned.Packages.Count(p => p.Package.Problems.Count > 0)}; " +
         $"{watch.Elapsed.TotalSeconds:F1} s");
     return true;
+}
+
+static async Task<bool> CleanupAsync(string mountDir, string mode)
+{
+    if (mode is not ("normal" or "resetbase"))
+    {
+        Log("Mode must be normal or resetbase.");
+        return false;
+    }
+
+    var before = ReadPackages(mountDir);
+    var watch = Stopwatch.StartNew();
+    var (exitCode, _) = await DismAsync(DismCliArguments.CleanupComponentStore(Path.GetFullPath(mountDir), mode == "resetbase"), echo: true).ConfigureAwait(false);
+    Log($"Dism.exe exit code {exitCode}; cleanup took {watch.Elapsed.TotalSeconds:F1} s");
+    var after = ReadPackages(mountDir);
+    static int Superseded(IReadOnlyList<ImagePackage> packages) => packages.Count(p => p.State == "Superseded");
+    Log($"packages {before.Count} -> {after.Count}, superseded {Superseded(before)} -> {Superseded(after)}");
+    return exitCode == 0;
 }
 
 static IReadOnlyList<ImagePackage> ReadPackages(string mountDir)

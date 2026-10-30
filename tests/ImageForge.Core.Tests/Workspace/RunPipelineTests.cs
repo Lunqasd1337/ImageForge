@@ -253,6 +253,8 @@ public sealed class RunPipelineTests : IDisposable
         Directory.CreateDirectory(_paths.Run(crashed).Working);
         Directory.CreateDirectory(_paths.Mount(ImageId));
         _servicing.Mounted.Add(_paths.Mount(ImageId));
+        Directory.CreateDirectory(_paths.WinReMount);
+        _servicing.Mounted.Add(_paths.WinReMount);
         _servicing.OwnedHives.Add(HiveLoadName.Create(crashed, OfflineHive.Software));
         var store = new StateStore<WorkspaceState>(_paths.StateFile);
         store.Save(store.Load().State! with
@@ -266,8 +268,9 @@ public sealed class RunPipelineTests : IDisposable
         var recovery = await new RunRecovery(_paths, _servicing).RecoverAsync(Ct);
 
         recovery.Outcome.ShouldBe(RecoveryOutcome.Recovered, string.Join("; ", recovery.Problems));
-        _servicing.Calls[^1].ShouldBe("unmount discard");
+        _servicing.Calls.TakeLast(2).ShouldBe(["unmount discard", "unmount discard"]);
         _servicing.Mounted.ShouldBeEmpty();
+        Directory.Exists(_paths.WinReMount).ShouldBeFalse();
         _servicing.OwnedHives.ShouldBeEmpty();
         SourceManifest.Compare(previous, await SourceManifest.ComputeAsync(_output, Ct)).ShouldBeEmpty();
         Directory.GetFileSystemEntries(_dir.Combine("out")).ShouldBe([_output]);
@@ -566,6 +569,71 @@ public sealed class RunPipelineTests : IDisposable
             "driver-list", "driver-list", "package-list", "cleanup resetbase", "package-list", "registry", "unmount commit", "export"]);
         log.ShouldContain("cleanup component store (ResetBase)");
         log.ShouldContain("cleanup: packages 2 -> 1, superseded 1 -> 0; rollup 26100.9725.1.0, servicing stack -");
+    }
+
+    private const string SafeOs = "windows11.0-kb5130881-x64.cab";
+
+    private string WinRePackages()
+    {
+        var folder = UpdatePackages();
+        File.WriteAllBytes(Path.Combine(folder, SafeOs), Updates.UpdatePackageTests.BuildCabinet([("update.mum", 10), ("winre-tools.cab", 20)]));
+        return folder;
+    }
+
+    [Fact]
+    public async Task WinRe_is_taken_out_serviced_exported_and_put_back_before_the_image_is_committed()
+    {
+        _servicing.WinRe = "WINRE";
+        var request = UpdateRequest(WinRePackages(), new AddWinReUpdatePackage(SafeOs), new AddWinReUpdatePackage("Windows11.0-KB5134133-x64.msu"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "package-add " + SafeOs,
+            "package-list", "cleanup resetbase", "package-list", "unmount commit", "export", "registry", "unmount commit", "export"]);
+        _servicing.CommittedWinRe.ShouldBe(["WINRE+M1+export"]);
+        _servicing.Mounted.ShouldBeEmpty();
+        Directory.Exists(_paths.WinReMount).ShouldBeFalse();
+        log.ShouldContain("winre: 0 MB -> commit 0 MB -> export 0 MB, put back into the image");
+        log.ShouldContain("winre cleanup component store (ResetBase)");
+    }
+
+    [Fact]
+    public async Task The_expected_0x8007007E_of_the_cumulative_update_in_WinRe_does_not_stop_the_run()
+    {
+        _servicing.WinRe = "WINRE";
+        _servicing.FailPackage["Windows11.0-KB5134133-x64.msu"] = unchecked((int)0x8007007E);
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(WinRePackages(), new AddWinReUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddWinReUpdatePackage(SafeOs)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        log.ShouldContain(l => l.Contains("0x8007007E, expected", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Another_WinRe_failure_discards_both_mounts()
+    {
+        _servicing.WinRe = "WINRE";
+        _servicing.FailPackage[SafeOs] = unchecked((int)0x800F081E);
+
+        var result = await Pipeline().RunAsync(UpdateRequest(WinRePackages(), new AddWinReUpdatePackage(SafeOs)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("winre");
+        _servicing.Calls.Count(c => c == "unmount discard").ShouldBe(2);
+        _servicing.Mounted.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task An_image_without_WinRe_fails_the_step()
+    {
+        var result = await Pipeline().RunAsync(UpdateRequest(WinRePackages(), new AddWinReUpdatePackage(SafeOs)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("winre");
+        result.Error.ShouldNotBeNull().ShouldContain("Winre.wim");
     }
 
     // One WIM-format MSU, as Catalog serves the 26H2 cumulative update, and the driver package of DriverPackages.

@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 10;
+    public const int Version = 11;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -97,6 +97,9 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>Update packages to add, by file path relative to <see cref="UpdateFolder"/>; the engine scans it again.</summary>
     public IReadOnlyList<string> AddUpdates { get; init; } = [];
+
+    /// <summary>Update packages for WinRE (Winre.wim inside the image), relative to <see cref="UpdateFolder"/>.</summary>
+    public IReadOnlyList<string> WinReUpdates { get; init; } = [];
 
     /// <summary>The folder of .msu and .cab updates; needed only for additions.</summary>
     public string? UpdateFolder { get; init; }

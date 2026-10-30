@@ -36,6 +36,12 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 {
     public const string InstallImage = "sources/install.wim";
 
+    /// <summary>Where the recovery environment lives inside a mounted Windows image.</summary>
+    public static readonly string WinReInImage = Path.Combine("Windows", "System32", "Recovery", "Winre.wim");
+
+    // ERROR_MOD_NOT_FOUND: Microsoft documents it as expected when the cumulative update is added to WinRE.
+    private const int ModuleNotFound = unchecked((int)0x8007007E);
+
     /// <summary>Called before each step starts; the experiment tool uses it to pause before publication.</summary>
     public Func<string, CancellationToken, Task>? BeforeStep { get; init; }
 
@@ -136,6 +142,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await context.Step("cleanup", () => CleanupAsync(cleanup, mountDir, ct), ct).ConfigureAwait(false);
             }
 
+            if (request.Plan.WinRe is { } winRe)
+            {
+                await context.Step("winre", () => ServiceWinReAsync(winRe, mountDir, run, ct), ct).ConfigureAwait(false);
+            }
+
             await context.Step("registry", () =>
             {
                 Inject(request, InjectedFailure.AfterMount, "registry");
@@ -234,6 +245,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             if (registry?.RequiresRecovery == true)
             {
                 problems.Add($"hives left loaded: {string.Join(", ", registry.HivesLeftLoaded)}");
+            }
+
+            if (request.Plan.WinRe is not null && await IsMountedSafeAsync(paths.WinReMount).ConfigureAwait(false))
+            {
+                await Release(problems, "unmount-winre-discard", async () =>
+                {
+                    await servicing.UnmountAsync(paths.WinReMount, commit: false, CancellationToken.None).ConfigureAwait(false);
+                    TryDeleteEmptyDirectory(paths.WinReMount);
+                }).ConfigureAwait(false);
             }
 
             if (mounted || (mountAttempted && await IsMountedSafeAsync(mountDir).ConfigureAwait(false)))
@@ -387,6 +407,85 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
         return true;
     }
+
+    // The recipe from S2-TARGETS-INVENTORY: Winre.wim is taken out of the mounted image, serviced in its own mount
+    // (packages, cleanup with /ResetBase, commit), exported to drop what the commit left behind, and put back.
+    private async Task<bool> ServiceWinReAsync(WinRePlan plan, string mountDir, RunLayout run, CancellationToken ct)
+    {
+        var changed = plan.Add.Where(a => UpdateFolder.CurrentHash(plan.Source, a.FileName) != a.Sha256).Select(a => a.FileName).ToList();
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+
+        var inImage = Path.Combine(mountDir, WinReInImage);
+        if (!File.Exists(inImage))
+        {
+            throw new InvalidDataException($@"The image has no {WinReInImage}; WinRE cannot be serviced.");
+        }
+
+        var folder = Path.Combine(run.Root, "winre");
+        var copy = Path.Combine(folder, "winre.wim");
+        var exported = Path.Combine(folder, "winre-export.wim");
+        Directory.CreateDirectory(folder);
+        File.Copy(inImage, copy, overwrite: true);
+        File.SetAttributes(copy, FileAttributes.Normal);
+        var before = new FileInfo(copy).Length;
+        Log?.Invoke($"winre: {WinReInImage}, {Megabytes(before)} MB");
+
+        var winReMount = paths.WinReMount;
+        PrepareEmptyDirectory(winReMount);
+        await servicing.MountAsync(copy, 1, winReMount, ct).ConfigureAwait(false);
+        var current = await ReadPackagesAsync(winReMount, ct).ConfigureAwait(false);
+        Log?.Invoke($"winre packages: {current.Packages.Count}; servicing stack {current.ServicingStack ?? "-"}");
+        foreach (var addition in plan.Add)
+        {
+            Log?.Invoke($"winre add update {addition.Description}");
+            try
+            {
+                await servicing.AddPackageAsync(winReMount, UpdateFolder.Full(plan.Source, addition.FileName), ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex.HResult == ModuleNotFound && addition.FileName.EndsWith(".msu", StringComparison.OrdinalIgnoreCase))
+            {
+                Log?.Invoke($"winre update {addition.FileName}: 0x8007007E, expected for a cumulative update in WinRE; continuing");
+            }
+
+            var next = await ReadPackagesAsync(winReMount, ct).ConfigureAwait(false);
+            var change = PackageInventory.Compare(current, next);
+            Log?.Invoke(change.IsEmpty
+                ? $"winre update {addition.FileName}: no change"
+                : $"winre update {addition.FileName}: {change.Added.Count} new, {change.Superseded} superseded; servicing stack {next.ServicingStack ?? "-"}");
+            foreach (var name in change.Added.Where(n => n.StartsWith("Package_for_", StringComparison.OrdinalIgnoreCase)))
+            {
+                Log?.Invoke("  new " + name);
+            }
+
+            current = next;
+        }
+
+        Log?.Invoke("winre cleanup component store (ResetBase)");
+        await servicing.CleanupComponentStoreAsync(winReMount, resetBase: true, ct).ConfigureAwait(false);
+        var cleaned = await ReadPackagesAsync(winReMount, ct).ConfigureAwait(false);
+        Log?.Invoke($"winre cleanup: packages {current.Packages.Count} -> {cleaned.Packages.Count}");
+        await servicing.UnmountAsync(winReMount, commit: true, ct).ConfigureAwait(false);
+        TryDeleteEmptyDirectory(winReMount);
+
+        File.Delete(exported);
+        await servicing.ExportAsync(copy, 1, exported, ct).ConfigureAwait(false);
+        var committed = new FileInfo(copy).Length;
+        var after = new FileInfo(exported).Length;
+
+        // The file in the image is replaced as a whole; a WOF-compressed original is a reparse point that is deleted first.
+        File.SetAttributes(inImage, FileAttributes.Normal);
+        File.Delete(inImage);
+        File.Copy(exported, inImage);
+        File.SetAttributes(inImage, FileAttributes.Archive);
+        Log?.Invoke($"winre: {Megabytes(before)} MB -> commit {Megabytes(committed)} MB -> export {Megabytes(after)} MB, put back into the image");
+        TryDeleteDirectory(folder);
+        return true;
+    }
+
+    private static long Megabytes(long bytes) => bytes / (1024 * 1024);
 
     // The package list before and after shows what the cleanup removed; superseded packages are what it can take away.
     private async Task<bool> CleanupAsync(CleanupPlan plan, string mountDir, CancellationToken ct)

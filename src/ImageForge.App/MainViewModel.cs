@@ -429,6 +429,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DriverFolder = _scannedDriverFolder,
             ForceUnsigned = ForceUnsigned,
             AddUpdates = [.. UpdatePackages.Where(u => u.IsSelected == true).Select(u => u.Scanned.Package.FileName)],
+            WinReUpdates = [.. UpdatePackages.Where(u => u.IsForWinRe == true).Select(u => u.Scanned.Package.FileName)],
             UpdateFolder = _scannedUpdateFolder,
             CleanupComponents = CleanupComponents,
             ResetBase = CleanupComponents && ResetBase,
@@ -468,6 +469,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. DescribeDrivers(plan.Drivers),
                 .. DescribeUpdates(plan.Updates),
                 .. DescribeCleanup(plan.Cleanup),
+                .. DescribeWinRe(plan.WinRe),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
@@ -477,7 +479,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
             var drivers = plan.Drivers is { } driverPlan ? $" Удаляемых драйверов: {driverPlan.Remove.Count}, добавляемых: {driverPlan.Add.Count}." : string.Empty;
             var updates = (plan.Updates is { } updatePlan ? $" Добавляемых обновлений: {updatePlan.Add.Count}." : string.Empty)
-                + (plan.Cleanup is { } cleanupPlan ? $" Очистка хранилища компонентов{(cleanupPlan.ResetBase ? " с /ResetBase" : string.Empty)}." : string.Empty);
+                + (plan.Cleanup is { } cleanupPlan ? $" Очистка хранилища компонентов{(cleanupPlan.ResetBase ? " с /ResetBase" : string.Empty)}." : string.Empty)
+                + (plan.WinRe is { } winRePlan ? $" Обновлений в WinRE: {winRePlan.Add.Count}." : string.Empty);
             Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{updates}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
@@ -814,6 +817,25 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static IEnumerable<string> DescribeWinRe(WinRePlan? winRe)
+    {
+        if (winRe is null)
+        {
+            yield break;
+        }
+
+        yield return @"WinRE (Windows\System32\Recovery\Winre.wim): извлечь, обновить, очистить с /ResetBase, экспортировать и вернуть в образ";
+        foreach (var addition in winRe.Add)
+        {
+            yield return $"  Добавить в WinRE {addition.Description}";
+        }
+
+        foreach (var warning in winRe.Warnings)
+        {
+            yield return "  Внимание: " + warning;
+        }
+    }
+
     private static IEnumerable<string> DescribeCleanup(CleanupPlan? cleanup)
     {
         if (cleanup is null)
@@ -838,7 +860,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     private void ShowUpdatePackagesStatus() =>
-        UpdatePackagesStatus = $"Найдено файлов: {UpdatePackages.Count}, можно добавить: {UpdatePackages.Count(p => p.CanSelect)}, отмечено: {UpdatePackages.Count(p => p.IsSelected == true)}.";
+        UpdatePackagesStatus = $"Найдено файлов: {UpdatePackages.Count}, можно добавить: {UpdatePackages.Count(p => p.CanSelect)}, " +
+            $"в образ: {UpdatePackages.Count(p => p.IsSelected == true)}, в WinRE: {UpdatePackages.Count(p => p.IsForWinRe == true)}.";
 
     private void UpdateSelectionChanged()
     {
@@ -937,6 +960,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var package in UpdatePackages)
         {
             package.IsSelected = false;
+            package.IsForWinRe = false;
         }
 
         UpdatesStatus = "Обновления образа ещё не прочитаны.";

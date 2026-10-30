@@ -23,6 +23,8 @@ internal sealed class TestPaths(string root) : IWorkspacePaths
 
     public string Mount(Guid imageId) => Path.Combine(root, "mount", imageId.ToString("N"));
 
+    public string WinReMount => Path.Combine(root, "mount-winre");
+
     public string Journal(Guid runId) => Path.Combine(root, "journal", runId.ToString("N") + ".jsonl");
 
     public RunLayout Run(Guid runId)
@@ -44,6 +46,15 @@ internal sealed class FakeServicing : IImageServicing
     public HashSet<string> OwnedHives { get; } = [];
 
     public bool FailExport { get; set; }
+
+    /// <summary>Content of Windows\System32\Recovery\Winre.wim in every mounted install image; null leaves it out.</summary>
+    public string? WinRe { get; set; }
+
+    /// <summary>The Winre.wim content each committed install image held.</summary>
+    public List<string> CommittedWinRe { get; } = [];
+
+    /// <summary>Package file name → the HRESULT its addition fails with.</summary>
+    public Dictionary<string, int> FailPackage { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool LeaveHiveLoaded { get; set; }
 
@@ -195,7 +206,13 @@ internal sealed class FakeServicing : IImageServicing
     public Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct)
     {
         Calls.Add("package-add " + Path.GetFileName(packagePath));
-        if (!PackageAlreadyPresent)
+        if (FailPackage.TryGetValue(Path.GetFileName(packagePath), out var hresult))
+        {
+            throw new IOException($"DismAddPackage failed: 0x{hresult:X8}") { HResult = hresult };
+        }
+
+        // One package list serves every mount, so a second image (WinRE) finds the rollup already there.
+        if (!PackageAlreadyPresent && !Packages.Any(p => p.Name == "Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9725.1.0"))
         {
             for (var i = 0; i < Packages.Count; i++)
             {
@@ -287,6 +304,13 @@ internal sealed class FakeServicing : IImageServicing
         Calls.Add("mount");
         MountedIndexes.Add(index);
         File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
+        if (WinRe is not null && !Path.GetFileName(imageFile).StartsWith("winre", StringComparison.OrdinalIgnoreCase))
+        {
+            var winRe = Path.Combine(mountDir, RunPipeline.WinReInImage);
+            Directory.CreateDirectory(Path.GetDirectoryName(winRe)!);
+            File.WriteAllText(winRe, WinRe);
+        }
+
         Mounted.Add(mountDir);
         _images[mountDir] = imageFile;
         return Task.CompletedTask;
@@ -303,6 +327,10 @@ internal sealed class FakeServicing : IImageServicing
         if (commit)
         {
             File.AppendAllText(_images[mountDir], "+M1");
+            if (File.Exists(Path.Combine(mountDir, RunPipeline.WinReInImage)))
+            {
+                CommittedWinRe.Add(File.ReadAllText(Path.Combine(mountDir, RunPipeline.WinReInImage)));
+            }
         }
 
         foreach (var entry in Directory.EnumerateFileSystemEntries(mountDir))

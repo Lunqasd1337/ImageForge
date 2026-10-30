@@ -44,4 +44,10 @@ public sealed partial class UpdatePackageItem(ScannedUpdate scanned, int sameCon
     public partial bool? IsSelected { get; set; } = false;
 
     partial void OnIsSelectedChanged(bool? value) => selectionChanged();
+
+    /// <summary>Also (or only) into WinRE: the cumulative update for its servicing stack, the Safe OS Dynamic Update.</summary>
+    [ObservableProperty]
+    public partial bool? IsForWinRe { get; set; } = false;
+
+    partial void OnIsForWinReChanged(bool? value) => selectionChanged();
 }

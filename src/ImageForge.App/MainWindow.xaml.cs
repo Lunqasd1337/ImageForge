@@ -50,6 +50,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void ChooseUpdateFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.ComputerFolder };
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            if (await picker.PickSingleFolderAsync() is { } folder)
+            {
+                ViewModel.UpdatePath = folder.Path;
+            }
+        }
+        catch (COMException ex)
+        {
+            ViewModel.Status = "Не удалось открыть выбор папки, введите путь вручную: " + ex.Message;
+        }
+    }
+
     private async void ChooseRegFile_Click(object sender, RoutedEventArgs e)
     {
         try

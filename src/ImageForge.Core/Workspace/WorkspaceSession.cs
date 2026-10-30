@@ -2,6 +2,7 @@ using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Contracts;
 using ImageForge.Core.Drivers;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
@@ -50,6 +51,9 @@ public sealed record PlanSummary(
 
     /// <summary>Driver removals and additions, with their warnings; null when there are none.</summary>
     public DriverPlan? Drivers { get; init; }
+
+    /// <summary>Update packages to add, in order, with their warnings; null when there are none.</summary>
+    public UpdatePlan? Updates { get; init; }
 }
 
 /// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
@@ -101,6 +105,17 @@ public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<App
     public IReadOnlyList<InstalledDriver> Drivers { get; init; } = [];
 
     public IReadOnlyList<string> DriverProblems { get; init; } = [];
+
+    /// <summary>The version of the installed cumulative update (Package_for_RollupFix); null when none or not read.</summary>
+    public string? Rollup { get; init; }
+
+    /// <summary>The version of the installed servicing stack; null when none or not read.</summary>
+    public string? ServicingStack { get; init; }
+
+    /// <summary>How many servicing packages the image lists; 0 when not read.</summary>
+    public int PackageCount { get; init; }
+
+    public IReadOnlyList<string> PackageProblems { get; init; } = [];
 }
 
 public sealed record RunOutcome(
@@ -228,6 +243,10 @@ public sealed class WorkspaceSession(
                 CapabilityProblems = capabilities.Problems,
                 Drivers = inventory.Drivers.Problems.Count > 0 ? [] : [.. inventory.Drivers.Drivers.OrderBy(d => d.PublishedName, StringComparer.OrdinalIgnoreCase)],
                 DriverProblems = inventory.Drivers.Problems,
+                Rollup = inventory.Packages.Rollup,
+                ServicingStack = inventory.Packages.ServicingStack,
+                PackageCount = inventory.Packages.Packages.Count,
+                PackageProblems = inventory.Packages.Problems,
             };
         }
     }
@@ -244,6 +263,7 @@ public sealed class WorkspaceSession(
             .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
             .. options.RemoveDrivers.Select(d => new RemoveDriverPackage(d, options.AllowBootCritical)),
             .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
+            .. options.AddUpdates.Select(u => new AddUpdatePackage(u)),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
@@ -254,6 +274,15 @@ public sealed class WorkspaceSession(
             source = (source ?? new FodChoice(null, null)) with
             {
                 Drivers = string.IsNullOrWhiteSpace(options.DriverFolder) ? null : DriverFolder.Scan(options.DriverFolder.Trim()),
+            };
+        }
+
+        if (options.AddUpdates.Count > 0)
+        {
+            // Hashed again here (a few seconds per GB), so the plan holds the files as they are now.
+            source = (source ?? new FodChoice(null, null)) with
+            {
+                Updates = string.IsNullOrWhiteSpace(options.UpdateFolder) ? null : UpdateFolder.Scan(options.UpdateFolder.Trim()),
             };
         }
 
@@ -310,6 +339,7 @@ public sealed class WorkspaceSession(
                     FodSourceProblem = fod?.Problem,
                     Drivers = _inventory?.Drivers,
                     DriverSource = fod?.Drivers,
+                    UpdateSource = fod?.Updates,
                 });
             _plan = result.Plan;
             return result.Plan is { } plan
@@ -321,6 +351,7 @@ public sealed class WorkspaceSession(
                     FodSource = plan.Capabilities?.Source,
                     FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
                     Drivers = plan.Drivers,
+                    Updates = plan.Updates,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
@@ -505,4 +536,7 @@ internal sealed record FodChoice(string? Folder, string? Problem)
 {
     /// <summary>The scanned driver folder; null when no driver is added or no folder was given.</summary>
     public DriverFolder? Drivers { get; init; }
+
+    /// <summary>The scanned update folder; null when no update is added or no folder was given.</summary>
+    public UpdateFolder? Updates { get; init; }
 }

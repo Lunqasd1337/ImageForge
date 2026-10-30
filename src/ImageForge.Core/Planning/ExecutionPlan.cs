@@ -3,6 +3,7 @@ using ImageForge.Core.Changes;
 using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
+using ImageForge.Core.Updates;
 
 namespace ImageForge.Core.Planning;
 
@@ -30,6 +31,9 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 
     /// <summary>The scanned driver folder; additions are planned only from it.</summary>
     public DriverFolder? DriverSource { get; init; }
+
+    /// <summary>The scanned update folder; updates are added only from it.</summary>
+    public UpdateFolder? UpdateSource { get; init; }
 }
 
 public abstract record PlannedStep;
@@ -107,6 +111,9 @@ public sealed record ExecutionPlan(
 
     /// <summary>Driver packages to remove and add, after the feature changes; null when there are none.</summary>
     public DriverPlan? Drivers { get; init; }
+
+    /// <summary>Update packages to add, after the feature changes and before the drivers; null when there are none.</summary>
+    public UpdatePlan? Updates { get; init; }
 }
 
 /// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
@@ -140,6 +147,16 @@ public sealed record DriverRemoval(string PublishedName, string Description, boo
 /// <param name="ContentHash">The run adds the package only while its files still have this hash.</param>
 /// <param name="SameContent">Other requested paths with the same content; added once.</param>
 public sealed record DriverAddition(string InfPath, string ContentHash, bool ForceUnsigned, string Description, IReadOnlyList<string> SameContent);
+
+/// <param name="Add">One DISM call each, in this order: servicing stack packages first.</param>
+/// <param name="Source">The update folder the files are in.</param>
+/// <param name="Warnings">Shown in the preview.</param>
+public sealed record UpdatePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
+
+/// <param name="FileName">Relative to the update folder.</param>
+/// <param name="Sha256">The run adds the file only while it still has this hash.</param>
+/// <param name="SameContent">Other requested files with the same content; added once.</param>
+public sealed record UpdateAddition(string FileName, string Sha256, string Description, IReadOnlyList<string> SameContent);
 
 /// <param name="Warning">Shown before the removal is confirmed; null when none is known.</param>
 public sealed record AppxRemoval(PackageIdentity Package, string DisplayName, string? Warning);
@@ -176,6 +193,8 @@ public static class PlanningCodes
     public const string DriverSourceMissing = "driver.source.missing";
     public const string DriverPackageInvalid = "driver.package.invalid";
     public const string DriverUnsigned = "driver.unsigned";
+    public const string UpdateSourceMissing = "update.source.missing";
+    public const string UpdatePackageInvalid = "update.package.invalid";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

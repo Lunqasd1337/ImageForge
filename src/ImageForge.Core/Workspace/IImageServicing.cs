@@ -3,6 +3,7 @@ using ImageForge.Core.Drivers;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
+using ImageForge.Core.Updates;
 
 namespace ImageForge.Core.Workspace;
 
@@ -45,6 +46,12 @@ public interface IImageServicing
     Task AddDriverAsync(string mountDir, string infPath, bool forceUnsigned, CancellationToken ct);
 
     Task RemoveDriverAsync(string mountDir, string publishedName, CancellationToken ct);
+
+    /// <summary>The servicing packages of the image (DismGetPackages).</summary>
+    Task<PackageInventory> GetPackagesAsync(string mountDir, CancellationToken ct);
+
+    /// <param name="packagePath">The full path of a .msu or .cab in the checked update folder (DismAddPackage).</param>
+    Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct);
 
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 

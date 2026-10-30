@@ -126,6 +126,10 @@ public sealed record AddDriverPackage(string InfPath, bool ForceUnsigned = false
 /// <param name="AllowBootCritical">The user accepted that removing a boot-critical driver can leave the image unbootable.</param>
 public sealed record RemoveDriverPackage(string PublishedName, bool AllowBootCritical = false) : ImageChange;
 
+/// <summary>Adds a local .msu or .cab update (DismAddPackage).</summary>
+/// <param name="FileName">Relative to the scanned update folder.</param>
+public sealed record AddUpdatePackage(string FileName) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

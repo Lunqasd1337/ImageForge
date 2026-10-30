@@ -1,6 +1,7 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
+using ImageForge.Core.Updates;
 
 namespace ImageForge.Core.Workspace;
 
@@ -10,6 +11,9 @@ public sealed record ImageInventory(AppxInventory Appx, FeatureInventory Feature
 {
     /// <summary>The third-party drivers; empty with no problems when the inventory did not read them.</summary>
     public DriverInventory Drivers { get; init; } = new([], ["Список драйверов не прочитан."]);
+
+    /// <summary>The servicing packages; the window shows the installed cumulative update and servicing stack.</summary>
+    public PackageInventory Packages { get; init; } = new([], ["Список пакетов не прочитан."]);
 }
 
 /// <summary>
@@ -77,7 +81,9 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
 
             Log?.Invoke("driver-list...");
             var drivers = await servicing.GetDriversAsync(mountDir, ct).ConfigureAwait(false);
-            return new ImageInventory(inventory, features, capabilities, MediaHasNetFx3(paths)) { Drivers = drivers };
+            Log?.Invoke("package-list...");
+            var packages = await servicing.GetPackagesAsync(mountDir, ct).ConfigureAwait(false);
+            return new ImageInventory(inventory, features, capabilities, MediaHasNetFx3(paths)) { Drivers = drivers, Packages = packages };
         }
         finally
         {

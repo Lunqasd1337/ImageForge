@@ -8,6 +8,7 @@ using ImageForge.Core.Contracts;
 using ImageForge.Core.Drivers;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry.RegFile;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Workspace;
 using Microsoft.UI.Dispatching;
 using StreamJsonRpc;
@@ -131,6 +132,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // The folder DriverPackages was found in; the engine scans it again when planning.
     private string? _scannedDriverFolder;
 
+    [ObservableProperty]
+    public partial string UpdatesStatus { get; set; } = "Обновления образа ещё не прочитаны.";
+
+    /// <summary>A folder of .msu and .cab updates, searched recursively; needed only for additions.</summary>
+    [ObservableProperty]
+    public partial string UpdatePath { get; set; } = string.Empty;
+
+    /// <summary>Update packages found in <see cref="UpdatePath"/>; a check marks one for adding.</summary>
+    public ObservableCollection<UpdatePackageItem> UpdatePackages { get; } = [];
+
+    [ObservableProperty]
+    public partial string UpdatePackagesStatus { get; set; } = "Укажите папку с обновлениями и нажмите «Найти обновления».";
+
+    // The folder UpdatePackages was found in; the engine scans and hashes it again when planning.
+    private string? _scannedUpdateFolder;
+
     public bool IsConnected => _engine is not null;
 
     public bool HasResult => PublishedPath.Length > 0;
@@ -166,11 +183,46 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DriverPackagesStatus = "Папка изменилась; нажмите «Найти пакеты».";
     }
 
+    partial void OnUpdatePathChanged(string value)
+    {
+        DropPlan();
+        UpdatePackages.Clear();
+        _scannedUpdateFolder = null;
+        UpdatePackagesStatus = "Папка изменилась; нажмите «Найти обновления».";
+    }
+
     partial void OnForceUnsignedChanged(bool value) => DropPlan();
 
     partial void OnAllowBootCriticalChanged(bool value) => DropPlan();
 
     /// <summary>Searches the folder for INF files here, unelevated; the engine checks the chosen packages again.</summary>
+    /// <summary>Reads and hashes the .msu and .cab files here, unelevated; the engine checks the chosen ones again.</summary>
+    [RelayCommand]
+    private async Task ScanUpdatesAsync()
+    {
+        DropPlan();
+        UpdatePackages.Clear();
+        _scannedUpdateFolder = null;
+        var folder = UpdatePath.Trim().Trim('"');
+        UpdatePackagesStatus = "Чтение и хеширование файлов (несколько секунд на гигабайт)...";
+        var scanned = await Task.Run(() => UpdateFolder.Scan(folder)).ConfigureAwait(true);
+        if (scanned.Problem is { } problem)
+        {
+            UpdatePackagesStatus = "Папка не подходит: " + problem;
+            return;
+        }
+
+        var copies = scanned.Packages.Where(p => p.Sha256 is not null).GroupBy(p => p.Sha256!).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var package in scanned.Packages)
+        {
+            UpdatePackages.Add(new UpdatePackageItem(package, package.Sha256 is { } hash ? copies[hash] : 1, UpdateSelectionChanged));
+        }
+
+        _scannedUpdateFolder = folder;
+        Append($"Папка обновлений {folder}: файлов {scanned.Packages.Count}, годных {UpdatePackages.Count(p => p.CanSelect)}");
+        ShowUpdatePackagesStatus();
+    }
+
     [RelayCommand]
     private async Task ScanDriversAsync()
     {
@@ -265,6 +317,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ShowFeatures(inspection);
             ShowCapabilities(inspection);
             ShowDrivers(inspection);
+            ShowUpdates(inspection);
             Status = "Образ прочитан. Отметьте изменения и нажмите «Подготовить».";
         }
         catch (RemoteInvocationException ex)
@@ -329,6 +382,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             AddDrivers = [.. DriverPackages.Where(d => d.IsSelected == true).Select(d => d.Scanned.Package.InfPath)],
             DriverFolder = _scannedDriverFolder,
             ForceUnsigned = ForceUnsigned,
+            AddUpdates = [.. UpdatePackages.Where(u => u.IsSelected == true).Select(u => u.Scanned.Package.FileName)],
+            UpdateFolder = _scannedUpdateFolder,
         };
         IsBusy = true;
         try
@@ -363,6 +418,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. DescribeCapabilityAdditions(plan),
                 .. DescribeFeatureChanges(plan.FeatureChanges),
                 .. DescribeDrivers(plan.Drivers),
+                .. DescribeUpdates(plan.Updates),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
@@ -371,7 +427,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 + (plan.CapabilityAdditions.Count > 0 ? $" Добавляемых: {plan.CapabilityAdditions.Count}." : string.Empty);
             var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
             var drivers = plan.Drivers is { } driverPlan ? $" Удаляемых драйверов: {driverPlan.Remove.Count}, добавляемых: {driverPlan.Add.Count}." : string.Empty;
-            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{encoding} Проверьте превью и нажмите «Запустить».";
+            var updates = plan.Updates is { } updatePlan ? $" Добавляемых обновлений: {updatePlan.Add.Count}." : string.Empty;
+            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{updates}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
         catch (RemoteInvocationException ex)
@@ -649,6 +706,54 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static IEnumerable<string> DescribeUpdates(UpdatePlan? updates)
+    {
+        if (updates is null)
+        {
+            yield break;
+        }
+
+        foreach (var addition in updates.Add)
+        {
+            yield return $"Добавить обновление {addition.Description}";
+            if (addition.SameContent.Count > 0)
+            {
+                yield return $"  То же содержимое, ставится один раз: {string.Join(", ", addition.SameContent)}";
+            }
+        }
+
+        if (updates.Add.Count > 0)
+        {
+            yield return "  Установка накопительного обновления идёт 10–15 минут и не прерывается отменой.";
+        }
+
+        if (updates.Source is { } source)
+        {
+            yield return $"  Источник: {source}";
+        }
+
+        foreach (var warning in updates.Warnings)
+        {
+            yield return "  Внимание: " + warning;
+        }
+    }
+
+    private void ShowUpdates(InspectionSummary inspection)
+    {
+        UpdatesStatus = inspection.PackageProblems.Count > 0
+            ? "Пакеты образа не прочитаны: " + string.Join("; ", inspection.PackageProblems)
+            : $"Пакетов обслуживания: {inspection.PackageCount}. Накопительное обновление: {inspection.Rollup ?? "нет"}, стек обслуживания: {inspection.ServicingStack ?? "нет"}.";
+    }
+
+    private void ShowUpdatePackagesStatus() =>
+        UpdatePackagesStatus = $"Найдено файлов: {UpdatePackages.Count}, можно добавить: {UpdatePackages.Count(p => p.CanSelect)}, отмечено: {UpdatePackages.Count(p => p.IsSelected == true)}.";
+
+    private void UpdateSelectionChanged()
+    {
+        DropPlan();
+        ShowUpdatePackagesStatus();
+    }
+
     private void ShowDrivers(InspectionSummary inspection)
     {
         if (inspection.DriverProblems.Count > 0)
@@ -733,6 +838,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         AllowBootCritical = false;
+        foreach (var package in UpdatePackages)
+        {
+            package.IsSelected = false;
+        }
+
+        UpdatesStatus = "Обновления образа ещё не прочитаны.";
     }
 
     private void FoldersChanged()

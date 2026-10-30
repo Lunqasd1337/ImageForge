@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 7;
+    public const int Version = 8;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -94,6 +94,12 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>The user accepted removing the chosen boot-critical drivers.</summary>
     public bool AllowBootCritical { get; init; }
+
+    /// <summary>Update packages to add, by file path relative to <see cref="UpdateFolder"/>; the engine scans it again.</summary>
+    public IReadOnlyList<string> AddUpdates { get; init; } = [];
+
+    /// <summary>The folder of .msu and .cab updates; needed only for additions.</summary>
+    public string? UpdateFolder { get; init; }
 }
 
 public enum EngineState

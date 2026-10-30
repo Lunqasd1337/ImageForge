@@ -1,5 +1,6 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Drivers;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -175,6 +176,38 @@ internal sealed class FakeServicing : IImageServicing
     {
         Calls.Add("driver-remove " + publishedName);
         Drivers.RemoveAll(d => d.PublishedName == publishedName);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The servicing packages every mounted image reports.</summary>
+    public List<InstalledPackage> Packages { get; } = [];
+
+    /// <summary>Additions succeed without changing the package list, as when the image already holds the update.</summary>
+    public bool PackageAlreadyPresent { get; set; }
+
+    public Task<PackageInventory> GetPackagesAsync(string mountDir, CancellationToken ct)
+    {
+        Calls.Add("package-list");
+        return Task.FromResult(new PackageInventory([.. Packages], []));
+    }
+
+    /// <summary>Supersedes the installed rollup and adds rollup 26100.9725.1.0, whatever the file.</summary>
+    public Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct)
+    {
+        Calls.Add("package-add " + Path.GetFileName(packagePath));
+        if (!PackageAlreadyPresent)
+        {
+            for (var i = 0; i < Packages.Count; i++)
+            {
+                if (Packages[i].IsInstalled && Packages[i].Name.StartsWith("Package_for_RollupFix~", StringComparison.Ordinal))
+                {
+                    Packages[i] = Packages[i] with { State = "Superseded" };
+                }
+            }
+
+            Packages.Add(new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9725.1.0", "Installed", "Update"));
+        }
+
         return Task.CompletedTask;
     }
 

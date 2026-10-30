@@ -6,6 +6,7 @@ using ImageForge.Core.Changes;
 using ImageForge.Core.Drivers;
 using ImageForge.Core.Features;
 using ImageForge.Core.Registry;
+using ImageForge.Core.Updates;
 
 namespace ImageForge.Core.Planning;
 
@@ -37,6 +38,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var featureChanges = new List<(ImageChange Change, int Index)>();
         var capabilityChanges = new List<(ImageChange Change, int Index)>();
         var driverChanges = new List<(ImageChange Change, int Index)>();
+        var updateChanges = new List<(AddUpdatePackage Change, int Index)>();
         for (var i = 0; i < request.Changes.Count; i++)
         {
             if (request.Changes[i] is EnableWindowsFeature or DisableWindowsFeature)
@@ -50,6 +52,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is AddDriverPackage or RemoveDriverPackage)
             {
                 driverChanges.Add((request.Changes[i], i));
+            }
+            else if (request.Changes[i] is AddUpdatePackage update)
+            {
+                updateChanges.Add((update, i));
             }
             else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
@@ -71,7 +77,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var features = featureChanges.Count > 0 ? PlanFeatures(featureChanges, request, diagnostics) : null;
         var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
         var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
-        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null)
+        var updates = updateChanges.Count > 0 ? PlanUpdates(updateChanges, request.UpdateSource, diagnostics) : null;
+        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
         }
@@ -110,6 +117,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Features = features,
             Capabilities = capabilities,
             Drivers = drivers,
+            Updates = updates,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -433,6 +441,75 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             : null;
     }
 
+    /// <summary>
+    /// Updates come only from the scanned folder, whole and with a hash; the same file content is added once. Servicing
+    /// stack packages go first. DISM checks the signature and applicability when the run adds each one.
+    /// </summary>
+    private static UpdatePlan? PlanUpdates(List<(AddUpdatePackage Change, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
+    {
+        var count = diagnostics.Count;
+        var add = new List<(UpdateAddition Addition, bool ServicingStack, UpdatePackageInfo Package)>();
+        foreach (var (change, index) in changes)
+        {
+            if (source is null || source.Problem is not null)
+            {
+                diagnostics.Add(new PlanningDiagnostic(
+                    PlanningCodes.UpdateSourceMissing, index, source?.Problem is { } problem
+                        ? $"Папка обновлений не подходит: {problem}."
+                        : "Папка обновлений не указана или не просканирована."));
+                continue;
+            }
+
+            var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.FileName, change.FileName, StringComparison.OrdinalIgnoreCase));
+            if (scanned is null)
+            {
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateSourceMissing, index, $"В папке обновлений нет {change.FileName}."));
+                continue;
+            }
+
+            if (scanned.Package.Problems.Count > 0 || scanned.Sha256 is null)
+            {
+                var problems = scanned.Package.Problems.Count > 0 ? string.Join("; ", scanned.Package.Problems) : "файл не прочитан";
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, $"Пакет {change.FileName} нельзя добавить: {problems}."));
+                continue;
+            }
+
+            var same = add.FindIndex(a => a.Addition.Sha256 == scanned.Sha256);
+            if (same >= 0)
+            {
+                var first = add[same].Addition;
+                if (!string.Equals(first.FileName, scanned.Package.FileName, StringComparison.OrdinalIgnoreCase)
+                    && !first.SameContent.Contains(scanned.Package.FileName, StringComparer.OrdinalIgnoreCase))
+                {
+                    add[same] = add[same] with { Addition = first with { SameContent = [.. first.SameContent, scanned.Package.FileName] } };
+                }
+
+                continue;
+            }
+
+            add.Add((new UpdateAddition(scanned.Package.FileName, scanned.Sha256, Describe(scanned.Package), []), scanned.Package.HasServicingStack, scanned.Package));
+        }
+
+        if (diagnostics.Count != count || add.Count == 0)
+        {
+            return null;
+        }
+
+        var warnings = new List<string>();
+        var cumulative = add.Where(a => !a.ServicingStack && a.Package.Kind == UpdateKind.Msu && a.Package.Kb is not null)
+            .Select(a => $"KB{a.Package.Kb}").Distinct().ToList();
+        if (cumulative.Count > 1)
+        {
+            warnings.Add($"Выбрано несколько MSU ({string.Join(", ", cumulative)}): DISM поставит каждый по очереди, а накопительному обновлению обычно достаточно последнего.");
+        }
+
+        return new UpdatePlan([.. add.Where(a => a.ServicingStack).Concat(add.Where(a => !a.ServicingStack)).Select(a => a.Addition)], source!.Folder, warnings);
+    }
+
+    private static string Describe(UpdatePackageInfo p) =>
+        $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : "без KB")}, {p.Kind.ToString().ToUpperInvariant()}" +
+        $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? ", стек обслуживания" : string.Empty)}";
+
     private static ScannedDriver? PlanDriverAddition(AddDriverPackage addition, int index, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
     {
         if (source is null || source.Problem is not null)
@@ -547,7 +624,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 6;
+    private const int FormatVersion = 7;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -641,6 +718,15 @@ public static class PlanFingerprint
             foreach (var addition in drivers.Add)
             {
                 Append(builder, "add-driver", addition.InfPath, addition.ContentHash, addition.ForceUnsigned);
+            }
+        }
+
+        if (plan.Updates is { } updates)
+        {
+            Append(builder, "update-source", updates.Source);
+            foreach (var addition in updates.Add)
+            {
+                Append(builder, "add-update", addition.FileName, addition.Sha256);
             }
         }
 

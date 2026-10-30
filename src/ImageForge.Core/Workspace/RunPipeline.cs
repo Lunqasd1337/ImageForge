@@ -127,6 +127,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await context.Step("drivers", () => ChangeDriversAsync(drivers, mountDir, ct), ct).ConfigureAwait(false);
             }
 
+            if (request.Plan.Cleanup is { } cleanup)
+            {
+                await context.Step("cleanup", () => CleanupAsync(cleanup, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
             await context.Step("registry", () =>
             {
                 Inject(request, InjectedFailure.AfterMount, "registry");
@@ -364,6 +369,22 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
         return true;
     }
+
+    // The package list before and after shows what the cleanup removed; superseded packages are what it can take away.
+    private async Task<bool> CleanupAsync(CleanupPlan plan, string mountDir, CancellationToken ct)
+    {
+        var before = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
+        Log?.Invoke($"packages: {before.Packages.Count}, superseded {Superseded(before)}");
+        Log?.Invoke(plan.ResetBase ? "cleanup component store (ResetBase)" : "cleanup component store");
+        await servicing.CleanupComponentStoreAsync(mountDir, plan.ResetBase, ct).ConfigureAwait(false);
+        var after = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
+        Log?.Invoke($"cleanup: packages {before.Packages.Count} -> {after.Packages.Count}, superseded {Superseded(before)} -> {Superseded(after)}; " +
+            $"rollup {after.Rollup ?? "-"}, servicing stack {after.ServicingStack ?? "-"}");
+        return true;
+    }
+
+    private static int Superseded(PackageInventory packages) =>
+        packages.Packages.Count(p => string.Equals(p.State, "Superseded", StringComparison.OrdinalIgnoreCase));
 
     private async Task<PackageInventory> ReadPackagesAsync(string mountDir, CancellationToken ct)
     {

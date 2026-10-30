@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 8;
+    public const int Version = 9;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -100,6 +100,12 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>The folder of .msu and .cab updates; needed only for additions.</summary>
     public string? UpdateFolder { get; init; }
+
+    /// <summary>Clean up the component store after the other servicing (StartComponentCleanup).</summary>
+    public bool CleanupComponents { get; init; }
+
+    /// <summary>With <see cref="CleanupComponents"/>: /ResetBase, so updates in the image can no longer be removed.</summary>
+    public bool ResetBase { get; init; }
 }
 
 public enum EngineState

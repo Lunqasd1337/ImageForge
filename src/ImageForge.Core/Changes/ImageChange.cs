@@ -130,6 +130,10 @@ public sealed record RemoveDriverPackage(string PublishedName, bool AllowBootCri
 /// <param name="FileName">Relative to the scanned update folder.</param>
 public sealed record AddUpdatePackage(string FileName) : ImageChange;
 
+/// <summary>Cleans up the component store (Dism.exe /Cleanup-Image /StartComponentCleanup) after the other servicing.</summary>
+/// <param name="ResetBase">Also removes superseded component versions, so installed updates can no longer be removed.</param>
+public sealed record CleanupComponentStore(bool ResetBase) : ImageChange;
+
 public static class ValidationMarker
 {
     /// <summary>The M1 test operation; intended for the validation fixture only.</summary>

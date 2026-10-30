@@ -211,6 +211,18 @@ internal sealed class FakeServicing : IImageServicing
         return Task.CompletedTask;
     }
 
+    /// <summary>Drops the superseded packages, as /ResetBase does; without it they stay.</summary>
+    public Task CleanupComponentStoreAsync(string mountDir, bool resetBase, CancellationToken ct)
+    {
+        Calls.Add(resetBase ? "cleanup resetbase" : "cleanup");
+        if (resetBase)
+        {
+            Packages.RemoveAll(p => p.State == "Superseded");
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {
         Calls.Add("mount read-only");

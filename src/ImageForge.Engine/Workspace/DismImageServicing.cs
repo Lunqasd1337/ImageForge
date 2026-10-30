@@ -135,6 +135,9 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
             () => log?.Invoke("add-package: DISM applies the packages; it reports no progress for this phase (about 7 minutes for a cumulative update)"));
     }, CancellationToken.None);
 
+    public Task CleanupComponentStoreAsync(string mountDir, bool resetBase, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.CleanupComponentStore(mountDir, resetBase), "/Cleanup-Image /StartComponentCleanup");
+
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>
         Task.Run(() => DismImages.Unmount(mountDir, commit, Progress(commit ? "commit" : "discard")), CancellationToken.None);
 

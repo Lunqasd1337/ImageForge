@@ -537,6 +537,23 @@ public sealed class RunPipelineTests : IDisposable
         _servicing.Calls.ShouldContain("unmount discard");
     }
 
+    [Fact]
+    public async Task The_cleanup_runs_after_updates_and_drivers_and_logs_what_it_removed()
+    {
+        _servicing.Packages.Add(new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9457.1.0", "Installed", "Update"));
+        var request = UpdateRequest(UpdatePackages(),
+            new CleanupComponentStore(ResetBase: true), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "driver-list", "driver-add netkvm.inf",
+            "driver-list", "driver-list", "package-list", "cleanup resetbase", "package-list", "registry", "unmount commit", "export"]);
+        log.ShouldContain("cleanup component store (ResetBase)");
+        log.ShouldContain("cleanup: packages 2 -> 1, superseded 1 -> 0; rollup 26100.9725.1.0, servicing stack -");
+    }
+
     // One WIM-format MSU, as Catalog serves the 26H2 cumulative update, and the driver package of DriverPackages.
     private string UpdatePackages()
     {

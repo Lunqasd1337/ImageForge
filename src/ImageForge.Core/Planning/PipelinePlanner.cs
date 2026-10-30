@@ -39,6 +39,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var capabilityChanges = new List<(ImageChange Change, int Index)>();
         var driverChanges = new List<(ImageChange Change, int Index)>();
         var updateChanges = new List<(AddUpdatePackage Change, int Index)>();
+        CleanupPlan? cleanup = null;
         for (var i = 0; i < request.Changes.Count; i++)
         {
             if (request.Changes[i] is EnableWindowsFeature or DisableWindowsFeature)
@@ -56,6 +57,11 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is AddUpdatePackage update)
             {
                 updateChanges.Add((update, i));
+            }
+            else if (request.Changes[i] is CleanupComponentStore clean)
+            {
+                // Asked for twice, it runs once; ResetBase if either asked for it.
+                cleanup = PlanCleanup(clean.ResetBase || cleanup?.ResetBase == true);
             }
             else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
@@ -78,7 +84,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
         var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
         var updates = updateChanges.Count > 0 ? PlanUpdates(updateChanges, request.UpdateSource, diagnostics) : null;
-        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null)
+        if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
+            && cleanup is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
         }
@@ -118,6 +125,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Capabilities = capabilities,
             Drivers = drivers,
             Updates = updates,
+            Cleanup = cleanup,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -506,6 +514,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         return new UpdatePlan([.. add.Where(a => a.ServicingStack).Concat(add.Where(a => !a.ServicingStack)).Select(a => a.Addition)], source!.Folder, warnings);
     }
 
+    private static CleanupPlan PlanCleanup(bool resetBase) => new(resetBase, resetBase
+        ? ["С /ResetBase вытесненные версии компонентов удаляются насовсем: обновления, уже стоящие в образе, нельзя будет удалить."]
+        : []);
+
     private static string Describe(UpdatePackageInfo p) =>
         $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : "без KB")}, {p.Kind.ToString().ToUpperInvariant()}" +
         $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? ", стек обслуживания" : string.Empty)}";
@@ -624,7 +636,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 7;
+    private const int FormatVersion = 8;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -728,6 +740,11 @@ public static class PlanFingerprint
             {
                 Append(builder, "add-update", addition.FileName, addition.Sha256);
             }
+        }
+
+        if (plan.Cleanup is { } cleanup)
+        {
+            Append(builder, "cleanup", cleanup.ResetBase);
         }
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));

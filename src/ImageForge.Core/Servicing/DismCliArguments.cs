@@ -114,6 +114,13 @@ public static class DismCliArguments
     public static IReadOnlyList<string> AddPackage(string mountDirectory, string packagePath) =>
         ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Add-Package", "/PackagePath:" + LocalPath(packagePath, nameof(packagePath))];
 
+    /// <summary>Offline cleanup of the component store; /ResetBase also drops superseded versions for good.</summary>
+    public static IReadOnlyList<string> CleanupComponentStore(string mountDirectory, bool resetBase) =>
+    [
+        "/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Cleanup-Image", "/StartComponentCleanup",
+        .. resetBase ? ["/ResetBase"] : Array.Empty<string>(),
+    ];
+
     private static void AddFeatureNames(List<string> arguments, IReadOnlyList<string> featureNames)
     {
         ArgumentNullException.ThrowIfNull(featureNames);

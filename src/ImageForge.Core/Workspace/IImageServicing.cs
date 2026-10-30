@@ -53,6 +53,9 @@ public interface IImageServicing
     /// <param name="packagePath">The full path of a .msu or .cab in the checked update folder (DismAddPackage).</param>
     Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct);
 
+    /// <summary>Dism.exe /Cleanup-Image /StartComponentCleanup, with /ResetBase when asked; not cancelled once started.</summary>
+    Task CleanupComponentStoreAsync(string mountDir, bool resetBase, CancellationToken ct);
+
     Task UnmountAsync(string mountDir, bool commit, CancellationToken ct);
 
     Task<bool> IsMountedAsync(string mountDir, CancellationToken ct);

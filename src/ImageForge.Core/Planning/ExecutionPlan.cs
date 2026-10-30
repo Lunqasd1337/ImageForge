@@ -114,6 +114,9 @@ public sealed record ExecutionPlan(
 
     /// <summary>Update packages to add, after the feature changes and before the drivers; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
+
+    /// <summary>The component store cleanup, after all other servicing and before the registry; null when not asked for.</summary>
+    public CleanupPlan? Cleanup { get; init; }
 }
 
 /// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
@@ -152,6 +155,10 @@ public sealed record DriverAddition(string InfPath, string ContentHash, bool For
 /// <param name="Source">The update folder the files are in.</param>
 /// <param name="Warnings">Shown in the preview.</param>
 public sealed record UpdatePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
+
+/// <param name="ResetBase">Superseded component versions are removed too; updates in the image can no longer be uninstalled.</param>
+/// <param name="Warnings">Shown in the preview.</param>
+public sealed record CleanupPlan(bool ResetBase, IReadOnlyList<string> Warnings);
 
 /// <param name="FileName">Relative to the update folder.</param>
 /// <param name="Sha256">The run adds the file only while it still has this hash.</param>

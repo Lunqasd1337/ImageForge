@@ -443,6 +443,30 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.Calls.ShouldContain("cleanup resetbase");
     }
 
+    [Fact]
+    public async Task WinRe_updates_are_planned_from_the_update_folder_and_run()
+    {
+        _servicing.WinRe = "WINRE";
+        _dir.WriteFile("updates/readme.txt", "not scanned");
+        File.WriteAllBytes(_dir.Combine("updates/Windows11.0-KB5134133-x64.msu"),
+            Updates.WimArchiveTests.BuildWim("<WIM><IMAGE INDEX=\"1\"><NAME>content</NAME></IMAGE></WIM>"));
+        File.WriteAllBytes(_dir.Combine("updates/windows11.0-kb5130881-x64.cab"), Updates.UpdatePackageTests.BuildCabinet([("update.mum", 10)]));
+        _session.Open(_folders);
+
+        var plan = _session.Plan(new PlanOptions(null)
+        {
+            AddUpdates = ["Windows11.0-KB5134133-x64.msu"],
+            WinReUpdates = ["windows11.0-kb5130881-x64.cab", "Windows11.0-KB5134133-x64.msu"],
+            UpdateFolder = _dir.Combine("updates"),
+        });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.WinRe.ShouldNotBeNull().Add.Select(a => a.FileName).ShouldBe(["Windows11.0-KB5134133-x64.msu", "windows11.0-kb5130881-x64.cab"]);
+        var outcome = await _session.StartAsync(Start(plan), null, Ct);
+        outcome.Status.ShouldBe(RunStatus.Published, outcome.Error);
+        _servicing.CommittedWinRe.ShouldBe(["WINRE+M1+export"]);
+    }
+
     private static RegFileInput RegFile(string body) =>
         new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 

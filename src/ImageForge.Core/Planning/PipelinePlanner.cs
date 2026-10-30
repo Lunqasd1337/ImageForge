@@ -38,7 +38,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var featureChanges = new List<(ImageChange Change, int Index)>();
         var capabilityChanges = new List<(ImageChange Change, int Index)>();
         var driverChanges = new List<(ImageChange Change, int Index)>();
-        var updateChanges = new List<(AddUpdatePackage Change, int Index)>();
+        var updateChanges = new List<(string FileName, int Index)>();
+        var winReChanges = new List<(string FileName, int Index)>();
         CleanupPlan? cleanup = null;
         for (var i = 0; i < request.Changes.Count; i++)
         {
@@ -56,7 +57,11 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             }
             else if (request.Changes[i] is AddUpdatePackage update)
             {
-                updateChanges.Add((update, i));
+                updateChanges.Add((update.FileName, i));
+            }
+            else if (request.Changes[i] is AddWinReUpdatePackage winReUpdate)
+            {
+                winReChanges.Add((winReUpdate.FileName, i));
             }
             else if (request.Changes[i] is CleanupComponentStore clean)
             {
@@ -84,8 +89,9 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
         var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
         var updates = updateChanges.Count > 0 ? PlanUpdates(updateChanges, request.UpdateSource, diagnostics) : null;
+        var winRe = winReChanges.Count > 0 ? PlanWinRe(winReChanges, request.UpdateSource, diagnostics) : null;
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
-            && cleanup is null)
+            && cleanup is null && winRe is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
         }
@@ -126,6 +132,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Drivers = drivers,
             Updates = updates,
             Cleanup = cleanup,
+            WinRe = winRe,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -453,11 +460,52 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
     /// Updates come only from the scanned folder, whole and with a hash; the same file content is added once. Servicing
     /// stack packages go first. DISM checks the signature and applicability when the run adds each one.
     /// </summary>
-    private static UpdatePlan? PlanUpdates(List<(AddUpdatePackage Change, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
+    private static UpdatePlan? PlanUpdates(List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
+    {
+        if (CollectUpdates(changes, source, diagnostics) is not { } add)
+        {
+            return null;
+        }
+
+        var warnings = new List<string>();
+        var cumulative = add.Where(a => !a.ServicingStack && a.Package.Kind == UpdateKind.Msu && a.Package.Kb is not null)
+            .Select(a => $"KB{a.Package.Kb}").Distinct().ToList();
+        if (cumulative.Count > 1)
+        {
+            warnings.Add($"Выбрано несколько MSU ({string.Join(", ", cumulative)}): DISM поставит каждый по очереди, а накопительному обновлению обычно достаточно последнего.");
+        }
+
+        return new UpdatePlan([.. add.Where(a => a.ServicingStack).Concat(add.Where(a => !a.ServicingStack)).Select(a => a.Addition)], source!.Folder, warnings);
+    }
+
+    /// <summary>
+    /// The recipe checked in S2-TARGETS-INVENTORY: in WinRE a cumulative MSU installs only its servicing stack, so it goes
+    /// first and the Safe OS Dynamic Update (a .cab) after it.
+    /// </summary>
+    private static WinRePlan? PlanWinRe(List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
+    {
+        if (CollectUpdates(changes, source, diagnostics) is not { } add)
+        {
+            return null;
+        }
+
+        var warnings = new List<string>();
+        if (add.All(a => a.Package.Kind == UpdateKind.Msu))
+        {
+            warnings.Add("В WinRE накопительное обновление ставит только стек обслуживания; саму среду восстановления обновляет Safe OS Dynamic Update (.cab) того же месяца.");
+        }
+
+        return new WinRePlan(
+            [.. add.Where(a => a.Package.Kind == UpdateKind.Msu).Concat(add.Where(a => a.Package.Kind != UpdateKind.Msu)).Select(a => a.Addition)],
+            source!.Folder, warnings);
+    }
+
+    private static List<(UpdateAddition Addition, bool ServicingStack, UpdatePackageInfo Package)>? CollectUpdates(
+        List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
     {
         var count = diagnostics.Count;
         var add = new List<(UpdateAddition Addition, bool ServicingStack, UpdatePackageInfo Package)>();
-        foreach (var (change, index) in changes)
+        foreach (var (fileName, index) in changes)
         {
             if (source is null || source.Problem is not null)
             {
@@ -468,17 +516,17 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
                 continue;
             }
 
-            var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.FileName, change.FileName, StringComparison.OrdinalIgnoreCase));
+            var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.FileName, fileName, StringComparison.OrdinalIgnoreCase));
             if (scanned is null)
             {
-                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateSourceMissing, index, $"В папке обновлений нет {change.FileName}."));
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateSourceMissing, index, $"В папке обновлений нет {fileName}."));
                 continue;
             }
 
             if (scanned.Package.Problems.Count > 0 || scanned.Sha256 is null)
             {
                 var problems = scanned.Package.Problems.Count > 0 ? string.Join("; ", scanned.Package.Problems) : "файл не прочитан";
-                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, $"Пакет {change.FileName} нельзя добавить: {problems}."));
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, $"Пакет {fileName} нельзя добавить: {problems}."));
                 continue;
             }
 
@@ -498,20 +546,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             add.Add((new UpdateAddition(scanned.Package.FileName, scanned.Sha256, Describe(scanned.Package), []), scanned.Package.HasServicingStack, scanned.Package));
         }
 
-        if (diagnostics.Count != count || add.Count == 0)
-        {
-            return null;
-        }
-
-        var warnings = new List<string>();
-        var cumulative = add.Where(a => !a.ServicingStack && a.Package.Kind == UpdateKind.Msu && a.Package.Kb is not null)
-            .Select(a => $"KB{a.Package.Kb}").Distinct().ToList();
-        if (cumulative.Count > 1)
-        {
-            warnings.Add($"Выбрано несколько MSU ({string.Join(", ", cumulative)}): DISM поставит каждый по очереди, а накопительному обновлению обычно достаточно последнего.");
-        }
-
-        return new UpdatePlan([.. add.Where(a => a.ServicingStack).Concat(add.Where(a => !a.ServicingStack)).Select(a => a.Addition)], source!.Folder, warnings);
+        return diagnostics.Count != count || add.Count == 0 ? null : add;
     }
 
     private static CleanupPlan PlanCleanup(bool resetBase) => new(resetBase, resetBase
@@ -636,7 +671,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 8;
+    private const int FormatVersion = 9;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -745,6 +780,15 @@ public static class PlanFingerprint
         if (plan.Cleanup is { } cleanup)
         {
             Append(builder, "cleanup", cleanup.ResetBase);
+        }
+
+        if (plan.WinRe is { } winRe)
+        {
+            Append(builder, "winre-source", winRe.Source);
+            foreach (var addition in winRe.Add)
+            {
+                Append(builder, "winre-update", addition.FileName, addition.Sha256);
+            }
         }
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));

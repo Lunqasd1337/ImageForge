@@ -117,6 +117,9 @@ public sealed record ExecutionPlan(
 
     /// <summary>The component store cleanup, after all other servicing and before the registry; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
+
+    /// <summary>Winre.wim servicing, after the cleanup and before the registry; null when nothing goes into WinRE.</summary>
+    public WinRePlan? WinRe { get; init; }
 }
 
 /// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
@@ -159,6 +162,12 @@ public sealed record UpdatePlan(IReadOnlyList<UpdateAddition> Add, string Source
 /// <param name="ResetBase">Superseded component versions are removed too; updates in the image can no longer be uninstalled.</param>
 /// <param name="Warnings">Shown in the preview.</param>
 public sealed record CleanupPlan(bool ResetBase, IReadOnlyList<string> Warnings);
+
+/// <summary>
+/// Servicing of Winre.wim inside the image: <paramref name="Add"/> in order (cumulative updates first, which bring only
+/// the servicing stack there), cleanup with /ResetBase, commit and export, then the file goes back into the image.
+/// </summary>
+public sealed record WinRePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
 
 /// <param name="FileName">Relative to the update folder.</param>
 /// <param name="Sha256">The run adds the file only while it still has this hash.</param>

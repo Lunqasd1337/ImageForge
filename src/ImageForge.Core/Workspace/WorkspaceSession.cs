@@ -68,6 +68,9 @@ public sealed record PlanSummary(
 
     /// <summary>The component store cleanup, with its warnings; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
+
+    /// <summary>The packages that go into WinRE, in order, with their warnings; null when there are none.</summary>
+    public WinRePlan? WinRe { get; init; }
 }
 
 /// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
@@ -281,6 +284,7 @@ public sealed class WorkspaceSession(
             .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
             .. options.AddUpdates.Select(u => new AddUpdatePackage(u)),
             .. options.CleanupComponents ? [new CleanupComponentStore(options.ResetBase)] : Array.Empty<ImageChange>(),
+            .. options.WinReUpdates.Select(u => new AddWinReUpdatePackage(u)),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
@@ -294,7 +298,7 @@ public sealed class WorkspaceSession(
             };
         }
 
-        if (options.AddUpdates.Count > 0)
+        if (options.AddUpdates.Count + options.WinReUpdates.Count > 0)
         {
             // Hashed again here (a few seconds per GB), so the plan holds the files as they are now.
             source = (source ?? new FodChoice(null, null)) with
@@ -370,6 +374,7 @@ public sealed class WorkspaceSession(
                     Drivers = plan.Drivers,
                     Updates = plan.Updates,
                     Cleanup = plan.Cleanup,
+                    WinRe = plan.WinRe,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }

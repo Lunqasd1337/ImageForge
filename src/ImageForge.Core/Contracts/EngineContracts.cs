@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 9;
+    public const int Version = 10;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);

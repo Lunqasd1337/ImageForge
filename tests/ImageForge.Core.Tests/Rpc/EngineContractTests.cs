@@ -78,6 +78,19 @@ public sealed class EngineContractTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_editions_and_the_chosen_one_cross_the_channel()
+    {
+        File.WriteAllBytes(_dir.Combine("media/sources/install.wim"), Updates.WimArchiveTests.BuildWim(Workspace.ImageEditionsTests.FixtureXml, images: 5));
+        var engine = Connect((_, _, _) => []);
+
+        var opened = await engine.OpenWorkspaceAsync(new OpenWorkspaceRequest(_dir.Combine("media"), _dir.Combine("work"), _dir.Combine("out", "Win11")) { ImageIndex = 4 }, Ct);
+
+        opened.ImageIndex.ShouldBe(4);
+        opened.Editions.Select(e => e.Name).ShouldBe(["Windows 11 Education", "Windows 11 Enterprise", "Windows 11 Pro", "Windows 11 Pro Education", "Windows 11 Pro for Workstations"]);
+        (await engine.GetWorkspaceAsync(Ct)).ImageIndex.ShouldBe(4);
+    }
+
+    [Fact]
     public async Task Location_problems_and_rejections_reach_the_client()
     {
         var engine = Connect((_, _, _) => [new LocationProblem(LocationProblemKind.Same, WorkspaceLocations.Source, WorkspaceLocations.OutputDir)]);

@@ -12,7 +12,9 @@
       <TextBox Header="Источник (папка дистрибутива, например C:\IF\fixture\media)" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
       <TextBox Header="Рабочая папка (например C:\IF\ws)" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
       <TextBox Header="Папка результата (например C:\IF\result)" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-      <TextBlock Text="Цель: образ 1 в sources\install.wim" />
+      <ComboBox Header="Редакция в sources\install.wim" ItemsSource="{x:Bind ViewModel.EditionNames}"
+                SelectedIndex="{x:Bind ViewModel.EditionIndex, Mode=TwoWay}" MinWidth="360" />
+      <TextBlock TextWrapping="Wrap" Text="{x:Bind ViewModel.EditionStatus, Mode=OneWay}" />
 
       <TextBlock Text="Реестр" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock TextWrapping="Wrap"

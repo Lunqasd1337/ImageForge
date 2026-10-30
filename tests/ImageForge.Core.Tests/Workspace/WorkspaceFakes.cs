@@ -226,6 +226,7 @@ internal sealed class FakeServicing : IImageServicing
     public Task MountReadOnlyAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {
         Calls.Add("mount read-only");
+        MountedIndexes.Add(index);
         File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
         foreach (var name in Provisioned.Where(n => n.EndsWith("_8wekyb3d8bbwe", StringComparison.Ordinal)))
         {
@@ -284,6 +285,7 @@ internal sealed class FakeServicing : IImageServicing
     public Task MountAsync(string imageFile, int index, string mountDir, CancellationToken ct)
     {
         Calls.Add("mount");
+        MountedIndexes.Add(index);
         File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
         Mounted.Add(mountDir);
         _images[mountDir] = imageFile;
@@ -320,6 +322,12 @@ internal sealed class FakeServicing : IImageServicing
 
     public Task<bool> IsMountedAsync(string mountDir, CancellationToken ct) => Task.FromResult(Mounted.Contains(mountDir));
 
+    /// <summary>The image indexes passed to the mount calls, in order.</summary>
+    public List<int> MountedIndexes { get; } = [];
+
+    /// <summary>The image indexes passed to ExportAsync, in order.</summary>
+    public List<int> Exported { get; } = [];
+
     public Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct)
     {
         Calls.Add("export");
@@ -328,7 +336,16 @@ internal sealed class FakeServicing : IImageServicing
             throw new IOException("export failed");
         }
 
-        File.WriteAllText(destinationImage, File.ReadAllText(sourceImage) + "+export");
+        Exported.Add(index);
+        if (File.Exists(destinationImage))
+        {
+            // DISM appends a further image to an existing destination.
+            File.AppendAllText(destinationImage, $"+{index}");
+        }
+        else
+        {
+            File.WriteAllText(destinationImage, File.ReadAllText(sourceImage) + "+export");
+        }
         return Task.CompletedTask;
     }
 

@@ -179,3 +179,12 @@
 - Протокол 9: `PlanOptions.CleanupComponents` и `ResetBase`, `PlanSummary.Cleanup`; возможность движка `cleanup`.
 - Окно: две галочки под обновлениями; /ResetBase доступен только вместе с очисткой.
 - Проверка в VM — [S2-CLEANUP-UI](vm-checks/S2-CLEANUP-UI.md).
+
+### Выбор редакции install.wim
+
+- Core (TDD): `ImageEditions.Read` берёт имена редакций из XML-метаданных `install.wim` без DISM; `Choose` оставляет запрошенный образ, если он есть, иначе выбирает Pro, иначе образ 1.
+- Рабочая папка: `OpenWorkspaceRequest.ImageIndex` (0 — выбор движка), в `WorkspaceSummary` — `Editions` и `ImageIndex`. Чтение образа и запуск монтируют выбранный образ.
+- Запуск: шаг `export` экспортирует все редакции по порядку в новый `install.wim`; меняется только выбранная, остальные переносятся как есть. Раньше менялся образ 1 (Education), а остальные терялись.
+- Протокол 10; возможность движка `editions`; движок пишет в журнал выбранную редакцию.
+- Окно: список «Редакция в sources\install.wim» вместо надписи «образ 1»; смена редакции сбрасывает прочитанный образ и план.
+- Проверка в VM — [S2-EDITIONS-UI](vm-checks/S2-EDITIONS-UI.md).

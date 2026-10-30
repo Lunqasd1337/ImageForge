@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "drivers", "updates", "cleanup", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "drivers", "updates", "cleanup", "editions", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -39,8 +39,13 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<WorkspaceSummary> OpenWorkspaceAsync(OpenWorkspaceRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
-        _log($"open workspace: source {request.SourceDir}, work {request.WorkDir}, output {request.OutputDir}");
-        return Task.FromResult(_session.Open(request));
+        _log($"open workspace: source {request.SourceDir}, work {request.WorkDir}, output {request.OutputDir}, image {(request.ImageIndex == 0 ? "default" : request.ImageIndex)}");
+        var summary = _session.Open(request);
+        var edition = summary.Editions.FirstOrDefault(e => e.Index == summary.ImageIndex);
+        _log(summary.Editions.Count == 0
+            ? $"editions: install.wim not readable, servicing image {summary.ImageIndex}"
+            : $"editions: {summary.Editions.Count}, servicing {summary.ImageIndex} {edition?.Name}, others kept unchanged");
+        return Task.FromResult(summary);
     }
 
     public Task<WorkspaceSummary> GetWorkspaceAsync(CancellationToken ct) => Task.FromResult(_session.Summary());

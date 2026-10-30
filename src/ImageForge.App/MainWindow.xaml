@@ -72,14 +72,14 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:FeatureItem">
               <StackPanel Margin="0,2">
-                <TextBlock Text="{x:Bind Title}" />
-                <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
-                <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                           Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                  <CheckBox Content="В образ" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
-                  <CheckBox Content="В WinRE" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
-                </StackPanel>
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                  </StackPanel>
+                </CheckBox>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -216,14 +216,14 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:UpdatePackageItem">
               <StackPanel Margin="0,2">
-                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}">
-                  <StackPanel>
-                    <TextBlock Text="{x:Bind Title}" />
-                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
-                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
-                  </StackPanel>
-                </CheckBox>
+                <TextBlock Text="{x:Bind Title}" />
+                <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                           Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                  <CheckBox Content="В образ" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox Content="В WinRE" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                </StackPanel>
               </StackPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

@@ -196,6 +196,7 @@ public sealed class DismImages : IDisposable
         }
     }
 
+    // DismAddPackage reports a later phase with Current past Total (2000% and more in S2-UPDATES-INVENTORY).
     private static int Percent(DismProgress progress) =>
-        progress.Total == 0 ? 0 : (int)(100L * progress.Current / progress.Total);
+        progress.Total == 0 ? 0 : (int)Math.Clamp(100L * progress.Current / progress.Total, 0, 100);
 }

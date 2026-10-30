@@ -17,6 +17,9 @@
     <Using Include="Shouldly" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Registry\Fixtures\*.reg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\ImageForge.Core\ImageForge.Core.csproj" />
   </ItemGroup>
 </Project>

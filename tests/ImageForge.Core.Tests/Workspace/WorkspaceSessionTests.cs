@@ -3,6 +3,7 @@ using ImageForge.Core.Contracts;
 using ImageForge.Core.Drivers;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry.RegFile;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Workspace;
 
 namespace ImageForge.Core.Tests.Workspace;
@@ -370,6 +371,33 @@ public sealed class WorkspaceSessionTests : IDisposable
         (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
         _servicing.Calls.ShouldContain("driver-remove oem0.inf");
         _servicing.Calls.ShouldContain("driver-add netkvm.inf");
+    }
+
+    [Fact]
+    public async Task The_installed_update_is_shown_and_an_update_of_a_folder_is_planned_and_added()
+    {
+        _servicing.Packages.Add(new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9457.1.0", "Installed", "Update"));
+        _servicing.Packages.Add(new InstalledPackage("Package_for_ServicingStack_9441~31bf3856ad364e35~amd64~~26100.9441.1.0", "Installed", "Update"));
+        _dir.WriteFile("updates/readme.txt", "not scanned");
+        File.WriteAllBytes(_dir.Combine("updates/Windows11.0-KB5134133-x64.msu"),
+            Updates.WimArchiveTests.BuildWim("<WIM><IMAGE INDEX=\"1\"><NAME>content</NAME></IMAGE></WIM>"));
+        _session.Open(_folders);
+
+        var inspection = await _session.InspectAsync(null, Ct);
+
+        inspection.Rollup.ShouldBe("26100.9457.1.0");
+        inspection.ServicingStack.ShouldBe("26100.9441.1.0");
+        inspection.PackageCount.ShouldBe(2);
+        inspection.PackageProblems.ShouldBeEmpty();
+        _session.Plan(new PlanOptions(null) { AddUpdates = ["Windows11.0-KB5134133-x64.msu"] }).Diagnostics
+            .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.UpdateSourceMissing);
+
+        var plan = _session.Plan(new PlanOptions(null) { AddUpdates = ["Windows11.0-KB5134133-x64.msu"], UpdateFolder = _dir.Combine("updates") });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.Updates.ShouldNotBeNull().Add.ShouldHaveSingleItem().FileName.ShouldBe("Windows11.0-KB5134133-x64.msu");
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Calls.ShouldContain("package-add Windows11.0-KB5134133-x64.msu");
     }
 
     private static RegFileInput RegFile(string body) =>

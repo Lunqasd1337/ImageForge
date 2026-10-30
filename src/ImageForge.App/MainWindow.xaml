@@ -194,6 +194,40 @@
       <CheckBox Content="Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)"
                 IsChecked="{x:Bind ViewModel.ForceUnsigned, Mode=TwoWay}" />
 
+      <TextBlock Text="Обновления" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock Text="{x:Bind ViewModel.UpdatesStatus, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+      <TextBlock TextWrapping="Wrap"
+                 Text="Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. Обновления ставятся в образ 1 install.wim до драйверов." />
+      <Grid ColumnSpacing="8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox Header="Папка обновлений (например C:\IF\upd\lcu)" Text="{x:Bind ViewModel.UpdatePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseUpdateFolder_Click" />
+        <Button Grid.Column="2" Content="Найти обновления" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanUpdatesCommand}" />
+      </Grid>
+      <TextBlock Text="{x:Bind ViewModel.UpdatePackagesStatus, Mode=OneWay}" TextWrapping="Wrap" />
+      <Expander Header="Найденные обновления" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+        <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatePackages}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="local:UpdatePackageItem">
+              <StackPanel Margin="0,2">
+                <CheckBox IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}">
+                  <StackPanel>
+                    <TextBlock Text="{x:Bind Title}" />
+                    <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
+                  </StackPanel>
+                </CheckBox>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Expander>
+
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 

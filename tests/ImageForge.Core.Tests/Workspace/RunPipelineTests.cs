@@ -1,6 +1,7 @@
 using ImageForge.Core.Appx;
 using ImageForge.Core.Changes;
 using ImageForge.Core.Drivers;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
@@ -491,6 +492,69 @@ public sealed class RunPipelineTests : IDisposable
 
         result.FailedStep.ShouldBe("drivers");
         result.Error.ShouldNotBeNull().ShouldContain("plan again");
+    }
+
+    [Fact]
+    public async Task Updates_are_added_after_the_features_and_what_they_changed_is_logged()
+    {
+        _servicing.Packages.Add(new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9457.1.0", "Installed", "SecurityUpdate"));
+        var request = UpdateRequest(UpdatePackages(), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "driver-list", "driver-add netkvm.inf", "driver-list", "driver-list", "registry", "unmount commit", "export"]);
+        log.ShouldContain(l => l.StartsWith("add update Windows11.0-KB5134133-x64.msu", StringComparison.Ordinal));
+        log.ShouldContain("update Windows11.0-KB5134133-x64.msu: 1 new, 1 superseded; rollup 26100.9725.1.0, servicing stack -");
+        log.ShouldContain("  new Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9725.1.0");
+    }
+
+    [Fact]
+    public async Task An_update_that_changes_nothing_is_logged_and_the_run_goes_on()
+    {
+        var request = UpdateRequest(UpdatePackages(), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"));
+        _servicing.PackageAlreadyPresent = true;
+        var log = new List<string>();
+
+        (await Pipeline(log).RunAsync(request, Ct)).Status.ShouldBe(RunStatus.Published);
+        log.ShouldContain("update Windows11.0-KB5134133-x64.msu: no change in the image (DISM already holds this package)");
+    }
+
+    [Fact]
+    public async Task An_update_file_changed_after_the_preview_is_not_added()
+    {
+        var folder = UpdatePackages();
+        var request = UpdateRequest(folder, new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"));
+        File.AppendAllText(Path.Combine(folder, "Windows11.0-KB5134133-x64.msu"), "more");
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("updates");
+        result.Error.ShouldNotBeNull().ShouldContain("Windows11.0-KB5134133-x64.msu");
+        _servicing.Calls.ShouldNotContain(c => c.StartsWith("package-add", StringComparison.Ordinal));
+        _servicing.Calls.ShouldContain("unmount discard");
+    }
+
+    // One WIM-format MSU, as Catalog serves the 26H2 cumulative update, and the driver package of DriverPackages.
+    private string UpdatePackages()
+    {
+        _dir.WriteFile("updates/readme.txt", "not scanned");
+        File.WriteAllBytes(_dir.Combine("updates/Windows11.0-KB5134133-x64.msu"), Updates.WimArchiveTests.BuildWim("<WIM><IMAGE INDEX=\"1\"><NAME>content</NAME></IMAGE></WIM>"));
+        return _dir.Combine("updates");
+    }
+
+    private RunRequest UpdateRequest(string folder, params ImageChange[] changes)
+    {
+        var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, ImageId, [ValidationMarker.M1, .. changes])
+            {
+                Drivers = new DriverInventory([.. _servicing.Drivers], []),
+                DriverSource = DriverFolder.Scan(DriverPackages()),
+                UpdateSource = UpdateFolder.Scan(folder),
+            });
+        return new RunRequest(_source, _output, 1, plan.Plan.ShouldNotBeNull(string.Join("; ", plan.Diagnostics.Select(d => d.Message))));
     }
 
     // One signed package, net\netkvm.inf, with the storage sample's catalog and file layout.

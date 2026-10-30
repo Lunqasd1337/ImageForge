@@ -5,6 +5,7 @@ using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Safety;
 using ImageForge.Core.Servicing;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Workspace;
 using ImageForge.Engine.Dism;
 using ImageForge.Engine.Registry;
@@ -107,6 +108,31 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
         GC.KeepAlive(_session);
         log?.Invoke($"DismRemoveDriver {publishedName}");
         DismImages.RemoveDriver(mountDir, publishedName);
+    }, CancellationToken.None);
+
+    public Task<PackageInventory> GetPackagesAsync(string mountDir, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        try
+        {
+            var packages = DismImages.GetPackages(mountDir);
+            log?.Invoke($"servicing packages: {packages.Count}");
+            return new PackageInventory([.. packages.Select(p => new InstalledPackage(p.Name, p.State, p.ReleaseType))], []);
+        }
+        catch (DismException ex)
+        {
+            // The window shows why updates cannot be checked; the rest of the inspection stays usable.
+            return new PackageInventory([], [$"DismGetPackages 0x{ex.HResult:x8}: {ex.Message}"]);
+        }
+    }, CancellationToken.None);
+
+    // An update is not cancelled once DISM starts it (10-15 minutes for a WIM-format LCU, S2-UPDATES-INVENTORY).
+    public Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct) => Task.Run(() =>
+    {
+        GC.KeepAlive(_session);
+        log?.Invoke($"DismAddPackage {packagePath}");
+        DismImages.AddPackage(mountDir, packagePath, Progress("add-package"),
+            () => log?.Invoke("add-package: DISM applies the packages; it reports no progress for this phase (about 7 minutes for a cumulative update)"));
     }, CancellationToken.None);
 
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>

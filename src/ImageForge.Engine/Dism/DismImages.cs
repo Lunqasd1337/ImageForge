@@ -160,10 +160,21 @@ public sealed class DismImages : IDisposable
     }
 
     /// <summary>Adds one .msu or .cab (DismAddPackage); DISM checks applicability and the signature.</summary>
-    public static void AddPackage(string mountPath, string packagePath, Action<int>? progressPercent = null)
+    /// <param name="laterPhase">Called once when DISM reports Current past Total: the percentage stays at 100 from then on.</param>
+    public static void AddPackage(string mountPath, string packagePath, Action<int>? progressPercent = null, Action? laterPhase = null)
     {
         using var session = DismApi.OpenOfflineSession(mountPath);
-        DismApi.AddPackage(session, packagePath, ignoreCheck: false, preventPending: false, progressPercent is null ? null : p => progressPercent(Percent(p)));
+        var later = false;
+        DismApi.AddPackage(session, packagePath, ignoreCheck: false, preventPending: false, p =>
+        {
+            if (!later && p.Total > 0 && p.Current > p.Total)
+            {
+                later = true;
+                laterPhase?.Invoke();
+            }
+
+            progressPercent?.Invoke(Percent(p));
+        });
     }
 
     // ManagedDism exposes DismGetFeatureParent only by package name or path; a feature of the foundation package (all

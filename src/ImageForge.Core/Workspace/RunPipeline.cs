@@ -1,4 +1,5 @@
 using ImageForge.Core.Drivers;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Execution;
 using ImageForge.Core.Features;
 using ImageForge.Core.Planning;
@@ -114,6 +115,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             if (request.Plan.Features is { } features)
             {
                 await context.Step("features", () => ChangeFeaturesAsync(features, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.Updates is { } updates)
+            {
+                await context.Step("updates", () => AddUpdatesAsync(updates, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             if (request.Plan.Drivers is { } drivers)
@@ -324,6 +330,47 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             .Select(c => c.FullName)
             .ToList();
         return wrong.Count == 0 ? true : throw new InvalidDataException($"Capabilities not in the planned state: {string.Join(", ", wrong)}.");
+    }
+
+    // A file is added only while it still has the hash the preview showed; DISM checks its signature and applicability.
+    // The package list is read after each file, so the log shows what each one brought. DISM adds a package it already
+    // holds without any change, so that is logged, not failed.
+    private async Task<bool> AddUpdatesAsync(UpdatePlan plan, string mountDir, CancellationToken ct)
+    {
+        var changed = plan.Add.Where(a => UpdateFolder.CurrentHash(plan.Source, a.FileName) != a.Sha256).Select(a => a.FileName).ToList();
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+
+        var current = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
+        Log?.Invoke($"packages: {current.Packages.Count}; rollup {current.Rollup ?? "-"}, servicing stack {current.ServicingStack ?? "-"}");
+        foreach (var addition in plan.Add)
+        {
+            Log?.Invoke($"add update {addition.Description}");
+            await servicing.AddPackageAsync(mountDir, UpdateFolder.Full(plan.Source, addition.FileName), ct).ConfigureAwait(false);
+            var next = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
+            var change = PackageInventory.Compare(current, next);
+            Log?.Invoke(change.IsEmpty
+                ? $"update {addition.FileName}: no change in the image (DISM already holds this package)"
+                : $"update {addition.FileName}: {change.Added.Count} new, {change.Superseded} superseded; rollup {next.Rollup ?? "-"}, servicing stack {next.ServicingStack ?? "-"}");
+            foreach (var name in change.Added.Where(n => n.StartsWith("Package_for_", StringComparison.OrdinalIgnoreCase)))
+            {
+                Log?.Invoke("  new " + name);
+            }
+
+            current = next;
+        }
+
+        return true;
+    }
+
+    private async Task<PackageInventory> ReadPackagesAsync(string mountDir, CancellationToken ct)
+    {
+        var packages = await servicing.GetPackagesAsync(mountDir, ct).ConfigureAwait(false);
+        return packages.Problems.Count == 0
+            ? packages
+            : throw new InvalidDataException($"The package list cannot be read: {string.Join("; ", packages.Problems)}");
     }
 
     // Removals name drivers of the image the preview read, so the list must be the same. A package is added only while

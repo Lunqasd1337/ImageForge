@@ -137,6 +137,12 @@ public sealed record AddUpdatePackage(string FileName) : ImageChange;
 /// </summary>
 public sealed record AddWinReUpdatePackage(string FileName) : ImageChange;
 
+/// <summary>
+/// Adds an update package to every image of sources\boot.wim (Windows PE and Windows Setup), by its path relative to
+/// the scanned update folder; the setup files of the Setup image then replace those of the media.
+/// </summary>
+public sealed record AddBootUpdatePackage(string FileName) : ImageChange;
+
 /// <summary>Cleans up the component store (Dism.exe /Cleanup-Image /StartComponentCleanup) after the other servicing.</summary>
 /// <param name="ResetBase">Also removes superseded component versions, so installed updates can no longer be removed.</param>
 public sealed record CleanupComponentStore(bool ResetBase) : ImageChange;

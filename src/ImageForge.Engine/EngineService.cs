@@ -27,7 +27,7 @@ public sealed class EngineService : IEngineService, IDisposable
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
     {
         var version = typeof(EngineService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0";
-        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "drivers", "updates", "cleanup", "editions", "winre", "recover"]));
+        return Task.FromResult(new EngineInfo(EngineProtocol.Version, version, InstanceId, Environment.ProcessId, ["workspace", "m1-run", "reg-file", "appx", "features", "drivers", "updates", "cleanup", "editions", "winre", "boot", "recover"]));
     }
 
     public Task ShutdownAsync(CancellationToken ct)
@@ -56,7 +56,7 @@ public sealed class EngineService : IEngineService, IDisposable
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
             : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.AddCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count
-                + options.AddDrivers.Count + options.RemoveDrivers.Count + options.AddUpdates.Count + options.WinReUpdates.Count > 0 || options.CleanupComponents
+                + options.AddDrivers.Count + options.RemoveDrivers.Count + options.AddUpdates.Count + options.WinReUpdates.Count + options.BootUpdates.Count > 0 || options.CleanupComponents
                 ? "plan without .reg" : "plan M1 marker");
         foreach (var family in options.RemoveAppx)
         {
@@ -103,6 +103,11 @@ public sealed class EngineService : IEngineService, IDisposable
             _log($"plan add WinRE update {update} from {options.UpdateFolder ?? "(no folder)"}");
         }
 
+        foreach (var update in options.BootUpdates)
+        {
+            _log($"plan add boot.wim update {update} from {options.UpdateFolder ?? "(no folder)"}");
+        }
+
         if (options.CleanupComponents)
         {
             _log($"plan cleanup component store{(options.ResetBase ? " (ResetBase)" : string.Empty)}");
@@ -111,7 +116,7 @@ public sealed class EngineService : IEngineService, IDisposable
         var plan = _session.Plan(options);
         _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
             $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
-        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []))
+        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []).Concat(plan.Boot?.Warnings ?? []))
         {
             _log($"plan warning: {warning}");
         }

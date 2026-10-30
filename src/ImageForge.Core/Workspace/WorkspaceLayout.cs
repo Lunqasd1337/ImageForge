@@ -21,6 +21,9 @@ public interface IWorkspacePaths
     /// <summary>Where a run mounts the Winre.wim it took out of the image.</summary>
     string WinReMount { get; }
 
+    /// <summary>Where a run mounts the images of its boot.wim copy, one after another.</summary>
+    string BootMount { get; }
+
     string Journal(Guid runId);
 
     RunLayout Run(Guid runId);
@@ -60,6 +63,8 @@ public sealed class WorkspaceLayout : IWorkspacePaths
     public string Mount(Guid imageId) => Under("mount", imageId.ToString("N"));
 
     public string WinReMount => Under("mount-winre");
+
+    public string BootMount => Under("mount-boot");
 
     public string Journal(Guid runId) => Under("journal", runId.ToString("N") + ".jsonl");
 

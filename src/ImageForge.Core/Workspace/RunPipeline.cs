@@ -36,6 +36,14 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 {
     public const string InstallImage = "sources/install.wim";
 
+    public const string BootImage = "sources/boot.wim";
+
+    /// <summary>
+    /// Setup files that Microsoft's media update recipe copies from the serviced Setup image of boot.wim into the media's
+    /// sources; after the cumulative update they are newer there than on the media.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SetupFiles = ["setup.exe", "setuphost.exe"];
+
     /// <summary>Where the recovery environment lives inside a mounted Windows image.</summary>
     public static readonly string WinReInImage = Path.Combine("Windows", "System32", "Recovery", "Winre.wim");
 
@@ -181,12 +189,21 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                         Log?.Invoke($"export image {index} of {request.ImageCount}{(index == request.SourceIndex ? " (serviced)" : string.Empty)}");
                     }
 
-                    await servicing.ExportAsync(working, index, completed, ct).ConfigureAwait(false);
+                    await servicing.ExportAsync(working, index, completed, bootable: false, ct).ConfigureAwait(false);
                 }
 
                 var exported = await SourceManifest.ComputeAsync(run.Completed, ct).ConfigureAwait(false);
                 return exported.Entries.Single() with { RelativePath = InstallImage };
             }, ct).ConfigureAwait(false);
+
+            // Media files other than install.wim that the run replaced, as a tree under the run folder.
+            var replacedMedia = Path.Combine(run.Root, "media");
+            IReadOnlyList<ManifestEntry> replaced = [];
+            if (request.Plan.Boot is { } boot)
+            {
+                replaced = await context.Step("boot", () => ServiceBootAsync(boot, replacedMedia, run, ct), ct).ConfigureAwait(false);
+            }
+
             state = state with { Target = TargetStatus.Completed };
             store.Save(state);
 
@@ -200,13 +217,20 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 Directory.CreateDirectory(Path.GetDirectoryName(publication.Staging)!);
                 // Hashing while copying checks every staged file against the source manifest, which also covers a
                 // base copy that was reused on metadata alone.
-                var staged = (await TreeCopy.CopyAsync(paths.Base, publication.Staging, [InstallImage], ct).ConfigureAwait(false)).ToList();
+                var staged = (await TreeCopy.CopyAsync(paths.Base, publication.Staging, [InstallImage, .. replaced.Select(r => r.RelativePath)], ct).ConfigureAwait(false)).ToList();
                 Directory.CreateDirectory(Path.Combine(publication.Staging, "sources"));
                 var image = await TreeCopy.CopyFileAsync(completed, Path.Combine(publication.Staging, "sources", "install.wim"), ct).ConfigureAwait(false);
                 staged.Add(image with { RelativePath = InstallImage });
+                foreach (var entry in replaced)
+                {
+                    var file = await TreeCopy.CopyFileAsync(Path.Combine(replacedMedia, entry.RelativePath), Path.Combine(publication.Staging, entry.RelativePath), ct).ConfigureAwait(false);
+                    staged.Add(file with { RelativePath = entry.RelativePath });
+                }
 
+                var replacements = replaced.Append(completedEntry).ToDictionary(e => e.RelativePath, StringComparer.OrdinalIgnoreCase);
                 var expected = baseManifest.Entries
-                    .Select(e => string.Equals(e.RelativePath, InstallImage, StringComparison.OrdinalIgnoreCase) ? completedEntry : e)
+                    .Select(e => replacements.GetValueOrDefault(e.RelativePath) ?? e)
+                    .Concat(replaced.Where(r => !baseManifest.Entries.Any(e => string.Equals(e.RelativePath, r.RelativePath, StringComparison.OrdinalIgnoreCase))))
                     .ToList();
                 var differences = SourceManifest.Compare(new SourceManifest(expected, string.Empty), new SourceManifest(staged, string.Empty));
                 return differences.Count == 0
@@ -245,6 +269,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             if (registry?.RequiresRecovery == true)
             {
                 problems.Add($"hives left loaded: {string.Join(", ", registry.HivesLeftLoaded)}");
+            }
+
+            if (request.Plan.Boot is not null && await IsMountedSafeAsync(paths.BootMount).ConfigureAwait(false))
+            {
+                await Release(problems, "unmount-boot-discard", async () =>
+                {
+                    await servicing.UnmountAsync(paths.BootMount, commit: false, CancellationToken.None).ConfigureAwait(false);
+                    TryDeleteEmptyDirectory(paths.BootMount);
+                }).ConfigureAwait(false);
             }
 
             if (request.Plan.WinRe is not null && await IsMountedSafeAsync(paths.WinReMount).ConfigureAwait(false))
@@ -471,7 +504,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         TryDeleteEmptyDirectory(winReMount);
 
         File.Delete(exported);
-        await servicing.ExportAsync(copy, 1, exported, ct).ConfigureAwait(false);
+        await servicing.ExportAsync(copy, 1, exported, bootable: false, ct).ConfigureAwait(false);
         var committed = new FileInfo(copy).Length;
         var after = new FileInfo(exported).Length;
 
@@ -486,6 +519,108 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     }
 
     private static long Megabytes(long bytes) => bytes / (1024 * 1024);
+
+    // The recipe from S2-TARGETS-INVENTORY: every image of a boot.wim copy gets the packages, a cleanup with /ResetBase
+    // and a commit; the setup files of the boot image (Windows Setup) are taken for the media; then all images are
+    // exported in order and the boot image stays the bootable one. Returns the media files to replace, under mediaDir.
+    private async Task<IReadOnlyList<ManifestEntry>> ServiceBootAsync(BootPlan plan, string mediaDir, RunLayout run, CancellationToken ct)
+    {
+        var changed = plan.Add.Where(a => UpdateFolder.CurrentHash(plan.Source, a.FileName) != a.Sha256).Select(a => a.FileName).ToList();
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+
+        var source = Path.Combine(paths.Base, "sources", "boot.wim");
+        if (!File.Exists(source))
+        {
+            throw new InvalidDataException(@"The source has no sources\boot.wim; it cannot be serviced.");
+        }
+
+        var info = ReadWim(source);
+        var bootIndex = info.BootIndex > 0 ? info.BootIndex : info.ImageCount;
+        Log?.Invoke($"boot.wim: {info.ImageCount} images, boot index {info.BootIndex}, {Megabytes(new FileInfo(source).Length)} MB");
+
+        var folder = Path.Combine(run.Root, "boot");
+        var working = Path.Combine(folder, "boot.wim");
+        TryDeleteDirectory(mediaDir);
+        Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(Path.Combine(mediaDir, "sources"));
+        File.Copy(source, working, overwrite: true);
+        File.SetAttributes(working, FileAttributes.Normal);
+
+        var mount = paths.BootMount;
+        for (var index = 1; index <= info.ImageCount; index++)
+        {
+            Log?.Invoke($"boot image {index} of {info.ImageCount}: {info.Images.ElementAtOrDefault(index - 1)?.Name ?? "-"}");
+            PrepareEmptyDirectory(mount);
+            await servicing.MountAsync(working, index, mount, ct).ConfigureAwait(false);
+            var current = await ReadPackagesAsync(mount, ct).ConfigureAwait(false);
+            Log?.Invoke($"boot packages: {current.Packages.Count}; rollup {current.Rollup ?? "-"}, servicing stack {current.ServicingStack ?? "-"}");
+            foreach (var addition in plan.Add)
+            {
+                Log?.Invoke($"boot add update {addition.Description}");
+                await servicing.AddPackageAsync(mount, UpdateFolder.Full(plan.Source, addition.FileName), ct).ConfigureAwait(false);
+                var next = await ReadPackagesAsync(mount, ct).ConfigureAwait(false);
+                var change = PackageInventory.Compare(current, next);
+                Log?.Invoke(change.IsEmpty
+                    ? $"boot update {addition.FileName}: no change"
+                    : $"boot update {addition.FileName}: {change.Added.Count} new, {change.Superseded} superseded; rollup {next.Rollup ?? "-"}, servicing stack {next.ServicingStack ?? "-"}");
+                current = next;
+            }
+
+            Log?.Invoke("boot cleanup component store (ResetBase)");
+            await servicing.CleanupComponentStoreAsync(mount, resetBase: true, ct).ConfigureAwait(false);
+            var cleaned = await ReadPackagesAsync(mount, ct).ConfigureAwait(false);
+            Log?.Invoke($"boot cleanup: packages {current.Packages.Count} -> {cleaned.Packages.Count}");
+            if (index == bootIndex)
+            {
+                foreach (var name in SetupFiles)
+                {
+                    var serviced = Path.Combine(mount, "sources", name);
+                    if (File.Exists(serviced))
+                    {
+                        var media = Path.Combine(paths.Base, "sources", name);
+                        File.Copy(serviced, Path.Combine(mediaDir, "sources", name), overwrite: true);
+                        Log?.Invoke($"setup file {name}: media {FileVersion(media)} -> boot.wim {FileVersion(serviced)}");
+                    }
+                }
+            }
+
+            await servicing.UnmountAsync(mount, commit: true, ct).ConfigureAwait(false);
+            TryDeleteEmptyDirectory(mount);
+        }
+
+        var exported = Path.Combine(mediaDir, "sources", "boot.wim");
+        File.Delete(exported);
+        for (var index = 1; index <= info.ImageCount; index++)
+        {
+            Log?.Invoke($"export boot image {index} of {info.ImageCount}{(index == bootIndex ? " (bootable)" : string.Empty)}");
+            await servicing.ExportAsync(working, index, exported, bootable: index == bootIndex, ct).ConfigureAwait(false);
+        }
+
+        var result = ReadWim(exported);
+        if (result.ImageCount != info.ImageCount || (info.BootIndex > 0 && result.BootIndex != info.BootIndex))
+        {
+            throw new InvalidDataException(
+                $"The exported boot.wim has {result.ImageCount} images and boot index {result.BootIndex}; expected {info.ImageCount} and {info.BootIndex}.");
+        }
+
+        Log?.Invoke($"boot.wim: {Megabytes(new FileInfo(source).Length)} MB -> {Megabytes(new FileInfo(exported).Length)} MB, boot index {result.BootIndex}");
+        TryDeleteDirectory(folder);
+        var replaced = await SourceManifest.ComputeAsync(mediaDir, ct).ConfigureAwait(false);
+        return replaced.Entries;
+    }
+
+    private static WimInfo ReadWim(string file)
+    {
+        using var stream = File.OpenRead(file);
+        var info = WimArchive.Read(stream);
+        return info.Problem is null ? info : throw new InvalidDataException($"{file}: {info.Problem}");
+    }
+
+    private static string FileVersion(string file) =>
+        File.Exists(file) ? System.Diagnostics.FileVersionInfo.GetVersionInfo(file).FileVersion ?? "?" : "missing";
 
     // The package list before and after shows what the cleanup removed; superseded packages are what it can take away.
     private async Task<bool> CleanupAsync(CleanupPlan plan, string mountDir, CancellationToken ct)

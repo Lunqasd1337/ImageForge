@@ -50,4 +50,10 @@ public sealed partial class UpdatePackageItem(ScannedUpdate scanned, int sameCon
     public partial bool? IsForWinRe { get; set; } = false;
 
     partial void OnIsForWinReChanged(bool? value) => selectionChanged();
+
+    /// <summary>Into every image of boot.wim: the cumulative update (or a servicing stack).</summary>
+    [ObservableProperty]
+    public partial bool? IsForBoot { get; set; } = false;
+
+    partial void OnIsForBootChanged(bool? value) => selectionChanged();
 }

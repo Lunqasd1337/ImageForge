@@ -40,6 +40,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var driverChanges = new List<(ImageChange Change, int Index)>();
         var updateChanges = new List<(string FileName, int Index)>();
         var winReChanges = new List<(string FileName, int Index)>();
+        var bootChanges = new List<(string FileName, int Index)>();
         CleanupPlan? cleanup = null;
         for (var i = 0; i < request.Changes.Count; i++)
         {
@@ -62,6 +63,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is AddWinReUpdatePackage winReUpdate)
             {
                 winReChanges.Add((winReUpdate.FileName, i));
+            }
+            else if (request.Changes[i] is AddBootUpdatePackage bootUpdate)
+            {
+                bootChanges.Add((bootUpdate.FileName, i));
             }
             else if (request.Changes[i] is CleanupComponentStore clean)
             {
@@ -90,8 +95,11 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
         var updates = updateChanges.Count > 0 ? PlanUpdates(updateChanges, request.UpdateSource, diagnostics) : null;
         var winRe = winReChanges.Count > 0 ? PlanWinRe(winReChanges, request.UpdateSource, diagnostics) : null;
+        var boot = bootChanges.Count > 0 ? PlanUpdates(bootChanges, request.UpdateSource, diagnostics) is { } bootUpdates
+            ? new BootPlan(bootUpdates.Add, bootUpdates.Source, bootUpdates.Warnings)
+            : null : null;
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
-            && cleanup is null && winRe is null)
+            && cleanup is null && winRe is null && boot is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
         }
@@ -133,6 +141,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Updates = updates,
             Cleanup = cleanup,
             WinRe = winRe,
+            Boot = boot,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -671,7 +680,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 9;
+    private const int FormatVersion = 10;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -788,6 +797,15 @@ public static class PlanFingerprint
             foreach (var addition in winRe.Add)
             {
                 Append(builder, "winre-update", addition.FileName, addition.Sha256);
+            }
+        }
+
+        if (plan.Boot is { } boot)
+        {
+            Append(builder, "boot-source", boot.Source);
+            foreach (var addition in boot.Add)
+            {
+                Append(builder, "boot-update", addition.FileName, addition.Sha256);
             }
         }
 

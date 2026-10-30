@@ -870,13 +870,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ShowAvailable();
         ImageDrivers.Clear();
 
-        // Package choices and the boot-critical approval were made for the image that is gone.
+        // Package choices and the boot-critical and ResetBase approvals were made for the image that is gone.
         foreach (var package in DriverPackages)
         {
             package.IsSelected = false;
         }
 
         AllowBootCritical = false;
+        ResetBase = false;
+
+        // The preview described the plan for the image that is gone.
+        OperationPreview = string.Empty;
         foreach (var package in UpdatePackages)
         {
             package.IsSelected = false;

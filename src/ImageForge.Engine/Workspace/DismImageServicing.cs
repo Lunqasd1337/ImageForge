@@ -131,7 +131,8 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
     {
         GC.KeepAlive(_session);
         log?.Invoke($"DismAddPackage {packagePath}");
-        DismImages.AddPackage(mountDir, packagePath, Progress("add-package"));
+        DismImages.AddPackage(mountDir, packagePath, Progress("add-package"),
+            () => log?.Invoke("add-package: DISM applies the packages; it reports no progress for this phase (about 7 minutes for a cumulative update)"));
     }, CancellationToken.None);
 
     public Task UnmountAsync(string mountDir, bool commit, CancellationToken ct) =>

@@ -724,7 +724,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         if (updates.Add.Count > 0)
         {
-            yield return "  Установка накопительного обновления идёт 10–15 минут и не прерывается отменой.";
+            yield return "  Установка накопительного обновления идёт 10–15 минут, сохранение образа после неё — до получаса; отмена их не прерывает.";
         }
 
         if (updates.Source is { } source)

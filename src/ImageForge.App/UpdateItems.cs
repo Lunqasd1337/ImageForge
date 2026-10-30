@@ -29,10 +29,13 @@ public sealed partial class UpdatePackageItem(ScannedUpdate scanned, int sameCon
 
     public string Note => Scanned.Package.Problems.Count > 0 ? string.Join(" ", Scanned.Package.Problems)
         : Scanned.Sha256 is null ? "Файл не прочитан."
-        : sameContent > 1 ? $"Такое же содержимое ещё у {sameContent - 1} файлов в этой папке; отмеченные копии поставятся один раз."
+        : sameContent > 1 ? $"Такое же содержимое ещё у {sameContent - 1} {Files(sameContent - 1)} в этой папке; отмеченные копии поставятся один раз."
         : string.Empty;
 
     public bool HasNote => Note.Length > 0;
+
+    // Genitive after «у»: у 1 файла, у 21 файла, у 2 файлов, у 11 файлов.
+    private static string Files(int n) => n % 10 == 1 && n % 100 != 11 ? "файла" : "файлов";
 
     public bool CanSelect => Scanned.Package.Problems.Count == 0 && Scanned.Sha256 is not null;
 

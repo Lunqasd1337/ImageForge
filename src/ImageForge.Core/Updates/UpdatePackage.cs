@@ -28,8 +28,17 @@ public enum UpdateKind
     Cab,
 }
 
+/// <summary>What the file is inside: older MSU and all CAB updates are cabinets, newer MSU updates are WIM files.</summary>
+public enum UpdateContainer
+{
+    Unknown,
+    Cabinet,
+    Wim,
+}
+
 /// <param name="FileName">Relative to the scanned folder.</param>
-/// <param name="Payloads">For an MSU, the packages DISM installs from it: SSU and KB cabinets, WIM and PSF files.</param>
+/// <param name="Contents">The cabinet file table; empty for a WIM, whose file list is left to DISM.</param>
+/// <param name="Payloads">For a cabinet MSU, the packages DISM installs from it: SSU and KB cabinets, WIM and PSF files.</param>
 /// <param name="HasServicingStack">The file is or carries a servicing stack update.</param>
 /// <param name="Problems">Why the file cannot be added as it is; empty when it can.</param>
 public sealed record UpdatePackageInfo(
@@ -41,11 +50,13 @@ public sealed record UpdatePackageInfo(
     IReadOnlyList<CabinetEntry> Contents,
     IReadOnlyList<string> Payloads,
     bool HasServicingStack,
-    IReadOnlyList<string> Problems);
+    IReadOnlyList<string> Problems,
+    UpdateContainer Container = UpdateContainer.Cabinet,
+    WimInfo? Wim = null);
 
 /// <summary>
 /// Previews a local update package before DISM sees it (plan, section 11): its kind, KB and architecture from the name, and
-/// what the cabinet holds. DISM still checks the signature and whether the package applies.
+/// what the cabinet or WIM holds. DISM still checks the signature and whether the package applies.
 /// </summary>
 public static class UpdatePackage
 {
@@ -95,6 +106,35 @@ public static class UpdatePackage
         }
 
         return new(fileName, kind, name.Kb, name.Architecture, name.Sha1, listing.Entries, payloads, servicingStack, problems);
+    }
+
+    /// <summary>An MSU in WIM format: its contents are in compressed metadata, so only the header and images are checked.</summary>
+    public static UpdatePackageInfo Analyze(string fileName, WimInfo wim)
+    {
+        ArgumentNullException.ThrowIfNull(fileName);
+        ArgumentNullException.ThrowIfNull(wim);
+        var name = UpdateFileName.Parse(fileName);
+        var leaf = Path.GetFileName(fileName.Replace('\\', '/'));
+        var isMsu = Path.GetExtension(leaf).Equals(".msu", StringComparison.OrdinalIgnoreCase);
+        var problems = new List<string>();
+        if (!isMsu)
+        {
+            problems.Add("файл в формате WIM, а пакетом обновления в таком формате бывает только .msu");
+        }
+
+        if (name.Architecture is { } arch && arch != "x64")
+        {
+            problems.Add($"пакет для {arch}, а образ x64");
+        }
+
+        if (wim.Problem is { } problem)
+        {
+            problems.Add(problem);
+        }
+
+        return new(
+            fileName, isMsu ? UpdateKind.Msu : UpdateKind.Unknown, name.Kb, name.Architecture, name.Sha1, [], [], IsServicingStack(leaf), problems,
+            UpdateContainer.Wim, wim);
     }
 
     private static bool IsServicingStack(string name) => name.StartsWith("SSU-", StringComparison.OrdinalIgnoreCase);

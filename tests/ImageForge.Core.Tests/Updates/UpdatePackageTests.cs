@@ -191,3 +191,110 @@ public sealed class UpdatePackageTests : IDisposable
         Should.Throw<ArgumentException>(() => DismCliArguments.AddPackage(@"C:\IF\m", "upd"));
     }
 }
+
+public sealed class WimArchiveTests : IDisposable
+{
+    private readonly string _root = Directory.CreateTempSubdirectory("if-wim-").FullName;
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
+
+    /// <summary>A WIM header and its XML resource; the offset table and metadata are not read.</summary>
+    internal static byte[] BuildWim(string xml, ushort part = 1, ushort parts = 1, uint images = 1)
+    {
+        var xmlBytes = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
+        using var wim = new MemoryStream();
+        using (var w = new BinaryWriter(wim, Encoding.UTF8, leaveOpen: true))
+        {
+            w.Write("MSWIM\0\0\0"u8);
+            w.Write(208u);
+            w.Write(0x10D00u);
+            w.Write(0x80u);
+            w.Write(0u);
+            w.Write(new byte[16]);
+            w.Write(part);
+            w.Write(parts);
+            w.Write(images);
+            w.Write(new byte[24]);
+            Resource(w, (ulong)xmlBytes.Length, 208);
+            w.Write(new byte[208 - 96]);
+            w.Write(xmlBytes);
+        }
+
+        return wim.ToArray();
+    }
+
+    private static void Resource(BinaryWriter w, ulong size, ulong offset)
+    {
+        w.Write(BitConverter.GetBytes(size)[..7]);
+        w.Write((byte)0);
+        w.Write(offset);
+        w.Write(size);
+    }
+
+    private const string Xml =
+        "<WIM><TOTALBYTES>4879117191</TOTALBYTES><IMAGE INDEX=\"1\"><DIRCOUNT>3</DIRCOUNT><FILECOUNT>7</FILECOUNT>" +
+        "<TOTALBYTES>5000000000</TOTALBYTES><NAME>KB5134133</NAME><DESCRIPTION>Update</DESCRIPTION></IMAGE></WIM>";
+
+    private static WimInfo Read(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        return WimArchive.Read(stream);
+    }
+
+    [Fact]
+    public void Reads_the_header_and_the_images_from_the_xml()
+    {
+        var wim = Read(BuildWim(Xml));
+
+        wim.Problem.ShouldBeNull();
+        wim.TotalParts.ShouldBe(1);
+        wim.Images.ShouldBe([new WimArchiveImage("KB5134133", "Update", 7, 5000000000)]);
+    }
+
+    [Fact]
+    public void A_split_wim_a_wim_without_images_and_a_cut_header_are_problems()
+    {
+        Read(BuildWim(Xml, part: 1, parts: 2)).Problem.ShouldNotBeNull();
+        Read(BuildWim("<WIM></WIM>", images: 0)).Problem.ShouldNotBeNull();
+        Read(BuildWim(Xml)[..100]).Problem.ShouldNotBeNull();
+        Read("MSCF and something else entirely"u8.ToArray()).Problem.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void A_bad_xml_resource_does_not_hide_the_header()
+    {
+        var wim = Read(BuildWim("<WIM><IMAGE"));
+
+        wim.Problem.ShouldBeNull();
+        wim.Images.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void An_msu_in_wim_format_is_accepted_and_left_to_dism()
+    {
+        var info = UpdatePackage.Analyze("Windows11.0-KB5134133-x64.msu", Read(BuildWim(Xml)));
+
+        info.Kind.ShouldBe(UpdateKind.Msu);
+        info.Container.ShouldBe(UpdateContainer.Wim);
+        info.Kb.ShouldBe(5134133);
+        info.Problems.ShouldBeEmpty();
+        info.Payloads.ShouldBeEmpty();
+        info.Wim!.Images.Single().FileCount.ShouldBe(7);
+
+        UpdatePackage.Analyze("Windows11.0-KB5134133-x64.cab", Read(BuildWim(Xml))).Problems.ShouldNotBeEmpty();
+        UpdatePackage.Analyze("split.msu", Read(BuildWim(Xml, parts: 2))).Problems.ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public void The_folder_scan_tells_a_wim_msu_from_a_cabinet()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "Windows11.0-KB5134133-x64.msu"), BuildWim(Xml));
+        File.WriteAllBytes(Path.Combine(_root, "windows11.0-kb5070001-x64.msu"), UpdatePackageTests.BuildCabinet([("Windows11.0-KB5070001-x64.cab", 1)]));
+
+        var packages = UpdateFolder.Scan(_root).Packages.ToDictionary(p => p.Package.FileName, p => p.Package);
+
+        packages["Windows11.0-KB5134133-x64.msu"].Container.ShouldBe(UpdateContainer.Wim);
+        packages["Windows11.0-KB5134133-x64.msu"].Problems.ShouldBeEmpty();
+        packages["windows11.0-kb5070001-x64.msu"].Container.ShouldBe(UpdateContainer.Cabinet);
+    }
+}

@@ -54,7 +54,10 @@ public sealed record UpdateFolder(string Folder, IReadOnlyList<ScannedUpdate> Pa
     public static ScannedUpdate ScanFile(string folder, string path)
     {
         using var stream = File.OpenRead(Full(folder, path));
-        var package = UpdatePackage.Analyze(path, Cabinet.Read(stream));
+        var start = new byte[8];
+        var isWim = stream.ReadAtLeast(start, start.Length, throwOnEndOfStream: false) == start.Length && WimArchive.HasMagic(start);
+        stream.Position = 0;
+        var package = isWim ? UpdatePackage.Analyze(path, WimArchive.Read(stream)) : UpdatePackage.Analyze(path, Cabinet.Read(stream));
         stream.Position = 0;
         var sha256 = Convert.ToHexStringLower(SHA256.HashData(stream));
         if (package.Sha1FromName is { } expected)

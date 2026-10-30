@@ -84,6 +84,30 @@ Stop-Transcript
 ```
 Ожидается: `mounts` → `none`, `host-check` → `RESULT: OK`.
 
+### 7. Повтор после поддержки MSU в формате WIM
+
+На b8d8cc5e утилита ждала, что MSU — это cabinet, а KB5134133 оказался WIM (`MSWIM`). Теперь WIM-MSU распознаётся: читаются заголовок и XML с образами, список файлов остаётся DISM.
+```powershell
+$X = { & "C:\IF\ImageForge.Experiments.exe" @args | Out-Host }
+$M = "C:\IF\upd\lcu\Windows11.0-KB5134133-x64.msu"
+Start-Transcript C:\IF\s2-updates-3.txt
+& $X version
+& $X update-scan C:\IF\upd\lcu
+Copy-Item C:\IF\fixture\media\sources\install.wim C:\IF\scratch\install.wim -Force
+Set-ItemProperty C:\IF\scratch\install.wim -Name IsReadOnly -Value $false
+& $X mount C:\IF\scratch\install.wim 1 C:\IF\scratch\mount
+& $X update-add C:\IF\scratch\mount $M api
+& $X unmount C:\IF\scratch\mount discard
+& $X mounts
+& $X host-check
+Remove-Item C:\IF\scratch\install.wim -Force
+Stop-Transcript
+```
+Ожидается:
+- `update-scan`: `Msu | KB 5134133 | arch x64 | … | Wim`, строка `WIM part 1/1, images N`, строки `image …`, без `PROBLEM`;
+- `update-add … api`: проценты, `Add finished in … s` (около 10–15 минут), `NEW: …ServicingStack_9703…`, `NEW: …RollupFix…26100.9725…`, `STATE: … -> Superseded`, итог `new or changed: …` и `RESULT: OK`. Если DISM API откажет, перепишите строку `DismAddPackage failed: …` целиком;
+- `mounts` → `none`, `host-check` → `RESULT: OK`.
+
 ## Что прислать
 
 - файл `C:\IF\s2-updates.txt` целиком (или вывод по шагам);

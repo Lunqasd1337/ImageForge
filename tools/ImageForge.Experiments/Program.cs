@@ -1257,7 +1257,17 @@ static void PrintUpdate(ScannedUpdate scanned)
     var p = scanned.Package;
     Log($"{p.FileName}: {p.Kind} | KB {p.Kb?.ToString(CultureInfo.InvariantCulture) ?? "-"} | arch {p.Architecture ?? "-"} | " +
         $"SHA-1 in name {(p.Sha1FromName is null ? "none" : "present")} | SHA-256 {scanned.Sha256?[..16] ?? "-"} | " +
-        $"{p.Contents.Count} entries{(p.HasServicingStack ? " | SSU" : string.Empty)}");
+        $"{p.Container}{(p.Container == UpdateContainer.Cabinet ? $" {p.Contents.Count} entries" : string.Empty)}{(p.HasServicingStack ? " | SSU" : string.Empty)}");
+    if (p.Wim is { } wim)
+    {
+        Log($"  WIM part {wim.PartNumber}/{wim.TotalParts}, images {wim.ImageCount}; the file list is left to DISM");
+        foreach (var image in wim.Images)
+        {
+            Log($"  image {image.Name ?? "-"} | {image.Description ?? "-"} | files {image.FileCount?.ToString(CultureInfo.InvariantCulture) ?? "-"} | " +
+                $"{image.TotalBytes?.ToString("N0", CultureInfo.InvariantCulture) ?? "-"} bytes");
+        }
+    }
+
     foreach (var entry in p.Contents)
     {
         Log($"  {entry.Name} ({entry.Size:N0} bytes){(p.Payloads.Contains(entry.Name) ? " <- payload" : string.Empty)}");

@@ -151,7 +151,8 @@
   - `Cabinet.Read` читает таблицу файлов cabinet (MSU и CAB — это cabinet) без распаковки. Многотомный, обрезанный файл и файл без подписи `MSCF` дают проблему.
   - `UpdateFileName.Parse` достаёт из имени KB, архитектуру и SHA-1, который есть в именах файлов Catalog.
   - `UpdatePackage.Analyze`: MSU должен содержать пакет для установки (SSU, KB .cab, .wim или .psf), CAB должен содержать `update.mum`. Пакет не для x64 — проблема. Подпись и применимость проверяет DISM.
-  - `UpdateFolder.Scan` ищет .msu и .cab рекурсивно, считает SHA-256 и сверяет SHA-1 из имени с файлом.
+  - `WimArchive.Read` читает заголовок и XML файла WIM: новые MSU (например, KB5134133 для 26H2) — это WIM, а не cabinet. Разбитый на части WIM и WIM без образов — проблема; список файлов остаётся DISM.
+  - `UpdateFolder.Scan` ищет .msu и .cab рекурсивно, по подписи различает cabinet и WIM, считает SHA-256 и сверяет SHA-1 из имени с файлом (в именах из Catalog его может не быть).
 - Engine: `DismImages.GetPackages` / `AddPackage` через офлайн-сессию DISM API; `DismCliArguments.GetPackages` / `AddPackage` для Dism.exe (путь только локальный).
 - Утилита:
   - `update-scan <папка>` показывает каждый пакет и его содержимое;

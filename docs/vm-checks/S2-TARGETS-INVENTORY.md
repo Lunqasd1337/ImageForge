@@ -1,6 +1,6 @@
 # Ручная проверка S2-TARGETS-INVENTORY: boot.wim и WinRE фикстуры, обновления для них
 
-Статус: **Ожидает проверки**.
+Статус: **Пройдена** (4c76a56d, Hyper-V, 30.10.2026). Пакеты: Safe OS DU KB5130881 (26H2/25H2, 209 МБ), Setup DU KB5128977 (2026-10, 25H2).
 Это эксперимент перед обслуживанием WinRE и boot.wim (план, раздел 11, «Рецепты по целям»). По его итогам выбирается рецепт:
 - что лежит в `boot.wim` (индексы, загрузочный индекс) и во вложенном `Winre.wim`, какие у них версии и пакеты;
 - ставится ли в WinRE накопительное обновление KB5134133 (ради SSU внутри него) и с какой ошибкой; Microsoft допускает `0x8007007e` на этом шаге;
@@ -137,3 +137,16 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
+| 4c76a56d | Hyper-V | 1 | Пройден. boot.wim 597 МБ: 2 образа, `boot index 2` — 1 «Microsoft Windows PE (amd64)», 2 «Microsoft Windows Setup (amd64)», оба 10.0.26100.9457. install.wim: 5 редакций, `boot index 0` — 1 Education, 2 Enterprise, 3 Pro, 4 Pro Education, 5 Pro for Workstations. Конвейер сейчас берёт индекс 1 (Education). |
+| 4c76a56d | Hyper-V | 2 | Пройден. `Windows\System32\Recovery\Winre.wim` 803 275 696 байт (атрибуты Archive, SparseFile, ReparsePoint — файл из WOF-сжатия образа, копируется обычным Copy-Item), SHA-256 5CD5CA1D…760A0, 1 образ «Microsoft Windows Recovery Environment (amd64)», `boot index 1`, 10.0.26100.9444. |
+| 4c76a56d | Hyper-V | 3 | Пройден. KB5130881 — Cab, 7618 записей (компоненты 10.0.26100.9817, winre-tools, bootux-winre, recoveryagent, cloudrec), без проблем. KB5128977 — Cab, 169 файлов, `PROBLEM: в CAB нет update.mum` — ожидаемо, это файлы установщика. |
+| 4c76a56d | Hyper-V | 4 | Пройден. WinRE до: 56 пакетов, `SafeOSDU 26100.9444.1.29`, `ServicingStack_9441`, `KB5121794`, язык ru-RU. LCU KB5134133 через DismAddPackage: 56 с, без ошибки (0x8007007E не было), добавился только `ServicingStack_9703 26100.9703.1.4` — полный LCU в WinRE не ставится, как и ожидалось. Safe OS DU: 51 с, `SafeOSDU 26100.9444.1.29` → `26100.9817.1.9`. Cleanup /ResetBase: 3 с, 57 → 56 пакетов. После commit winre.wim 1 147 МБ, после export 841 МБ (исходный 803 МБ); версия 10.0.26100.9817. Export обязателен: без него WinRE на 43 % больше. |
+| 4c76a56d | Hyper-V | 5 | Пройден. boot.wim индекс 2 до: 34 пакета, `RollupFix 26100.9457`, `ServicingStack_9441`. LCU: 162 с, `RollupFix 26100.9725.1.2`, `ServicingStack_9703`, WinPE-Package и языковой пакет ru-RU → 10.0.26100.9725, всего 63 изменения, прежний RollupFix ушёл. Файлы установщика в образе новее носителя: setup.exe 9549 (носитель 26100.1), setuphost.exe 9725 (9445), setupprep.exe 8521 (26100.1). Cleanup /ResetBase: 3 с, 35 → 34. |
+| 4c76a56d | Hyper-V | 6 | Пройден. Setup DU: 169 файлов в корне и `replacementmanifests\…` — SetupPlatform.dll, Appraiser.dll, SetupCore.dll, appraiser.sdb, SetupPrep.exe и SetupHost.exe 10.0.26100.9808 (новее, чем в boot.wim после LCU: 9725 и 8521), DismApi.dll, ReAgent.dll; setup.exe в нём нет. |
+| 4c76a56d | Hyper-V | 7 | Пройден. `mounts` → none, `host-check` → OK. |
+
+## Вывод для рецепта
+
+- **WinRE** (для каждого install-образа, обычно один и тот же файл): извлечь `Winre.wim` → LCU MSU (даёт только SSU) → Safe OS DU → cleanup /ResetBase → commit → export → положить обратно в `Windows\System32\Recovery`. Около 2 мин работы DISM; ошибки 0x8007007E на 26H2 нет, но допуск для неё на шаге SSU оставить по плану.
+- **boot.wim**: оба индекса — LCU → cleanup /ResetBase → commit; затем export всех индексов с сохранением `boot index 2`. Из индекса 2 скопировать на носитель обновлённые файлы установщика из `sources` (setup.exe и др.).
+- **Носитель**: Setup DU распаковать поверх `sources` носителя последним: его SetupHost/SetupPrep новее, чем в boot.wim.

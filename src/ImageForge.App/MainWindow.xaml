@@ -228,6 +228,11 @@
         </ItemsControl>
       </Expander>
 
+      <CheckBox Content="Очистить хранилище компонентов после изменений (StartComponentCleanup; уменьшает образ после обновлений)"
+                IsChecked="{x:Bind ViewModel.CleanupComponents, Mode=TwoWay}" />
+      <CheckBox Content="Вместе с /ResetBase (вытесненные версии удаляются насовсем; обновления в образе нельзя будет удалить)"
+                IsChecked="{x:Bind ViewModel.ResetBase, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CleanupComponents, Mode=OneWay}" Margin="28,0,0,0" />
+
       <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 

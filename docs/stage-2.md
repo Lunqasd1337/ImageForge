@@ -171,3 +171,11 @@
 - Engine: `DismImageServicing.GetPackagesAsync` / `AddPackageAsync` через DISM API (ошибка чтения не ломает инспекцию, а показывается в окне).
 - Окно: раздел «Обновления» — версии образа, папка, «Найти обновления», список с отметками, строки превью. Отметки снимаются, когда меняются папки или образ читается заново.
 - Проверка в VM — [S2-UPDATES-UI](vm-checks/S2-UPDATES-UI.md).
+
+### Очистка хранилища компонентов
+
+- Core (TDD): изменение `CleanupComponentStore(ResetBase)`; в плане `CleanupPlan` — один раз, с /ResetBase, если его попросили хоть раз, и с предупреждением, что после /ResetBase обновления из образа уже не удалить. Отпечаток плана (версия 8) включает очистку и её режим.
+- Запуск: шаг `cleanup` после всех изменений DISM и до реестра; `Dism.exe /Cleanup-Image /StartComponentCleanup [/ResetBase]` (в DISM API такой функции нет). В журнал идут число пакетов и вытесненных до и после.
+- Протокол 9: `PlanOptions.CleanupComponents` и `ResetBase`, `PlanSummary.Cleanup`; возможность движка `cleanup`.
+- Окно: две галочки под обновлениями; /ResetBase доступен только вместе с очисткой.
+- Проверка в VM — [S2-CLEANUP-UI](vm-checks/S2-CLEANUP-UI.md).

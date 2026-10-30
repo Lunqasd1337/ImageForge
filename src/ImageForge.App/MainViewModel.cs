@@ -148,6 +148,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     // The folder UpdatePackages was found in; the engine scans and hashes it again when planning.
     private string? _scannedUpdateFolder;
 
+    /// <summary>Clean up the component store after the other servicing.</summary>
+    [ObservableProperty]
+    public partial bool CleanupComponents { get; set; }
+
+    /// <summary>With the cleanup, also /ResetBase: superseded versions go for good.</summary>
+    [ObservableProperty]
+    public partial bool ResetBase { get; set; }
+
     public bool IsConnected => _engine is not null;
 
     public bool HasResult => PublishedPath.Length > 0;
@@ -192,6 +200,17 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     partial void OnForceUnsignedChanged(bool value) => DropPlan();
+
+    partial void OnCleanupComponentsChanged(bool value)
+    {
+        DropPlan();
+        if (!value)
+        {
+            ResetBase = false;
+        }
+    }
+
+    partial void OnResetBaseChanged(bool value) => DropPlan();
 
     partial void OnAllowBootCriticalChanged(bool value) => DropPlan();
 
@@ -384,6 +403,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             ForceUnsigned = ForceUnsigned,
             AddUpdates = [.. UpdatePackages.Where(u => u.IsSelected == true).Select(u => u.Scanned.Package.FileName)],
             UpdateFolder = _scannedUpdateFolder,
+            CleanupComponents = CleanupComponents,
+            ResetBase = CleanupComponents && ResetBase,
         };
         IsBusy = true;
         try
@@ -419,6 +440,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. DescribeFeatureChanges(plan.FeatureChanges),
                 .. DescribeDrivers(plan.Drivers),
                 .. DescribeUpdates(plan.Updates),
+                .. DescribeCleanup(plan.Cleanup),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
@@ -427,7 +449,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 + (plan.CapabilityAdditions.Count > 0 ? $" Добавляемых: {plan.CapabilityAdditions.Count}." : string.Empty);
             var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
             var drivers = plan.Drivers is { } driverPlan ? $" Удаляемых драйверов: {driverPlan.Remove.Count}, добавляемых: {driverPlan.Add.Count}." : string.Empty;
-            var updates = plan.Updates is { } updatePlan ? $" Добавляемых обновлений: {updatePlan.Add.Count}." : string.Empty;
+            var updates = (plan.Updates is { } updatePlan ? $" Добавляемых обновлений: {updatePlan.Add.Count}." : string.Empty)
+                + (plan.Cleanup is { } cleanupPlan ? $" Очистка хранилища компонентов{(cleanupPlan.ResetBase ? " с /ResetBase" : string.Empty)}." : string.Empty);
             Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{updates}{encoding} Проверьте превью и нажмите «Запустить».";
             Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
         }
@@ -733,6 +756,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         foreach (var warning in updates.Warnings)
+        {
+            yield return "  Внимание: " + warning;
+        }
+    }
+
+    private static IEnumerable<string> DescribeCleanup(CleanupPlan? cleanup)
+    {
+        if (cleanup is null)
+        {
+            yield break;
+        }
+
+        yield return cleanup.ResetBase
+            ? "Очистить хранилище компонентов (StartComponentCleanup /ResetBase) после остальных изменений"
+            : "Очистить хранилище компонентов (StartComponentCleanup) после остальных изменений";
+        foreach (var warning in cleanup.Warnings)
         {
             yield return "  Внимание: " + warning;
         }

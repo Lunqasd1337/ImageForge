@@ -54,6 +54,9 @@ public sealed record PlanSummary(
 
     /// <summary>Update packages to add, in order, with their warnings; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
+
+    /// <summary>The component store cleanup, with its warnings; null when not asked for.</summary>
+    public CleanupPlan? Cleanup { get; init; }
 }
 
 /// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
@@ -264,6 +267,7 @@ public sealed class WorkspaceSession(
             .. options.RemoveDrivers.Select(d => new RemoveDriverPackage(d, options.AllowBootCritical)),
             .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
             .. options.AddUpdates.Select(u => new AddUpdatePackage(u)),
+            .. options.CleanupComponents ? [new CleanupComponentStore(options.ResetBase)] : Array.Empty<ImageChange>(),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
@@ -352,6 +356,7 @@ public sealed class WorkspaceSession(
                     FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
                     Drivers = plan.Drivers,
                     Updates = plan.Updates,
+                    Cleanup = plan.Cleanup,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }

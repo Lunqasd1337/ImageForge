@@ -374,7 +374,7 @@ public sealed class WorkspaceSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task The_installed_update_is_shown_and_an_update_of_a_folder_is_planned_and_added()
+    public async Task The_installed_update_is_shown_and_an_update_of_a_folder_is_added_and_cleaned_up()
     {
         _servicing.Packages.Add(new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9457.1.0", "Installed", "Update"));
         _servicing.Packages.Add(new InstalledPackage("Package_for_ServicingStack_9441~31bf3856ad364e35~amd64~~26100.9441.1.0", "Installed", "Update"));
@@ -392,12 +392,20 @@ public sealed class WorkspaceSessionTests : IDisposable
         _session.Plan(new PlanOptions(null) { AddUpdates = ["Windows11.0-KB5134133-x64.msu"] }).Diagnostics
             .ShouldHaveSingleItem().Code.ShouldBe(PlanningCodes.UpdateSourceMissing);
 
-        var plan = _session.Plan(new PlanOptions(null) { AddUpdates = ["Windows11.0-KB5134133-x64.msu"], UpdateFolder = _dir.Combine("updates") });
+        var plan = _session.Plan(new PlanOptions(null)
+        {
+            AddUpdates = ["Windows11.0-KB5134133-x64.msu"],
+            UpdateFolder = _dir.Combine("updates"),
+            CleanupComponents = true,
+            ResetBase = true,
+        });
 
         plan.Diagnostics.ShouldBeEmpty();
         plan.Updates.ShouldNotBeNull().Add.ShouldHaveSingleItem().FileName.ShouldBe("Windows11.0-KB5134133-x64.msu");
+        plan.Cleanup.ShouldNotBeNull().ResetBase.ShouldBeTrue();
         (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
         _servicing.Calls.ShouldContain("package-add Windows11.0-KB5134133-x64.msu");
+        _servicing.Calls.ShouldContain("cleanup resetbase");
     }
 
     private static RegFileInput RegFile(string body) =>

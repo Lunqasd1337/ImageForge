@@ -12,10 +12,12 @@ using ImageForge.Core.Registry;
 using ImageForge.Core.Registry.RegFile;
 using ImageForge.Core.Safety;
 using ImageForge.Core.Servicing;
+using ImageForge.Core.Updates;
 using ImageForge.Core.Workspace;
 using ImageForge.Engine.Dism;
 using ImageForge.Engine.Registry;
 using ImageForge.Engine.Workspace;
+using Microsoft.Dism;
 using Microsoft.Win32;
 
 // Manual M1 experiments (plan, section 16). Every command prints what it did and ends with RESULT: OK / FAIL.
@@ -53,6 +55,9 @@ var commands = new Dictionary<string, (string Usage, Func<string[], Task<bool>> 
     ["driver-list"] = ("driver-list <mount-dir> third-party|all", a => Task.FromResult(DriverList(a[0], a[1]))),
     ["driver-add"] = ("driver-add <mount-dir> <file.inf> signed-only|force-unsigned", a => Task.FromResult(DriverAdd(a[0], a[1], a[2]))),
     ["driver-remove"] = ("driver-remove <mount-dir> <oemN.inf> normal|allow-boot-critical", a => Task.FromResult(DriverRemove(a[0], a[1], a[2]))),
+    ["update-scan"] = ("update-scan <folder>", a => Task.FromResult(UpdateScan(a[0]))),
+    ["package-list"] = ("package-list <mount-dir>", a => Task.FromResult(PackageList(a[0]))),
+    ["update-add"] = ("update-add <mount-dir> <file.msu|file.cab|folder> api|cli", a => UpdateAddAsync(a[0], a[1], a[2])),
     ["reg-check"] = ("reg-check <file.reg> auto|utf16|utf8|ansi <ansi-code-page> <live-key-under-HKCU>", a => Task.FromResult(RegCheck(a[0], a[1], int.Parse(a[2], CultureInfo.InvariantCulture), a[3]))),
 };
 
@@ -1245,4 +1250,194 @@ static void PrintState(WorkspaceLayout layout)
             Log($"  #{entry.Sequence} {entry.Kind} {entry.Step} {entry.Detail}");
         }
     }
+}
+
+static void PrintUpdate(ScannedUpdate scanned)
+{
+    var p = scanned.Package;
+    Log($"{p.FileName}: {p.Kind} | KB {p.Kb?.ToString(CultureInfo.InvariantCulture) ?? "-"} | arch {p.Architecture ?? "-"} | " +
+        $"SHA-1 in name {(p.Sha1FromName is null ? "none" : "present")} | SHA-256 {scanned.Sha256?[..16] ?? "-"} | " +
+        $"{p.Container}{(p.Container == UpdateContainer.Cabinet ? $" {p.Contents.Count} entries" : string.Empty)}{(p.HasServicingStack ? " | SSU" : string.Empty)}");
+    if (p.Wim is { } wim)
+    {
+        Log($"  WIM part {wim.PartNumber}/{wim.TotalParts}, images {wim.ImageCount}; the file list is left to DISM");
+        foreach (var image in wim.Images)
+        {
+            Log($"  image {image.Name ?? "-"} | {image.Description ?? "-"} | files {image.FileCount?.ToString(CultureInfo.InvariantCulture) ?? "-"} | " +
+                $"{image.TotalBytes?.ToString("N0", CultureInfo.InvariantCulture) ?? "-"} bytes");
+        }
+    }
+
+    foreach (var entry in p.Contents)
+    {
+        Log($"  {entry.Name} ({entry.Size:N0} bytes){(p.Payloads.Contains(entry.Name) ? " <- payload" : string.Empty)}");
+    }
+
+    foreach (var problem in p.Problems)
+    {
+        Log("  PROBLEM: " + problem);
+    }
+}
+
+// Every .msu and .cab under the folder with the checks of plan section 11; nothing is unpacked and DISM is not called.
+static bool UpdateScan(string folder)
+{
+    var watch = Stopwatch.StartNew();
+    var scanned = UpdateFolder.Scan(Path.GetFullPath(folder));
+    if (scanned.Problem is not null)
+    {
+        Log($"{scanned.Folder}: {scanned.Problem}");
+        return false;
+    }
+
+    foreach (var package in scanned.Packages)
+    {
+        PrintUpdate(package);
+    }
+
+    Log($"Packages: {scanned.Packages.Count}; MSU: {scanned.Packages.Count(p => p.Package.Kind == UpdateKind.Msu)}; " +
+        $"CAB: {scanned.Packages.Count(p => p.Package.Kind == UpdateKind.Cab)}; with problems: {scanned.Packages.Count(p => p.Package.Problems.Count > 0)}; " +
+        $"{watch.Elapsed.TotalSeconds:F1} s");
+    return true;
+}
+
+static IReadOnlyList<ImagePackage> ReadPackages(string mountDir)
+{
+    var watch = Stopwatch.StartNew();
+    using var dism = new DismImages();
+    var packages = DismImages.GetPackages(Path.GetFullPath(mountDir));
+    Log($"Packages read (DismGetPackages): {packages.Count}; {watch.Elapsed.TotalSeconds:F1} s");
+    return packages;
+}
+
+static void PrintImagePackage(ImagePackage p) => Log($"{p.Name} | {p.State} | {p.ReleaseType} | {p.InstallTime:yyyy-MM-dd HH:mm}");
+
+static bool PackageList(string mountDir)
+{
+    var packages = ReadPackages(mountDir);
+    foreach (var package in packages.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        PrintImagePackage(package);
+    }
+
+    foreach (var group in packages.GroupBy(p => p.ReleaseType).OrderBy(g => g.Key, StringComparer.Ordinal))
+    {
+        Log($"{group.Key}: {group.Count()}");
+    }
+
+    foreach (var state in packages.GroupBy(p => p.State).OrderBy(g => g.Key, StringComparer.Ordinal))
+    {
+        Log($"state {state.Key}: {state.Count()}");
+    }
+
+    return true;
+}
+
+// Checks the file first, adds it through the API or Dism.exe, and shows which packages appeared or changed state.
+static async Task<bool> UpdateAddAsync(string mountDir, string path, string mode)
+{
+    if (mode is not ("api" or "cli"))
+    {
+        Log("Mode must be api or cli.");
+        return false;
+    }
+
+    var target = Path.GetFullPath(path);
+    if (Directory.Exists(target))
+    {
+        if (mode != "cli")
+        {
+            Log("REFUSED: a folder of packages is passed only to Dism.exe (cli).");
+            return false;
+        }
+
+        var folder = UpdateFolder.Scan(target);
+        foreach (var package in folder.Packages)
+        {
+            PrintUpdate(package);
+        }
+
+        if (folder.Problem is not null || folder.Packages.Any(p => p.Package.Problems.Count > 0))
+        {
+            Log($"REFUSED: {folder.Problem ?? "a package in the folder has problems"}; nothing was added.");
+            return false;
+        }
+    }
+    else if (File.Exists(target))
+    {
+        var scanned = UpdateFolder.ScanFile(Path.GetDirectoryName(target)!, Path.GetFileName(target));
+        PrintUpdate(scanned);
+        if (scanned.Package.Problems.Count > 0)
+        {
+            Log("REFUSED: the package has problems; nothing was added.");
+            return false;
+        }
+    }
+    else
+    {
+        Log($"{target} does not exist.");
+        return false;
+    }
+
+    var before = ReadPackages(mountDir).ToDictionary(p => p.Name, p => p.State, StringComparer.OrdinalIgnoreCase);
+    var watch = Stopwatch.StartNew();
+    var succeeded = true;
+    if (mode == "api")
+    {
+        try
+        {
+            using (new DismImages())
+            {
+                var last = -1;
+                DismImages.AddPackage(Path.GetFullPath(mountDir), target, percent =>
+                {
+                    if (percent / 10 != last / 10)
+                    {
+                        last = percent;
+                        Log($"add-package {percent}%");
+                    }
+                });
+            }
+        }
+        catch (DismException ex)
+        {
+            Log($"DismAddPackage failed: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+            succeeded = false;
+        }
+    }
+    else
+    {
+        var (exitCode, _) = await DismAsync(DismCliArguments.AddPackage(Path.GetFullPath(mountDir), target), echo: true).ConfigureAwait(false);
+        succeeded = exitCode is 0 or 3010;
+        if (exitCode == 3010)
+        {
+            Log("Dism.exe reports 3010: a restart is required (expected offline; the package is pending until first boot).");
+        }
+    }
+
+    Log($"Add finished in {watch.Elapsed.TotalSeconds:F1} s");
+    var after = ReadPackages(mountDir);
+    var changed = 0;
+    foreach (var package in after.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+    {
+        if (!before.TryGetValue(package.Name, out var was))
+        {
+            Log("NEW: " + package.Name + " | " + package.State + " | " + package.ReleaseType);
+            changed++;
+        }
+        else if (was != package.State)
+        {
+            Log($"STATE: {package.Name}: {was} -> {package.State}");
+            changed++;
+        }
+    }
+
+    foreach (var gone in before.Keys.Except(after.Select(p => p.Name), StringComparer.OrdinalIgnoreCase))
+    {
+        Log("GONE: " + gone);
+        changed++;
+    }
+
+    Log($"Packages before: {before.Count}; after: {after.Count}; new or changed: {changed}");
+    return succeeded;
 }

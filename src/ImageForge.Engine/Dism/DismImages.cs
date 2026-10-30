@@ -19,6 +19,9 @@ public sealed record ImageDriver(
     string Signature,
     string CatalogFile);
 
+/// <param name="Name">The package identity, such as Package_for_RollupFix~31bf3856ad364e35~amd64~~26300.1000.1.0.</param>
+public sealed record ImagePackage(string Name, string State, string ReleaseType, DateTime InstallTime);
+
 public sealed record MountedImageSummary(string ImageFile, int Index, string MountPath, string Mode, string Status);
 
 /// <summary>Thin, synchronous wrapper over the DISM API. One instance owns one DismApi initialization.</summary>
@@ -149,6 +152,20 @@ public sealed class DismImages : IDisposable
         DismApi.RemoveDriver(session, publishedName);
     }
 
+    /// <summary>The servicing packages of an offline image (DismGetPackages): updates, language packs and FoD.</summary>
+    public static IReadOnlyList<ImagePackage> GetPackages(string mountPath)
+    {
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        return [.. DismApi.GetPackages(session).Select(p => new ImagePackage(p.PackageName, p.PackageState.ToString(), p.ReleaseType.ToString(), p.InstallTime))];
+    }
+
+    /// <summary>Adds one .msu or .cab (DismAddPackage); DISM checks applicability and the signature.</summary>
+    public static void AddPackage(string mountPath, string packagePath, Action<int>? progressPercent = null)
+    {
+        using var session = DismApi.OpenOfflineSession(mountPath);
+        DismApi.AddPackage(session, packagePath, ignoreCheck: false, preventPending: false, progressPercent is null ? null : p => progressPercent(Percent(p)));
+    }
+
     // ManagedDism exposes DismGetFeatureParent only by package name or path; a feature of the foundation package (all
     // features that /Get-Features lists) needs DismPackageNone, which only its private overload passes.
     private static readonly MethodInfo FeatureParentMethod =
@@ -179,6 +196,7 @@ public sealed class DismImages : IDisposable
         }
     }
 
+    // DismAddPackage reports a later phase with Current past Total (2000% and more in S2-UPDATES-INVENTORY).
     private static int Percent(DismProgress progress) =>
-        progress.Total == 0 ? 0 : (int)(100L * progress.Current / progress.Total);
+        progress.Total == 0 ? 0 : (int)Math.Clamp(100L * progress.Current / progress.Total, 0, 100);
 }

@@ -60,7 +60,8 @@ public interface IImageServicing
 
     Task<bool> IsMountedAsync(string mountDir, CancellationToken ct);
 
-    Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct);
+    /// <param name="bootable">Marks the exported Windows PE image as the boot image of the destination.</param>
+    Task ExportAsync(string sourceImage, int index, string destinationImage, bool bootable, CancellationToken ct);
 
     ExecutionReport ApplyRegistryPlan(Guid runId, ExecutionPlan plan, string mountDir, CancellationToken ct);
 

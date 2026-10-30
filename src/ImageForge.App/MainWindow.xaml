@@ -199,7 +199,7 @@
       <TextBlock Text="Обновления" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.UpdatesStatus, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
       <TextBlock TextWrapping="Wrap"
-                 Text="Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется." />
+                 Text="Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя." />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -223,6 +223,7 @@
                 <StackPanel Orientation="Horizontal" Spacing="16">
                   <CheckBox Content="В образ" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
                   <CheckBox Content="В WinRE" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox Content="В boot.wim" IsChecked="{x:Bind IsForBoot, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
                 </StackPanel>
               </StackPanel>
             </DataTemplate>

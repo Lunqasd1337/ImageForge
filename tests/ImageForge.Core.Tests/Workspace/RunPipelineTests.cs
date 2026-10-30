@@ -255,6 +255,8 @@ public sealed class RunPipelineTests : IDisposable
         _servicing.Mounted.Add(_paths.Mount(ImageId));
         Directory.CreateDirectory(_paths.WinReMount);
         _servicing.Mounted.Add(_paths.WinReMount);
+        Directory.CreateDirectory(_paths.BootMount);
+        _servicing.Mounted.Add(_paths.BootMount);
         _servicing.OwnedHives.Add(HiveLoadName.Create(crashed, OfflineHive.Software));
         var store = new StateStore<WorkspaceState>(_paths.StateFile);
         store.Save(store.Load().State! with
@@ -268,7 +270,8 @@ public sealed class RunPipelineTests : IDisposable
         var recovery = await new RunRecovery(_paths, _servicing).RecoverAsync(Ct);
 
         recovery.Outcome.ShouldBe(RecoveryOutcome.Recovered, string.Join("; ", recovery.Problems));
-        _servicing.Calls.TakeLast(2).ShouldBe(["unmount discard", "unmount discard"]);
+        _servicing.Calls.TakeLast(3).ShouldBe(["unmount discard", "unmount discard", "unmount discard"]);
+        Directory.Exists(_paths.BootMount).ShouldBeFalse();
         _servicing.Mounted.ShouldBeEmpty();
         Directory.Exists(_paths.WinReMount).ShouldBeFalse();
         _servicing.OwnedHives.ShouldBeEmpty();
@@ -569,6 +572,66 @@ public sealed class RunPipelineTests : IDisposable
             "driver-list", "driver-list", "package-list", "cleanup resetbase", "package-list", "registry", "unmount commit", "export"]);
         log.ShouldContain("cleanup component store (ResetBase)");
         log.ShouldContain("cleanup: packages 2 -> 1, superseded 1 -> 0; rollup 26100.9725.1.0, servicing stack -");
+    }
+
+    private const string BootXml = "<WIM><IMAGE INDEX=\"1\"><NAME>Microsoft Windows PE (amd64)</NAME></IMAGE><IMAGE INDEX=\"2\"><NAME>Microsoft Windows Setup (amd64)</NAME></IMAGE></WIM>";
+
+    private void BootMedia()
+    {
+        File.SetAttributes(_dir.Combine("media", "sources", "install.wim"), FileAttributes.Normal);
+        File.WriteAllBytes(_dir.Combine("media/sources/boot.wim"), Updates.WimArchiveTests.BuildWim(BootXml, images: 2, bootIndex: 2));
+        _dir.WriteFile("media/sources/setup.exe", "SETUP-OLD");
+        _dir.WriteFile("media/sources/setuphost.exe", "HOST-OLD");
+    }
+
+    [Fact]
+    public async Task Every_boot_wim_image_is_serviced_and_exported_bootable_and_the_setup_files_replace_those_of_the_media()
+    {
+        BootMedia();
+        _servicing.BootSetupFiles["setup.exe"] = "SETUP-NEW";
+        _servicing.BootSetupFiles["setuphost.exe"] = "HOST-NEW";
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(UpdatePackages(), new AddBootUpdatePackage("Windows11.0-KB5134133-x64.msu")), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe([
+            "mount", "registry", "unmount commit", "export",
+            "mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "cleanup resetbase", "package-list", "unmount commit",
+            "mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "cleanup resetbase", "package-list", "unmount commit",
+            "export", "export bootable"]);
+        _servicing.MountedIndexes.ShouldBe([1, 1, 2]);
+        _servicing.ExportedBootable.ShouldBe([2]);
+        File.ReadAllText(Path.Combine(_output, "sources", "setup.exe")).ShouldBe("SETUP-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "sources", "setuphost.exe")).ShouldBe("HOST-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "setup.exe")).ShouldBe("setup");
+        using (var boot = File.OpenRead(Path.Combine(_output, "sources", "boot.wim")))
+        {
+            var info = WimArchive.Read(boot);
+            info.ImageCount.ShouldBe(2);
+            info.BootIndex.ShouldBe(2);
+        }
+
+        File.ReadAllText(_dir.Combine("media", "sources", "setup.exe")).ShouldBe("SETUP-OLD");
+        _servicing.Mounted.ShouldBeEmpty();
+        Directory.Exists(_paths.BootMount).ShouldBeFalse();
+        log.ShouldContain("boot.wim: 2 images, boot index 2, 0 MB");
+        log.ShouldContain("export boot image 2 of 2 (bootable)");
+    }
+
+    [Fact]
+    public async Task A_boot_wim_failure_discards_its_mount()
+    {
+        BootMedia();
+        _servicing.FailPackage["Windows11.0-KB5134133-x64.msu"] = unchecked((int)0x800F081E);
+
+        var result = await Pipeline().RunAsync(UpdateRequest(UpdatePackages(), new AddBootUpdatePackage("Windows11.0-KB5134133-x64.msu")), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("boot");
+        _servicing.Calls[^1].ShouldBe("unmount discard");
+        _servicing.Mounted.ShouldBeEmpty();
+        Directory.Exists(_output).ShouldBeFalse();
     }
 
     private const string SafeOs = "windows11.0-kb5130881-x64.cab";

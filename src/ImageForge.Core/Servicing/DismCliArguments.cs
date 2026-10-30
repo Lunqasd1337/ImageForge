@@ -8,7 +8,8 @@ namespace ImageForge.Core.Servicing;
 /// <summary>Argument lists for Dism.exe. Values are passed as separate arguments, never through a shell.</summary>
 public static class DismCliArguments
 {
-    public static IReadOnlyList<string> ExportImage(string sourceImageFile, int sourceIndex, string destinationImageFile)
+    /// <param name="bootable">Marks the exported Windows PE image as the boot image of the destination (/Bootable).</param>
+    public static IReadOnlyList<string> ExportImage(string sourceImageFile, int sourceIndex, string destinationImageFile, bool bootable = false)
     {
         var source = LocalPath(sourceImageFile, nameof(sourceImageFile));
         var destination = LocalPath(destinationImageFile, nameof(destinationImageFile));
@@ -32,6 +33,11 @@ public static class DismCliArguments
         if (!source.EndsWith(".esd", StringComparison.OrdinalIgnoreCase))
         {
             arguments.Add("/CheckIntegrity");
+        }
+
+        if (bootable)
+        {
+            arguments.Add("/Bootable");
         }
 
         return arguments;

@@ -54,6 +54,7 @@ public sealed class RunRecovery(IWorkspacePaths paths, IImageServicing servicing
 
         // Winre.wim is mounted from the run folder while the image is mounted; it goes first.
         await DiscardAsync(paths.WinReMount, actions, problems, ct).ConfigureAwait(false);
+        await DiscardAsync(paths.BootMount, actions, problems, ct).ConfigureAwait(false);
         await DiscardAsync(paths.Mount(run.ImageId), actions, problems, ct).ConfigureAwait(false);
 
         Try(problems, "publication", () =>

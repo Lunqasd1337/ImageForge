@@ -30,6 +30,15 @@ public sealed class DismCliArgumentsTests
         args.ShouldContain("/Compress:max");
     }
 
+    [Fact]
+    public void A_bootable_export_marks_the_image_bootable()
+    {
+        var args = DismCliArguments.ExportImage(@"D:\Work\runs\r1\boot\boot.wim", 2, @"D:\Work\runs\r1\media\sources\boot.wim", bootable: true);
+
+        args[^1].ShouldBe("/Bootable");
+        DismCliArguments.ExportImage(@"D:\in\boot.wim", 1, @"D:\out\boot.wim").ShouldNotContain("/Bootable");
+    }
+
     [Theory]
     [InlineData(@"install.wim", @"D:\out\install.wim", 1)]
     [InlineData(@"D:\in\install.wim", @"\\server\share\install.wim", 1)]

@@ -149,8 +149,8 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
             .Any(m => string.Equals(m.MountPath.TrimEnd('\\'), full, StringComparison.OrdinalIgnoreCase)));
     }
 
-    public Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct) =>
-        RunCliAsync(DismCliArguments.ExportImage(sourceImage, index, destinationImage), "/Export-Image");
+    public Task ExportAsync(string sourceImage, int index, string destinationImage, bool bootable, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.ExportImage(sourceImage, index, destinationImage, bootable), "/Export-Image");
 
     // Servicing CLI calls are not cancelled once started (plan, section 7); cancellation takes effect between steps.
     private async Task<CliResult> RunCliAsync(IReadOnlyList<string> arguments, string operation)

@@ -196,3 +196,13 @@
 - Протокол 11: `PlanOptions.WinReUpdates`, `PlanSummary.WinRe`; возможность движка `winre`.
 - Окно: у каждого найденного обновления отметки «В образ» и «В WinRE»; строки WinRE в превью.
 - Проверка в VM — [S2-WINRE-UI](vm-checks/S2-WINRE-UI.md).
+
+### boot.wim и файлы установщика в запуске
+
+- Core (TDD): изменение `AddBootUpdatePackage`; в плане `BootPlan` — пакеты из той же папки обновлений с хешами, стек обслуживания первым. Отпечаток плана (версия 10) включает пакеты boot.wim.
+- Запуск: шаг `boot` после экспорта install.wim. Копия `sources\boot.wim` из проверенной копии носителя; каждый образ монтируется в `mount-boot`, получает пакеты, очистку с /ResetBase и commit. Из загрузочного образа (индекс 2, Windows Setup) `setup.exe` и `setuphost.exe` берутся для `sources` носителя, в журнал — версии до и после. Затем все образы экспортируются по порядку, загрузочный — с `/Bootable`; число образов и boot index результата сверяются с исходным.
+- Сборка носителя: кроме install.wim заменяются файлы, которые вернул шаг `boot`; сверка с манифестом учитывает их хеши.
+- `IImageServicing.ExportAsync` и `DismCliArguments.ExportImage` получили признак `bootable`. При сбое и при восстановлении `mount-boot` отключается без сохранения.
+- Протокол 12: `PlanOptions.BootUpdates`, `PlanSummary.Boot`; возможность движка `boot`.
+- Окно: третья отметка «В boot.wim» у найденных обновлений, строки boot.wim в превью.
+- Проверка в VM — [S2-BOOT-UI](vm-checks/S2-BOOT-UI.md).

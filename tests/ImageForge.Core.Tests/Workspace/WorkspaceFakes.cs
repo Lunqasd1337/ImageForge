@@ -25,6 +25,8 @@ internal sealed class TestPaths(string root) : IWorkspacePaths
 
     public string WinReMount => Path.Combine(root, "mount-winre");
 
+    public string BootMount => Path.Combine(root, "mount-boot");
+
     public string Journal(Guid runId) => Path.Combine(root, "journal", runId.ToString("N") + ".jsonl");
 
     public RunLayout Run(Guid runId)
@@ -304,7 +306,16 @@ internal sealed class FakeServicing : IImageServicing
         Calls.Add("mount");
         MountedIndexes.Add(index);
         File.WriteAllText(Path.Combine(mountDir, "marker.txt"), "mounted");
-        if (WinRe is not null && !Path.GetFileName(imageFile).StartsWith("winre", StringComparison.OrdinalIgnoreCase))
+        if (Path.GetFileName(imageFile).Equals("boot.wim", StringComparison.OrdinalIgnoreCase))
+        {
+            Directory.CreateDirectory(Path.Combine(mountDir, "sources"));
+            foreach (var (name, content) in BootSetupFiles)
+            {
+                File.WriteAllText(Path.Combine(mountDir, "sources", name), $"{content} (image {index})");
+            }
+        }
+
+        if (WinRe is not null && Path.GetFileName(imageFile).Equals("install.wim", StringComparison.OrdinalIgnoreCase))
         {
             var winRe = Path.Combine(mountDir, RunPipeline.WinReInImage);
             Directory.CreateDirectory(Path.GetDirectoryName(winRe)!);
@@ -356,16 +367,47 @@ internal sealed class FakeServicing : IImageServicing
     /// <summary>The image indexes passed to ExportAsync, in order.</summary>
     public List<int> Exported { get; } = [];
 
-    public Task ExportAsync(string sourceImage, int index, string destinationImage, CancellationToken ct)
+    /// <summary>The indexes exported as bootable.</summary>
+    public List<int> ExportedBootable { get; } = [];
+
+    /// <summary>Setup files (name → content) in the sources folder of every mounted boot.wim image.</summary>
+    public Dictionary<string, string> BootSetupFiles { get; } = [];
+
+    public Task ExportAsync(string sourceImage, int index, string destinationImage, bool bootable, CancellationToken ct)
     {
-        Calls.Add("export");
+        Calls.Add(bootable ? "export bootable" : "export");
         if (FailExport)
         {
             throw new IOException("export failed");
         }
 
         Exported.Add(index);
-        if (File.Exists(destinationImage))
+        if (bootable)
+        {
+            ExportedBootable.Add(index);
+        }
+
+        if (WimArchive.HasMagic(File.ReadAllBytes(sourceImage)))
+        {
+            // A real WIM header is kept, so the run can read the image count and the boot index of the result.
+            if (!File.Exists(destinationImage))
+            {
+                File.Copy(sourceImage, destinationImage);
+                using var header = File.OpenWrite(destinationImage);
+                header.Position = 120;
+                header.Write(BitConverter.GetBytes(0u));
+            }
+
+            if (bootable)
+            {
+                using var header = File.OpenWrite(destinationImage);
+                header.Position = 120;
+                header.Write(BitConverter.GetBytes((uint)index));
+            }
+
+            File.AppendAllText(destinationImage, $"+{index}");
+        }
+        else if (File.Exists(destinationImage))
         {
             // DISM appends a further image to an existing destination.
             File.AppendAllText(destinationImage, $"+{index}");

@@ -43,7 +43,7 @@ reg export "$K" C:\IF\regtest-v5.reg /y
 
 ### 3. REGEDIT4
 
-Не проверяется в VM: формат REGEDIT4 не поддерживается по решению владельца, его отказ покрыт тестами `RegFileLoaderTests`.
+Необязательный шаг: формат REGEDIT4 не поддерживается по решению владельца, его отказ покрыт тестами `RegFileLoaderTests`. Для проверки в regedit экспортировать ключ как «Файлы реестра Win9x/NT4 (*.reg)» в `C:\IF\regtest-v4.reg`, затем `& $X reg-check C:\IF\regtest-v4.reg auto 1251 Software\ImageForgeRegFileTest`. Ожидается `line 1: regfile.format.unsupported` и `RESULT: FAIL` (это правильный результат).
 
 ### 4. Уборка
 
@@ -60,4 +60,5 @@ Stop-Transcript
 
 | BuildId | VM | Шаги | Итог |
 |---|---|---|---|
-| 40f69b16 | Hyper-V | 1–2 | Пройдены. `reg export` записал UTF-16LE с BOM; `reg-check`: `decoded as Utf16`, 11 операций, все 9 значений `live matches` (кириллица в именах и данных, `;` и `\` в строке, EXPAND_SZ, MULTI_SZ, DWORD, QWORD, BINARY, NONE `00,00`, длинный BINARY с переносами), `RESULT: OK`. Файл добавлен эталоном: `tests/ImageForge.Core.Tests/Registry/Fixtures/regtest-v5.reg`, тест `RegFileFixtureTests`. Шаг 3 не выполнялся (см. выше). |
+| 40f69b16 | Hyper-V | 1–2 | Пройдены. `reg export` записал UTF-16LE с BOM; `reg-check`: `decoded as Utf16`, 11 операций, все 9 значений `live matches` (кириллица в именах и данных, `;` и `\` в строке, EXPAND_SZ, MULTI_SZ, DWORD, QWORD, BINARY, NONE `00,00`, длинный BINARY с переносами), `RESULT: OK`. Файл добавлен эталоном: `tests/ImageForge.Core.Tests/Registry/Fixtures/regtest-v5.reg`, тест `RegFileFixtureTests`. |
+| 40f69b16 | Hyper-V | 3 | Пройден. Экспорт Win9x/NT4 прочитан как ANSI 1251, `line 1: regfile.format.unsupported: REGEDIT4 files are not supported; export the key again as "Windows Registry Editor Version 5.00"…`, `RESULT: FAIL` — ожидаемый отказ. |

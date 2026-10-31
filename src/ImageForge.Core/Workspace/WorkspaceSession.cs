@@ -165,6 +165,9 @@ public sealed class WorkspaceSession(
     Func<string, IWorkspacePaths>? layoutFactory = null,
     Func<string, string, string, IReadOnlyList<LocationProblem>>? validateLocations = null)
 {
+    /// <summary>Free bytes of a volume by its root; null when unknown. The engine reads the disk; tests leave it unknown.</summary>
+    public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
     private readonly Func<string, IWorkspacePaths> _layoutFactory = layoutFactory ?? (dir => WorkspaceLayout.Create(dir));
     private readonly Func<string, string, string, IReadOnlyList<LocationProblem>> _validate = validateLocations ?? WorkspaceLocations.Validate;
     private readonly StartRequestLedger _ledger = new(newId);
@@ -228,7 +231,7 @@ public sealed class WorkspaceSession(
         string? error = null;
         try
         {
-            var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log };
+            var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log, FreeSpace = FreeSpace };
             var task = inspection.InspectAsync(open.Request.SourceDir, open.WorkspaceId, open.Request.ImageIndex, ct);
             lock (_gate)
             {
@@ -499,7 +502,7 @@ public sealed class WorkspaceSession(
         try
         {
             var log = Report(progress);
-            var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log };
+            var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log, FreeSpace = FreeSpace };
             var result = await pipeline.RunAsync(new RunRequest(open.SourceDir, open.OutputDir, open.ImageIndex, plan, Failure) { ImageCount = imageCount }, ct).ConfigureAwait(false);
             return new RunOutcome(operationId, StartPlanRejection.None, result.Status, result.FailedStep, result.Error, result.PublishedPath);
         }

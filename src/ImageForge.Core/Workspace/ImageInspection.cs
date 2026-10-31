@@ -24,6 +24,9 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
 {
     public Action<string>? Log { get; init; }
 
+    /// <summary>Free bytes of a volume by its root; null when unknown, which skips the check.</summary>
+    public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
     /// <summary>True when an inspection mount folder is left over; the workspace needs recovery then.</summary>
     public static bool LeftBehind(IWorkspacePaths paths)
     {
@@ -46,6 +49,14 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
         if (!source.Entries.Any(e => string.Equals(e.RelativePath, RunPipeline.InstallImage, StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidDataException(@"The source has no sources\install.wim; only a WIM source is supported.");
+        }
+
+        // The base copy is the large write of an inspection; the run checks its own peak before it starts.
+        var reused = Directory.Exists(paths.Base) && state.SourceFingerprint == source.Fingerprint;
+        var problems = reused ? [] : DiskSpace.Check(new SpaceEstimate(source.Entries.Sum(e => e.Length) + DiskSpace.Reserve, 0), paths.Root, paths.Root, FreeSpace);
+        if (problems.Count > 0)
+        {
+            throw new IOException(string.Join(" ", problems));
         }
 
         Log?.Invoke("base-copy...");

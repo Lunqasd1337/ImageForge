@@ -55,6 +55,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
     public Action<string>? Log { get; init; }
 
+    /// <summary>Free bytes of the volume with the given root; null when unknown, which skips the check. The engine reads the disk.</summary>
+    public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
     public async Task<RunResult> RunAsync(RunRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -91,6 +94,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             {
                 throw new InvalidDataException(@"The source has no sources\install.wim; M1 supports only a WIM source.");
             }
+
+            var sourceBytes = source.Entries.Sum(e => e.Length);
+            await context.Step("space-check", () =>
+            {
+                var estimate = DiskSpace.Estimate(SpaceInputs(request, source, Directory.Exists(paths.Base) && state.SourceFingerprint == source.Fingerprint));
+                Log?.Invoke($"space: work folder volume needs {Gb(estimate.WorkBytes)}, output volume {Gb(estimate.OutputBytes)}");
+                EnsureSpace(estimate, request.OutputDir);
+                return Task.FromResult(true);
+            }, ct).ConfigureAwait(false);
 
             var baseManifest = await context.Step("base-copy", () => PrepareBaseAsync(paths, request.SourceDir, source, state.SourceFingerprint, Log, ct), ct).ConfigureAwait(false);
             state = state with { SourceFingerprint = source.Fingerprint };
@@ -183,6 +195,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             var completedEntry = await context.Step("export", async () =>
             {
                 Directory.CreateDirectory(run.Completed);
+                EnsureSpace(new SpaceEstimate(new FileInfo(working).Length + DiskSpace.Reserve, 0), request.OutputDir);
 
                 // DISM appends to an existing destination, so a repeated step must not find a partial file.
                 File.Delete(completed);
@@ -220,6 +233,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                     throw new IOException($"Staging folder '{publication.Staging}' already exists.");
                 }
 
+                EnsureSpace(new SpaceEstimate(0, sourceBytes + DiskSpace.Reserve), request.OutputDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(publication.Staging)!);
                 // Hashing while copying checks every staged file against the source manifest, which also covers a
                 // base copy that was reused on metadata alone.
@@ -791,6 +805,46 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             ? throw new WorkspaceRecoveryRequiredException($"Run {state.LastRun.RunId:N} did not finish ({state.LastRun.Status}); recover the workspace first.")
             : state;
     }
+
+    private void EnsureSpace(SpaceEstimate need, string outputDir)
+    {
+        var problems = DiskSpace.Check(need, paths.Root, outputDir, FreeSpace);
+        if (problems.Count > 0)
+        {
+            throw new IOException(string.Join(" ", problems));
+        }
+    }
+
+    private SpaceInputs SpaceInputs(RunRequest request, SourceManifest source, bool baseReused)
+    {
+        var install = source.Entries.Single(e => string.Equals(e.RelativePath, InstallImage, StringComparison.OrdinalIgnoreCase));
+        long? expanded = null;
+        try
+        {
+            using var stream = File.OpenRead(Path.Combine(request.SourceDir, InstallImage));
+            var wim = WimArchive.Read(stream);
+            expanded = wim.Images.ElementAtOrDefault(request.SourceIndex - 1)?.TotalBytes;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log?.Invoke($"space: install.wim XML not read ({ex.Message}); the mount is counted as {Gb(DiskSpace.DefaultExpandedBytes)}");
+        }
+
+        var plan = request.Plan;
+        var updates = new[] { plan.Updates, plan.DotNetUpdates }.OfType<UpdatePlan>().SelectMany(u => u.Add.Select(a => (u.Source, a.FileName)))
+            .Concat(plan.WinRe?.Add.Select(a => (plan.WinRe.Source, a.FileName)) ?? [])
+            .Concat(plan.Boot?.Add.Select(a => (plan.Boot.Source, a.FileName)) ?? [])
+            .Sum(u => File.Exists(UpdateFolder.Full(u.Source, u.FileName)) ? new FileInfo(UpdateFolder.Full(u.Source, u.FileName)).Length : 0);
+        var boot = plan.Boot is null ? 0 : source.Entries.FirstOrDefault(e => string.Equals(e.RelativePath, BootImage, StringComparison.OrdinalIgnoreCase))?.Length ?? 0;
+        return new SpaceInputs(source.Entries.Sum(e => e.Length), baseReused, install.Length, expanded)
+        {
+            UpdateBytes = updates,
+            ServicesWinRe = plan.WinRe is not null,
+            BootWimBytes = boot,
+        };
+    }
+
+    private static string Gb(long bytes) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (double)(1L << 30):0.0} GB");
 
     internal static async Task<SourceManifest> PrepareBaseAsync(
         IWorkspacePaths paths, string sourceDir, SourceManifest source, string? baseFingerprint, Action<string>? log, CancellationToken ct)

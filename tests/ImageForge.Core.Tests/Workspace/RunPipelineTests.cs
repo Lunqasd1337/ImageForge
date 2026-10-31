@@ -284,6 +284,37 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_without_enough_space_stops_before_copying_anything()
+    {
+        var log = new List<string>();
+
+        var result = await Pipeline(log, freeSpace: _ => 1L << 30).RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("space-check");
+        result.Error.ShouldNotBeNull().ShouldContain("Not enough space");
+        Directory.Exists(_paths.Base).ShouldBeFalse();
+        _servicing.Calls.ShouldBeEmpty();
+        log.ShouldContain(l => l.StartsWith("space: work folder volume needs ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Space_is_checked_again_before_the_export_and_the_assembly()
+    {
+        var free = 1L << 50;
+        var result = await Pipeline(beforeStep: step => free = step == "export" ? 1L << 20 : free, freeSpace: _ => free).RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("export");
+        result.Error.ShouldNotBeNull().ShouldContain("Not enough space");
+
+        free = 1L << 50;
+        var assemble = await Pipeline(beforeStep: step => free = step == "assemble" ? 1L << 20 : free, freeSpace: _ => free).RunAsync(Request(), Ct);
+        assemble.FailedStep.ShouldBe("assemble");
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Recovery_without_an_interrupted_run_does_nothing()
     {
         (await new RunRecovery(_paths, _servicing).RecoverAsync(Ct)).Outcome.ShouldBe(RecoveryOutcome.NothingToDo);
@@ -812,9 +843,10 @@ public sealed class RunPipelineTests : IDisposable
 
     private WorkspaceState State() => new StateStore<WorkspaceState>(_paths.StateFile).Load().State!;
 
-    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null) =>
+    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null, Func<string, long?>? freeSpace = null) =>
         new(_paths, _servicing, Guid.NewGuid)
         {
+            FreeSpace = freeSpace ?? (_ => null),
             Log = log is null ? null : log.Add,
             BeforeStep = beforeStep is null ? null : (step, _) =>
             {

@@ -38,6 +38,16 @@ public sealed class ImageInspectionTests : IDisposable
     }
 
     [Fact]
+    public async Task Without_space_for_the_base_copy_nothing_is_copied()
+    {
+        var inspection = new ImageInspection(_paths, _servicing) { FreeSpace = _ => 1024 };
+
+        (await Should.ThrowAsync<IOException>(() => inspection.InspectAsync(_source, Guid.NewGuid(), 1, Ct))).Message.ShouldContain("Not enough space");
+        Directory.Exists(_paths.Base).ShouldBeFalse();
+        _servicing.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Reads_features_with_parents_capabilities_and_the_netfx3_source()
     {
         _servicing.Features["NetFx3"] = "Disabled with Payload Removed";

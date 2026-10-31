@@ -140,7 +140,7 @@ Remove-Item C:\IF\exfat.vhdx, C:\IF\small.vhdx, C:\IF\vdisk.txt, C:\IF\vdisk-off
 ```powershell
 $R = "C:\IF\result-gaps"
 New-Item -ItemType Directory C:\IF\mount -Force | Out-Null
-& $X mount $R\sources\install.wim 1 C:\IF\mount
+& $X mount $R\sources\install.wim 3 C:\IF\mount
 & $E feature-list C:\IF\mount | Select-String "Printing-Foundation-InternetPrinting-Client "
 & $E appx-list C:\IF\mount | Select-String "Clipchamp"
 & $E package-list C:\IF\mount | Select-String "RollupFix|NDP"
@@ -150,7 +150,7 @@ Get-ChildItem C:\IF\ws-gaps -Force | Select-Object Name
 & $X host-check
 Stop-Transcript
 ```
-Номер образа в `mount` — тот, что выбран в «Редакции» (по умолчанию Pro, 1 в фикстуре).
+Номер образа в `mount` — тот, что выбран в «Редакции» (Pro, в фикстуре 3).
 
 Ожидается:
 - компонент в состоянии `DisabledWithPayloadRemoved`;

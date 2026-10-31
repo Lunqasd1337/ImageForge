@@ -44,7 +44,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public partial int EditionIndex { get; set; } = -1;
 
     [ObservableProperty]
-    public partial string EditionStatus { get; set; } = "Редакции появятся после «Прочитать образ»; по умолчанию меняется Pro, остальные остаются как есть.";
+    public partial string EditionStatus { get; set; } = Ui.EditionsBeforeInspect;
 
     /// <summary>The .reg file to apply; empty plans the M1 validation marker.</summary>
     [ObservableProperty]
@@ -60,13 +60,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public partial string AnsiCodePage { get; set; } = "1251";
 
     [ObservableProperty]
-    public partial string Status { get; set; } = "Движок не подключён.";
+    public partial string Status { get; set; } = Ui.EngineNotConnected;
 
     [ObservableProperty]
     public partial string Log { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial string OperationPreview { get; set; } = "Превью появится после подготовки: укажите папки и нажмите «Подготовить».";
+    public partial string OperationPreview { get; set; } = Ui.PreviewBeforePrepare;
 
     [ObservableProperty]
     public partial string PublishedPath { get; set; } = string.Empty;
@@ -88,19 +88,19 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<AppxItem> Apps { get; } = [];
 
     [ObservableProperty]
-    public partial string AppsStatus { get; set; } = "Образ ещё не прочитан. Чтение копирует дистрибутив в рабочую папку (если копии ещё нет) и монтирует её только для чтения.";
+    public partial string AppsStatus { get; set; } = Ui.AppsNotRead;
 
     /// <summary>Windows features of the last inspection; the check box is the wanted state.</summary>
     public ObservableCollection<FeatureItem> Features { get; } = [];
 
     [ObservableProperty]
-    public partial string FeaturesStatus { get; set; } = "Компоненты ещё не прочитаны.";
+    public partial string FeaturesStatus { get; set; } = Ui.FeaturesNotRead;
 
     /// <summary>Installed capabilities of the last inspection; a check marks one for removal.</summary>
     public ObservableCollection<CapabilityItem> Capabilities { get; } = [];
 
     [ObservableProperty]
-    public partial string CapabilitiesStatus { get; set; } = "Дополнительные компоненты ещё не прочитаны.";
+    public partial string CapabilitiesStatus { get; set; } = Ui.CapabilitiesNotRead;
 
     // Every capability that can be added; AvailableCapabilities shows those matching the filter, marks are kept here.
     private readonly List<CapabilityItem> _available = [];
@@ -122,7 +122,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<InstalledDriverItem> ImageDrivers { get; } = [];
 
     [ObservableProperty]
-    public partial string DriversStatus { get; set; } = "Драйверы образа ещё не прочитаны.";
+    public partial string DriversStatus { get; set; } = Ui.DriversNotRead;
 
     /// <summary>A folder of driver packages, searched recursively; needed only for additions.</summary>
     [ObservableProperty]
@@ -132,7 +132,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<DriverPackageItem> DriverPackages { get; } = [];
 
     [ObservableProperty]
-    public partial string DriverPackagesStatus { get; set; } = "Укажите папку с драйверами и нажмите «Найти пакеты».";
+    public partial string DriverPackagesStatus { get; set; } = Ui.DriverFolderPrompt;
 
     /// <summary>The user accepts adding packages without a catalog (DISM ForceUnsigned).</summary>
     [ObservableProperty]
@@ -146,7 +146,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private string? _scannedDriverFolder;
 
     [ObservableProperty]
-    public partial string UpdatesStatus { get; set; } = "Обновления образа ещё не прочитаны.";
+    public partial string UpdatesStatus { get; set; } = Ui.UpdatesNotRead;
 
     /// <summary>A folder of .msu and .cab updates, searched recursively; needed only for additions.</summary>
     [ObservableProperty]
@@ -156,7 +156,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<UpdatePackageItem> UpdatePackages { get; } = [];
 
     [ObservableProperty]
-    public partial string UpdatePackagesStatus { get; set; } = "Укажите папку с обновлениями и нажмите «Найти обновления».";
+    public partial string UpdatePackagesStatus { get; set; } = Ui.UpdateFolderPrompt;
 
     // The folder UpdatePackages was found in; the engine scans and hashes it again when planning.
     private string? _scannedUpdateFolder;
@@ -192,7 +192,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (!_showingEditions)
         {
             FoldersChanged(keepEditions: true);
-            EditionStatus = "Редакция изменилась; нажмите «Прочитать образ».";
+            EditionStatus = Ui.EditionChanged;
         }
     }
 
@@ -211,7 +211,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DropPlan();
         DriverPackages.Clear();
         _scannedDriverFolder = null;
-        DriverPackagesStatus = "Папка изменилась; нажмите «Найти пакеты».";
+        DriverPackagesStatus = Ui.DriverFolderChanged;
     }
 
     partial void OnUpdatePathChanged(string value)
@@ -219,7 +219,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DropPlan();
         UpdatePackages.Clear();
         _scannedUpdateFolder = null;
-        UpdatePackagesStatus = "Папка изменилась; нажмите «Найти обновления».";
+        UpdatePackagesStatus = Ui.UpdateFolderChanged;
     }
 
     partial void OnForceUnsignedChanged(bool value) => DropPlan();
@@ -246,11 +246,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         UpdatePackages.Clear();
         _scannedUpdateFolder = null;
         var folder = UpdatePath.Trim().Trim('"');
-        UpdatePackagesStatus = "Чтение и хеширование файлов (несколько секунд на гигабайт)...";
+        UpdatePackagesStatus = Ui.UpdatesHashing;
         var scanned = await Task.Run(() => UpdateFolder.Scan(folder)).ConfigureAwait(true);
         if (scanned.Problem is { } problem)
         {
-            UpdatePackagesStatus = "Папка не подходит: " + problem;
+            UpdatePackagesStatus = (Ui.FolderInvalid + " ") + problem;
             return;
         }
 
@@ -261,7 +261,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         _scannedUpdateFolder = folder;
-        Append($"Папка обновлений {folder}: файлов {scanned.Packages.Count}, годных {UpdatePackages.Count(p => p.CanSelect)}");
+        Append(Ui.LogUpdateFolder(folder, scanned.Packages.Count, UpdatePackages.Count(p => p.CanSelect)));
         ShowUpdatePackagesStatus();
     }
 
@@ -272,11 +272,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         DriverPackages.Clear();
         _scannedDriverFolder = null;
         var folder = DriverPath.Trim().Trim('"');
-        DriverPackagesStatus = "Поиск пакетов...";
+        DriverPackagesStatus = Ui.DriversSearching;
         var scanned = await Task.Run(() => DriverFolder.Scan(folder)).ConfigureAwait(true);
         if (scanned.Problem is { } problem)
         {
-            DriverPackagesStatus = "Папка не подходит: " + problem;
+            DriverPackagesStatus = (Ui.FolderInvalid + " ") + problem;
             return;
         }
 
@@ -287,7 +287,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         _scannedDriverFolder = folder;
-        Append($"Папка драйверов {folder}: INF {scanned.Packages.Count}, годных для x64 {DriverPackages.Count(p => p.CanSelect)}");
+        Append(Ui.LogDriverFolder(folder, scanned.Packages.Count, DriverPackages.Count(p => p.CanSelect)));
         ShowDriverPackagesStatus();
     }
 
@@ -297,14 +297,14 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectEngineAsync(CancellationToken ct)
     {
-        Status = "Запуск движка (потребуется подтверждение UAC)...";
+        Status = Ui.EngineStarting;
         IsBusy = true;
         try
         {
             _engine = await EngineClient.StartAsync(ct).ConfigureAwait(true);
             var info = _engine.Info;
-            Status = "Движок подключён. Укажите папки и нажмите «Подготовить».";
-            Append($"Движок {info.EngineVersion}, протокол {info.ProtocolVersion}, PID {info.ProcessId}, экземпляр {info.InstanceId}");
+            Status = Ui.EngineConnected;
+            Append(Ui.LogEngine(info.EngineVersion, info.ProtocolVersion, info.ProcessId, info.InstanceId));
         }
         catch (EngineLaunchException ex)
         {
@@ -313,7 +313,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Win32Exception ex)
         {
-            Status = "Не удалось запустить движок.";
+            Status = Ui.EngineStartFailed;
             Append(ex.ToString());
         }
         finally
@@ -340,11 +340,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 return;
             }
 
-            Status = "Чтение приложений и компонентов из образа...";
+            Status = Ui.Inspecting;
             var inspection = await _engine!.Service.InspectAsync(new UiProgress(this), ct).ConfigureAwait(true);
             if (inspection.Problems.Count > 0)
             {
-                AppsStatus = "Образ не прочитан: " + string.Join("; ", inspection.Problems);
+                AppsStatus = (Ui.ImageNotRead + " ") + string.Join("; ", inspection.Problems);
                 Status = AppsStatus;
                 ShowWorkspace(await _engine.Service.GetWorkspaceAsync(ct).ConfigureAwait(true));
                 return;
@@ -355,16 +355,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 Apps.Add(new AppxItem(package, DropPlan));
             }
 
-            AppsStatus = $"Предустановленных приложений: {inspection.Packages.Count}. Отметьте те, что нужно удалить.";
+            AppsStatus = Ui.AppsCount(inspection.Packages.Count);
             ShowFeatures(inspection);
             ShowCapabilities(inspection);
             ShowDrivers(inspection);
             ShowUpdates(inspection);
-            Status = "Образ прочитан. Отметьте изменения и нажмите «Подготовить».";
+            Status = Ui.ImageRead;
         }
         catch (RemoteInvocationException ex)
         {
-            Status = "Движок отклонил запрос: " + ex.Message;
+            Status = (Ui.EngineRejected + " ") + ex.Message;
             Append(ex.ToString());
         }
         catch (ConnectionLostException ex)
@@ -390,7 +390,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (workspace.Problems.Count > 0)
         {
             _opened = null;
-            Status = "Папки не подходят: " + string.Join("; ", workspace.Problems.Select(Describe));
+            Status = (Ui.FoldersInvalid + " ") + string.Join("; ", workspace.Problems.Select(Describe));
             return false;
         }
 
@@ -399,7 +399,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ShowWorkspace(workspace);
         if (workspace.RecoveryRequired)
         {
-            Status = "Предыдущий запуск или чтение не завершены. Нажмите «Восстановить» и повторите.";
+            Status = Ui.RecoveryNeeded;
             return false;
         }
 
@@ -444,18 +444,18 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             }
 
             var plan = await _engine!.Service.PlanAsync(options, ct).ConfigureAwait(true);
-            var encoding = plan.FileEncoding is null ? string.Empty : $" Кодировка файла: {plan.FileEncoding}.";
+            var encoding = plan.FileEncoding is null ? string.Empty : (" " + Ui.RegFileEncoding(plan.FileEncoding));
             if (plan.FileDiagnostics.Count > 0)
             {
-                Status = $"Файл .reg не принят, ничего не будет применено.{encoding}";
+                Status = Ui.RegFileRejected(encoding);
                 OperationPreview = string.Join(Environment.NewLine, plan.FileDiagnostics.Select(RegFileDiagnosticText.Describe));
                 return;
             }
 
             if (plan.Diagnostics.Count > 0)
             {
-                Status = "План не построен, ничего не будет применено.";
-                OperationPreview = string.Join(Environment.NewLine, plan.Diagnostics.Select(d => $"изменение {d.ChangeIndex + 1}: {d.Message}"));
+                Status = Ui.PlanNotBuilt;
+                OperationPreview = string.Join(Environment.NewLine, plan.Diagnostics.Select(d => Ui.PlanDiagnostic(d.ChangeIndex + 1, d.Message)));
                 return;
             }
 
@@ -475,21 +475,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
-            var apps = plan.AppxRemovals.Count > 0 ? $" Удаляемых приложений: {plan.AppxRemovals.Count}." : string.Empty;
-            var capabilities = (plan.CapabilityRemovals.Count > 0 ? $" Удаляемых дополнительных компонентов: {plan.CapabilityRemovals.Count}." : string.Empty)
-                + (plan.CapabilityAdditions.Count > 0 ? $" Добавляемых: {plan.CapabilityAdditions.Count}." : string.Empty);
-            var features = plan.FeatureChanges is { } f ? $" Включаемых компонентов: {f.Enable.Count}, выключаемых: {f.Disable.Count}." : string.Empty;
-            var drivers = plan.Drivers is { } driverPlan ? $" Удаляемых драйверов: {driverPlan.Remove.Count}, добавляемых: {driverPlan.Add.Count}." : string.Empty;
-            var updates = (plan.Updates is { } updatePlan ? $" Добавляемых обновлений: {updatePlan.Add.Count}." : string.Empty)
-                + (plan.Cleanup is { } cleanupPlan ? $" Очистка хранилища компонентов{(cleanupPlan.ResetBase ? " с /ResetBase" : string.Empty)}." : string.Empty)
-                + (plan.WinRe is { } winRePlan ? $" Обновлений в WinRE: {winRePlan.Add.Count}." : string.Empty)
-                + (plan.Boot is { } bootPlan ? $" Обновлений в boot.wim: {bootPlan.Add.Count}." : string.Empty);
-            Status = $"План готов, изменений реестра: {plan.Preview.Count}.{apps}{capabilities}{features}{drivers}{updates}{encoding} Проверьте превью и нажмите «Запустить».";
-            Append($"План {plan.PlanId}, ревизия {plan.WorkspaceRevision}, отпечаток {plan.Fingerprint}");
+            var apps = plan.AppxRemovals.Count > 0 ? (" " + Ui.PlanApps(plan.AppxRemovals.Count)) : string.Empty;
+            var capabilities = (plan.CapabilityRemovals.Count > 0 ? (" " + Ui.PlanCapabilityRemovals(plan.CapabilityRemovals.Count)) : string.Empty)
+                + (plan.CapabilityAdditions.Count > 0 ? (" " + Ui.PlanCapabilityAdditions(plan.CapabilityAdditions.Count)) : string.Empty);
+            var features = plan.FeatureChanges is { } f ? (" " + Ui.PlanFeatures(f.Enable.Count, f.Disable.Count)) : string.Empty;
+            var drivers = plan.Drivers is { } driverPlan ? (" " + Ui.PlanDrivers(driverPlan.Remove.Count, driverPlan.Add.Count)) : string.Empty;
+            var updates = (plan.Updates is { } updatePlan ? (" " + Ui.PlanUpdates(updatePlan.Add.Count)) : string.Empty)
+                + (plan.Cleanup is { } cleanupPlan ? (" " + Ui.PlanCleanup((cleanupPlan.ResetBase ? (" " + Ui.PlanResetBase) : string.Empty))) : string.Empty)
+                + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count)) : string.Empty)
+                + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count)) : string.Empty);
+            Status = Ui.PlanReady(plan.Preview.Count, apps, capabilities, features, drivers, updates, encoding);
+            Append(Ui.LogPlan(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint));
         }
         catch (RemoteInvocationException ex)
         {
-            Status = "Движок отклонил запрос: " + ex.Message;
+            Status = (Ui.EngineRejected + " ") + ex.Message;
             Append(ex.ToString());
         }
         catch (ConnectionLostException ex)
@@ -516,7 +516,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var encoding = (RegFileEncoding)RegFileEncodingIndex;
         if (!int.TryParse(AnsiCodePage, NumberStyles.None, CultureInfo.InvariantCulture, out var codePage) || codePage <= 0)
         {
-            Status = "Кодовая страница ANSI должна быть числом, например 1251.";
+            Status = Ui.AnsiCodePageInvalid;
             return false;
         }
 
@@ -525,13 +525,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var info = new FileInfo(RegFilePath.Trim().Trim('"'));
             if (!info.Exists)
             {
-                Status = "Файл .reg не найден: " + info.FullName;
+                Status = (Ui.RegFileNotFound + " ") + info.FullName;
                 return false;
             }
 
             if (info.Length > RegFileImport.MaxBytes)
             {
-                Status = $"Файл .reg больше {RegFileImport.MaxBytes / 1024} КБ, такие файлы не принимаются.";
+                Status = Ui.RegFileTooLarge(RegFileImport.MaxBytes / 1024);
                 return false;
             }
 
@@ -540,7 +540,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            Status = "Не удалось прочитать файл .reg: " + ex.Message;
+            Status = (Ui.RegFileReadFailed + " ") + ex.Message;
             return false;
         }
     }
@@ -551,8 +551,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         var plan = _plan!;
         IsBusy = true;
         PublishedPath = string.Empty;
-        Status = "Выполняется. Не закрывайте окно: прерванный запуск потребует восстановления.";
-        Append($"Запуск плана {plan.PlanId}");
+        Status = Ui.Running;
+        Append(Ui.LogRun(plan.PlanId));
         try
         {
             var outcome = await _engine!.Service.StartAsync(
@@ -560,24 +560,24 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             DropPlan();
             if (outcome.Rejection != StartPlanRejection.None)
             {
-                Status = $"Запуск отклонён ({outcome.Rejection}). Нажмите «Подготовить» ещё раз.";
+                Status = Ui.RunRejected(outcome.Rejection);
             }
             else if (outcome.Status == RunStatus.Published)
             {
                 PublishedPath = outcome.PublishedPath ?? string.Empty;
-                Status = "Готово. Результат сохранён.";
+                Status = Ui.RunDone;
             }
             else
             {
-                Status = $"Запуск не удался ({outcome.Status}) на шаге {outcome.FailedStep}: {outcome.Error}. Исходник и прежний результат не изменены.";
+                Status = Ui.RunFailed(outcome.Status, outcome.FailedStep, outcome.Error);
             }
 
-            Append($"Итог: {outcome.Rejection} {outcome.Status} {outcome.FailedStep} {outcome.Error} {outcome.PublishedPath}");
+            Append(Ui.LogOutcome(outcome.Rejection, outcome.Status, outcome.FailedStep, outcome.Error, outcome.PublishedPath));
             ShowWorkspace(await _engine.Service.GetWorkspaceAsync(ct).ConfigureAwait(true));
         }
         catch (RemoteInvocationException ex)
         {
-            Status = "Ошибка движка: " + ex.Message;
+            Status = (Ui.EngineError + " ") + ex.Message;
             Append(ex.ToString());
         }
         catch (ConnectionLostException ex)
@@ -596,23 +596,23 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RecoverAsync(CancellationToken ct)
     {
         IsBusy = true;
-        Status = "Восстановление...";
+        Status = Ui.Recovering;
         try
         {
             var result = await _engine!.Service.RecoverAsync(new UiProgress(this), ct).ConfigureAwait(true);
             foreach (var line in result.Actions.Concat(result.Problems))
             {
-                Append("Восстановление: " + line);
+                Append((Ui.LogRecovery + " ") + line);
             }
 
             Status = result.Outcome == RecoveryOutcome.StillRequired
-                ? "Восстановить автоматически не удалось. Пришлите журнал."
-                : "Восстановление завершено. Нажмите «Подготовить».";
+                ? Ui.RecoveryFailed
+                : Ui.RecoveryDone;
             ShowWorkspace(await _engine.Service.GetWorkspaceAsync(ct).ConfigureAwait(true));
         }
         catch (RemoteInvocationException ex)
         {
-            Status = "Ошибка движка: " + ex.Message;
+            Status = (Ui.EngineError + " ") + ex.Message;
             Append(ex.ToString());
         }
         catch (ConnectionLostException ex)
@@ -668,25 +668,25 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         var chosen = _editions.FirstOrDefault(e => e.Index == workspace.ImageIndex);
         EditionStatus = chosen is null
-            ? $"Редакции install.wim не прочитаны; меняется образ {workspace.ImageIndex}."
-            : $"Меняется «{chosen.Name}» (образ {chosen.Index} из {_editions.Count}); остальные редакции попадут в результат без изменений.";
+            ? Ui.EditionsNotRead(workspace.ImageIndex)
+            : Ui.EditionChosen(chosen.Name, chosen.Index, _editions.Count);
         Append(EditionStatus);
     }
 
     private void ShowWorkspace(WorkspaceSummary workspace)
     {
         RecoveryRequired = workspace.RecoveryRequired;
-        var last = workspace.LastRun is { } run ? $"последний запуск {run.RunId:N}: {run.Status}{(run.FailedStep is null ? string.Empty : $" на шаге {run.FailedStep}")}" : "запусков не было";
-        Append($"Рабочая папка {workspace.WorkspaceId}, ревизия {workspace.Revision}, цель {workspace.Target}, {last}");
+        var last = workspace.LastRun is { } run ? Ui.LastRun(run.RunId, run.Status, (run.FailedStep is null ? string.Empty : (" " + Ui.LastRunStep(run.FailedStep)))) : Ui.NoRuns;
+        Append(Ui.LogWorkspace(workspace.WorkspaceId, workspace.Revision, workspace.Target, last));
     }
 
     private static string DescribeRemoval(AppxPackageView package) =>
-        $"Удалить приложение {package.DisplayName} ({package.PackageName})" + (package.Warning is { } warning ? $"{Environment.NewLine}  Внимание: {warning}" : string.Empty);
+        Ui.PreviewAppx(package.DisplayName, package.PackageName) + (package.Warning is { } warning ? Environment.NewLine + "  " + Ui.Warning + " " + warning : string.Empty);
 
     private string DescribeCapabilityRemoval(string name)
     {
         var shown = Capabilities.FirstOrDefault(c => c.Capability.Name == name)?.Title;
-        return shown is null || shown == name ? $"Удалить дополнительный компонент {name}" : $"Удалить дополнительный компонент {shown} ({name})";
+        return shown is null || shown == name ? Ui.PreviewCapabilityRemove(name) : Ui.PreviewCapabilityRemoveNamed(shown, name);
     }
 
     private IEnumerable<string> DescribeCapabilityAdditions(PlanSummary plan)
@@ -694,13 +694,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var name in plan.CapabilityAdditions)
         {
             var shown = _available.FirstOrDefault(c => c.Capability.Name == name)?.Title;
-            yield return shown is null || shown == name ? $"Добавить дополнительный компонент {name}" : $"Добавить дополнительный компонент {shown} ({name})";
+            yield return shown is null || shown == name ? Ui.PreviewCapabilityAdd(name) : Ui.PreviewCapabilityAddNamed(shown, name);
         }
 
         if (plan.CapabilityAdditions.Count > 0)
         {
-            yield return $"  Источник: {plan.FodSource}";
-            yield return "  DISM может сам добавить нужные им компоненты (например, базовый языковой пакет); они будут перечислены в журнале запуска.";
+            yield return ("  " + Ui.PreviewSource(plan.FodSource));
+            yield return ("  " + Ui.PreviewCapabilityDependencies);
         }
     }
 
@@ -720,7 +720,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void ShowAvailableStatus() =>
         AvailableStatus = _available.Count == 0 ? string.Empty
-            : $"Можно добавить: {_available.Count}, показано: {AvailableCapabilities.Count}, отмечено: {_available.Count(c => c.IsSelected == true)}.";
+            : Ui.AvailableCount(_available.Count, AvailableCapabilities.Count, _available.Count(c => c.IsSelected == true));
 
     private void AvailableSelectionChanged()
     {
@@ -737,22 +737,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         foreach (var name in changes.Disable)
         {
-            yield return $"Выключить компонент {FeatureTitle(name)}{(changes.Added.Contains(name) ? " (добавлен планом: зависит от выключаемого)" : string.Empty)}";
+            yield return Ui.PreviewFeatureDisable(FeatureTitle(name), (changes.Added.Contains(name) ? (" " + Ui.PreviewFeatureAddedOff) : string.Empty));
         }
 
         foreach (var name in changes.Enable)
         {
-            yield return $"Включить компонент {FeatureTitle(name)}{(changes.Added.Contains(name) ? " (добавлен планом: нужен включаемому)" : string.Empty)}";
+            yield return Ui.PreviewFeatureEnable(FeatureTitle(name), (changes.Added.Contains(name) ? (" " + Ui.PreviewFeatureAddedOn) : string.Empty));
         }
 
         if (changes.UsesMediaSxs)
         {
-            yield return "  Файлы .NET Framework 3.5 будут взяты из sources\\sxs дистрибутива.";
+            yield return ("  " + Ui.PreviewNetFx3Source);
         }
 
         if (changes.Enable.Count > 0)
         {
-            yield return "  DISM может сам включить вложенные компоненты по умолчанию; они будут перечислены в журнале запуска.";
+            yield return ("  " + Ui.PreviewFeatureDefaults);
         }
     }
 
@@ -765,26 +765,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         foreach (var removal in drivers.Remove)
         {
-            yield return $"Удалить драйвер {removal.Description}{(removal.BootCritical ? " (нужен для загрузки)" : string.Empty)}";
+            yield return Ui.PreviewDriverRemove(removal.Description, (removal.BootCritical ? (" " + Ui.PreviewDriverBootCritical) : string.Empty));
         }
 
         foreach (var addition in drivers.Add)
         {
-            yield return $"Добавить драйвер {addition.Description}{(addition.ForceUnsigned ? " (без подписи, ForceUnsigned)" : string.Empty)}";
+            yield return Ui.PreviewDriverAdd(addition.Description, (addition.ForceUnsigned ? (" " + Ui.PreviewDriverUnsigned) : string.Empty));
             if (addition.SameContent.Count > 0)
             {
-                yield return $"  То же содержимое, добавляется один раз: {string.Join(", ", addition.SameContent)}";
+                yield return ("  " + Ui.PreviewDriverSameContent(string.Join(", ", addition.SameContent)));
             }
         }
 
         if (drivers.Source is { } source)
         {
-            yield return $"  Источник: {source}";
+            yield return ("  " + Ui.PreviewSource(source));
         }
 
         foreach (var warning in drivers.Warnings)
         {
-            yield return "  Внимание: " + warning;
+            yield return "  " + Ui.Warning + " " + warning;
         }
     }
 
@@ -797,26 +797,26 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         foreach (var addition in updates.Add)
         {
-            yield return $"Добавить обновление {addition.Description}";
+            yield return Ui.PreviewUpdateAdd(addition.Description);
             if (addition.SameContent.Count > 0)
             {
-                yield return $"  То же содержимое, ставится один раз: {string.Join(", ", addition.SameContent)}";
+                yield return ("  " + Ui.PreviewUpdateSameContent(string.Join(", ", addition.SameContent)));
             }
         }
 
         if (updates.Add.Count > 0)
         {
-            yield return "  Установка накопительного обновления идёт 10–15 минут, сохранение образа после неё — до получаса; отмена их не прерывает.";
+            yield return ("  " + Ui.PreviewUpdateDuration);
         }
 
         if (updates.Source is { } source)
         {
-            yield return $"  Источник: {source}";
+            yield return ("  " + Ui.PreviewSource(source));
         }
 
         foreach (var warning in updates.Warnings)
         {
-            yield return "  Внимание: " + warning;
+            yield return "  " + Ui.Warning + " " + warning;
         }
     }
 
@@ -827,15 +827,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             yield break;
         }
 
-        yield return @"WinRE (Windows\System32\Recovery\Winre.wim): извлечь, обновить, очистить с /ResetBase, экспортировать и вернуть в образ";
+        yield return Ui.PreviewWinRe;
         foreach (var addition in winRe.Add)
         {
-            yield return $"  Добавить в WinRE {addition.Description}";
+            yield return ("  " + Ui.PreviewWinReAdd(addition.Description));
         }
 
         foreach (var warning in winRe.Warnings)
         {
-            yield return "  Внимание: " + warning;
+            yield return "  " + Ui.Warning + " " + warning;
         }
     }
 
@@ -846,15 +846,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             yield break;
         }
 
-        yield return @"boot.wim (sources\boot.wim): обновить все образы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; setup.exe и setuphost.exe программы установки — в sources носителя";
+        yield return Ui.PreviewBoot;
         foreach (var addition in boot.Add)
         {
-            yield return $"  Добавить в boot.wim {addition.Description}";
+            yield return ("  " + Ui.PreviewBootAdd(addition.Description));
         }
 
         foreach (var warning in boot.Warnings)
         {
-            yield return "  Внимание: " + warning;
+            yield return "  " + Ui.Warning + " " + warning;
         }
     }
 
@@ -866,25 +866,25 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         yield return cleanup.ResetBase
-            ? "Очистить хранилище компонентов (StartComponentCleanup /ResetBase) после остальных изменений"
-            : "Очистить хранилище компонентов (StartComponentCleanup) после остальных изменений";
+            ? Ui.PreviewCleanupResetBase
+            : Ui.PreviewCleanup;
         foreach (var warning in cleanup.Warnings)
         {
-            yield return "  Внимание: " + warning;
+            yield return "  " + Ui.Warning + " " + warning;
         }
     }
 
     private void ShowUpdates(InspectionSummary inspection)
     {
         UpdatesStatus = inspection.PackageProblems.Count > 0
-            ? "Пакеты образа не прочитаны: " + string.Join("; ", inspection.PackageProblems)
-            : $"Пакетов обслуживания: {inspection.PackageCount}. Накопительное обновление: {inspection.Rollup ?? "нет"}, стек обслуживания: {inspection.ServicingStack ?? "нет"}.";
+            ? (Ui.PackagesNotRead + " ") + string.Join("; ", inspection.PackageProblems)
+            : Ui.PackagesStatus(inspection.PackageCount, inspection.Rollup ?? Ui.None, inspection.ServicingStack ?? Ui.None);
     }
 
     private void ShowUpdatePackagesStatus() =>
-        UpdatePackagesStatus = $"Найдено файлов: {UpdatePackages.Count}, можно добавить: {UpdatePackages.Count(p => p.CanSelect)}, " +
-            $"в образ: {UpdatePackages.Count(p => p.IsSelected == true)}, в WinRE: {UpdatePackages.Count(p => p.IsForWinRe == true)}, " +
-            $"в boot.wim: {UpdatePackages.Count(p => p.IsForBoot == true)}.";
+        UpdatePackagesStatus = (Ui.UpdateFilesFound(UpdatePackages.Count, UpdatePackages.Count(p => p.CanSelect)) + " ") +
+            (Ui.UpdateFilesTargets(UpdatePackages.Count(p => p.IsSelected == true), UpdatePackages.Count(p => p.IsForWinRe == true)) + " ") +
+            Ui.UpdateFilesBoot(UpdatePackages.Count(p => p.IsForBoot == true));
 
     private void UpdateSelectionChanged()
     {
@@ -896,7 +896,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (inspection.DriverProblems.Count > 0)
         {
-            DriversStatus = "Драйверы образа не прочитаны: " + string.Join("; ", inspection.DriverProblems);
+            DriversStatus = (Ui.ImageDriversNotRead + " ") + string.Join("; ", inspection.DriverProblems);
             return;
         }
 
@@ -906,12 +906,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         DriversStatus = inspection.Drivers.Count == 0
-            ? "Сторонних драйверов в образе нет."
-            : $"Сторонних драйверов: {inspection.Drivers.Count}, нужных для загрузки: {inspection.Drivers.Count(d => d.BootCritical)}. Отметьте те, что нужно удалить.";
+            ? Ui.ImageDriversNone
+            : Ui.ImageDriversCount(inspection.Drivers.Count, inspection.Drivers.Count(d => d.BootCritical));
     }
 
     private void ShowDriverPackagesStatus() =>
-        DriverPackagesStatus = $"Найдено INF: {DriverPackages.Count}, можно добавить: {DriverPackages.Count(p => p.CanSelect)}, отмечено: {DriverPackages.Count(p => p.IsSelected == true)}.";
+        DriverPackagesStatus = Ui.DriverPackagesCount(DriverPackages.Count, DriverPackages.Count(p => p.CanSelect), DriverPackages.Count(p => p.IsSelected == true));
 
     private void DriverSelectionChanged()
     {
@@ -929,7 +929,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (inspection.FeatureProblems.Count > 0)
         {
-            FeaturesStatus = "Компоненты изменить нельзя: " + string.Join("; ", inspection.FeatureProblems);
+            FeaturesStatus = (Ui.FeaturesBlocked + " ") + string.Join("; ", inspection.FeatureProblems);
             return;
         }
 
@@ -938,15 +938,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             Features.Add(new FeatureItem(feature, DropPlan));
         }
 
-        FeaturesStatus = $"Компонентов: {inspection.Features.Count}, включено: {inspection.Features.Count(f => f.IsOn)}. "
-            + "Отметка означает «включён после запуска»: снимите её, чтобы выключить, поставьте, чтобы включить.";
+        FeaturesStatus = (Ui.FeaturesCount(inspection.Features.Count, inspection.Features.Count(f => f.IsOn)) + " ")
+            + Ui.FeaturesHint;
     }
 
     private void ShowCapabilities(InspectionSummary inspection)
     {
         if (inspection.CapabilityProblems.Count > 0)
         {
-            CapabilitiesStatus = "Дополнительные компоненты не прочитаны: " + string.Join("; ", inspection.CapabilityProblems);
+            CapabilitiesStatus = (Ui.CapabilitiesNotReadReason + " ") + string.Join("; ", inspection.CapabilityProblems);
             return;
         }
 
@@ -957,7 +957,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
 
         _available.AddRange(inspection.AvailableCapabilities.Select(c => new CapabilityItem(c, AvailableSelectionChanged)));
         ShowAvailable();
-        CapabilitiesStatus = $"Установленных дополнительных компонентов: {inspection.Capabilities.Count}. Отметьте те, что нужно удалить.";
+        CapabilitiesStatus = Ui.CapabilitiesCount(inspection.Capabilities.Count);
     }
 
     private void ClearInventory()
@@ -987,7 +987,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             package.IsForBoot = false;
         }
 
-        UpdatesStatus = "Обновления образа ещё не прочитаны.";
+        UpdatesStatus = Ui.UpdatesNotRead;
     }
 
     private void FoldersChanged(bool keepEditions = false)
@@ -1001,16 +1001,16 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             EditionNames.Clear();
             EditionIndex = -1;
             _showingEditions = false;
-            EditionStatus = "Папки изменились; редакции появятся после «Прочитать образ».";
+            EditionStatus = Ui.FoldersChangedEditions;
         }
 
         if (Apps.Count > 0 || Features.Count > 0 || Capabilities.Count > 0 || ImageDrivers.Count > 0)
         {
             ClearInventory();
-            AppsStatus = "Папки изменились; прочитайте образ снова.";
-            FeaturesStatus = "Компоненты ещё не прочитаны.";
-            CapabilitiesStatus = "Дополнительные компоненты ещё не прочитаны.";
-            DriversStatus = "Драйверы образа ещё не прочитаны.";
+            AppsStatus = Ui.FoldersChangedApps;
+            FeaturesStatus = Ui.FeaturesNotRead;
+            CapabilitiesStatus = Ui.CapabilitiesNotRead;
+            DriversStatus = Ui.DriversNotRead;
         }
     }
 
@@ -1030,22 +1030,22 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         ConnectEngineCommand.NotifyCanExecuteChanged();
         PrepareCommand.NotifyCanExecuteChanged();
         InspectCommand.NotifyCanExecuteChanged();
-        Status = "Связь с движком потеряна. Подключите движок снова; незавершённый запуск потребует восстановления.";
+        Status = Ui.EngineLost;
         Append(ex.ToString());
     }
 
     private static string Describe(LocationProblem problem) => problem.Kind switch
     {
-        LocationProblemKind.NotLocalPath => $"{Name(problem.Location)}: нужен полный путь на локальном диске",
-        LocationProblemKind.Same => $"{Name(problem.Location)} и {Name(problem.Other)} совпадают",
-        _ => $"{Name(problem.Location)} находится внутри папки «{Name(problem.Other)}»",
+        LocationProblemKind.NotLocalPath => Ui.LocationNotLocal(Name(problem.Location)),
+        LocationProblemKind.Same => Ui.LocationSame(Name(problem.Location), Name(problem.Other)),
+        _ => Ui.LocationNested(Name(problem.Location), Name(problem.Other)),
     };
 
     private static string Name(string? location) => location switch
     {
-        WorkspaceLocations.Source => "источник",
-        WorkspaceLocations.WorkDir => "рабочая папка",
-        WorkspaceLocations.OutputDir => "папка результата",
+        WorkspaceLocations.Source => Ui.LocationSource,
+        WorkspaceLocations.WorkDir => Ui.LocationWorkDir,
+        WorkspaceLocations.OutputDir => Ui.LocationOutputDir,
         _ => location ?? string.Empty,
     };
 

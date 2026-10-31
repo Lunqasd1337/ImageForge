@@ -39,7 +39,7 @@ public sealed partial class EngineClient : IAsyncDisposable
         var hostPath = Path.Combine(AppContext.BaseDirectory, "engine", "ImageForge.Engine.Host.exe");
         if (!File.Exists(hostPath))
         {
-            throw new EngineLaunchException($"Не найден движок: {hostPath}");
+            throw new EngineLaunchException(Ui.EngineNotFound(hostPath));
         }
 
         using var self = Process.GetCurrentProcess();
@@ -55,11 +55,11 @@ public sealed partial class EngineClient : IAsyncDisposable
         Process process;
         try
         {
-            process = Process.Start(startInfo) ?? throw new EngineLaunchException("Движок не запустился.");
+            process = Process.Start(startInfo) ?? throw new EngineLaunchException(Ui.EngineDidNotStart);
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
         {
-            throw new EngineLaunchException("Запуск движка отменён в окне UAC.", ex);
+            throw new EngineLaunchException(Ui.EngineUacCancelled, ex);
         }
 
         var pipe = new NamedPipeClientStream(".", launch.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -73,7 +73,7 @@ public sealed partial class EngineClient : IAsyncDisposable
 
             if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var serverPid) || serverPid != (uint)process.Id)
             {
-                throw new EngineLaunchException("Канал движка принадлежит другому процессу.");
+                throw new EngineLaunchException(Ui.EnginePipeForeign);
             }
 
             var rpc = EngineRpc.Create(pipe, RpcLimits.Client);
@@ -84,7 +84,7 @@ public sealed partial class EngineClient : IAsyncDisposable
             if (ProtocolHandshake.Check(info) != HandshakeResult.Compatible || info.ProcessId != process.Id)
             {
                 rpc.Dispose();
-                throw new EngineLaunchException($"Несовместимый движок: протокол {info.ProtocolVersion}.");
+                throw new EngineLaunchException(Ui.EngineIncompatible(info.ProtocolVersion));
             }
 
             return new EngineClient(process, pipe, rpc, service, info);

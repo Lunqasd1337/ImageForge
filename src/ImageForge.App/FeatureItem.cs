@@ -19,7 +19,7 @@ public sealed partial class FeatureItem : ObservableObject
 
     public string Title => Feature.DisplayName;
 
-    public string Details => $"{Feature.Name} · {Feature.State}{(Feature.FromMedia ? " · файлы будут взяты из sources\\sxs дистрибутива" : string.Empty)}";
+    public string Details => $"{Feature.Name} · {Feature.State}{(Feature.FromMedia ? " · " + Ui.FeatureFromMedia : string.Empty)}";
 
     public string Note => Feature.BlockedReason ?? string.Empty;
 

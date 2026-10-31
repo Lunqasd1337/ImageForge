@@ -12,7 +12,7 @@ public sealed partial class InstalledDriverItem(InstalledDriver driver, Action s
 
     public string Details => $"{Driver.ClassName} · {Driver.Provider} · {Driver.Date:yyyy-MM-dd} {Driver.Version} · {Driver.Signature}";
 
-    public string Note => Driver.BootCritical ? "Нужен для загрузки: удалить можно только с разрешением ниже." : string.Empty;
+    public string Note => Driver.BootCritical ? Ui.DriverBootCriticalNote : string.Empty;
 
     public bool HasNote => Note.Length > 0;
 
@@ -33,13 +33,13 @@ public sealed partial class DriverPackageItem(ScannedDriver scanned, int sameCon
 
     public string Details => Scanned.Package.Inf is { } inf
         ? $"{inf.Class ?? "-"} · {inf.Provider ?? "-"} · {inf.DriverDate ?? "-"} {inf.DriverVersion ?? "-"} · " +
-          $"{(inf.CatalogFile is { } cat ? "каталог " + cat : "без подписи")} · {(inf.Architectures.Count == 0 ? "-" : string.Join(", ", inf.Architectures))}"
-        : "не INF драйвера";
+          $"{(inf.CatalogFile is { } cat ? (Ui.DriverCatalog + " ") + cat : Ui.DriverNoCatalog)} · {(inf.Architectures.Count == 0 ? "-" : string.Join(", ", inf.Architectures))}"
+        : Ui.DriverNotInf;
 
     public string Note => Scanned.Package.Problems.Count > 0 ? string.Join(" ", Scanned.Package.Problems)
-        : Scanned.ContentHash is null ? "Файлы пакета не прочитаны."
-        : Scanned.Package.IsUnsigned ? "Без подписи: добавляется только с ForceUnsigned (разрешение ниже)."
-        : sameContent > 1 ? $"Такое же содержимое ещё у {sameContent - 1} INF в этой папке; отмеченные копии добавятся один раз."
+        : Scanned.ContentHash is null ? Ui.DriverFilesNotRead
+        : Scanned.Package.IsUnsigned ? Ui.DriverUnsignedNote
+        : sameContent > 1 ? Ui.DriverSameContent(sameContent - 1)
         : string.Empty;
 
     public bool HasNote => Note.Length > 0;

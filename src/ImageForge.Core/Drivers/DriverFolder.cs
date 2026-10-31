@@ -19,7 +19,7 @@ public sealed record DriverFolder(string Folder, IReadOnlyList<ScannedDriver> Pa
         {
             if (!Path.IsPathFullyQualified(folder) || !Directory.Exists(folder))
             {
-                return new(folder, [], "папка не найдена (нужен полный путь)");
+                return new(folder, [], Messages.FolderNotFound);
             }
 
             var packages = Directory.EnumerateFiles(folder, "*.inf", SearchOption.AllDirectories)
@@ -31,7 +31,7 @@ public sealed record DriverFolder(string Folder, IReadOnlyList<ScannedDriver> Pa
                     return new ScannedDriver(package, ContentHash(folder, package));
                 })
                 .ToList();
-            return new(folder, packages, packages.Count == 0 ? "в папке нет файлов .inf" : null);
+            return new(folder, packages, packages.Count == 0 ? Messages.DriverFolderEmpty : null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

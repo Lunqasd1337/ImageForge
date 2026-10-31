@@ -25,7 +25,7 @@ public static class Cabinet
             using var r = new BinaryReader(stream, Encoding.Latin1, leaveOpen: true);
             if (stream.Length < 36 || !r.ReadBytes(4).AsSpan().SequenceEqual("MSCF"u8))
             {
-                return new([], "нет подписи MSCF: это не файл cabinet");
+                return new([], Messages.CabNoSignature);
             }
 
             r.ReadUInt32();
@@ -39,12 +39,12 @@ public static class Cabinet
             var flags = r.ReadUInt16();
             if (size > stream.Length)
             {
-                return new([], $"файл обрезан: в заголовке {size} байт, на диске {stream.Length}");
+                return new([], Messages.CabTruncated(size, stream.Length));
             }
 
             if ((flags & (PrevCabinet | NextCabinet)) != 0)
             {
-                return new([], "многотомный cabinet не поддерживается");
+                return new([], Messages.CabMultiVolume);
             }
 
             stream.Position = filesOffset;
@@ -61,7 +61,7 @@ public static class Cabinet
         }
         catch (EndOfStreamException)
         {
-            return new([], "файл обрезан: таблица файлов не дочитана");
+            return new([], Messages.CabTableTruncated);
         }
     }
 

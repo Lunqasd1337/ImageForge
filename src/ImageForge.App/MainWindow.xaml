@@ -9,44 +9,43 @@
     <StackPanel Margin="24" Spacing="12" MaxWidth="900" HorizontalAlignment="Left">
       <TextBlock Text="ImageForge" Style="{StaticResource TitleTextBlockStyle}" />
 
-      <TextBox Header="Источник (папка дистрибутива, например C:\IF\fixture\media)" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-      <TextBox Header="Рабочая папка (например C:\IF\ws)" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-      <TextBox Header="Папка результата (например C:\IF\result)" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-      <ComboBox Header="Редакция в sources\install.wim" ItemsSource="{x:Bind ViewModel.EditionNames}"
+      <TextBox x:Uid="SourceBox" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox x:Uid="WorkBox" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBox x:Uid="OutputBox" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <ComboBox x:Uid="EditionBox" ItemsSource="{x:Bind ViewModel.EditionNames}"
                 SelectedIndex="{x:Bind ViewModel.EditionIndex, Mode=TwoWay}" MinWidth="360" />
       <TextBlock TextWrapping="Wrap" Text="{x:Bind ViewModel.EditionStatus, Mode=OneWay}" />
 
-      <TextBlock Text="Реестр" Style="{StaticResource SubtitleTextBlockStyle}" />
-      <TextBlock TextWrapping="Wrap"
-                 Text="Файл .reg в формате «Windows Registry Editor Version 5.00». Если не выбраны ни файл, ни другие изменения, применяется проверочный маркер M1." />
+      <TextBlock x:Uid="RegistryTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="RegistryHint" TextWrapping="Wrap" />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBox Header="Файл .reg" Text="{x:Bind ViewModel.RegFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseRegFile_Click" />
-        <Button Grid.Column="2" Content="Убрать" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ClearRegFileCommand}"
+        <TextBox x:Uid="RegFileBox" Text="{x:Bind ViewModel.RegFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button x:Uid="ChooseRegFile" Grid.Column="1" VerticalAlignment="Bottom" Click="ChooseRegFile_Click" />
+        <Button x:Uid="ClearRegFile" Grid.Column="2" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ClearRegFileCommand}"
                 IsEnabled="{x:Bind ViewModel.HasRegFile, Mode=OneWay}" />
       </Grid>
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <ComboBox Header="Кодировка" SelectedIndex="{x:Bind ViewModel.RegFileEncodingIndex, Mode=TwoWay}" MinWidth="160">
-          <x:String>Авто (по BOM)</x:String>
-          <x:String>UTF-16</x:String>
-          <x:String>UTF-8</x:String>
-          <x:String>ANSI</x:String>
+        <ComboBox x:Uid="EncodingBox" SelectedIndex="{x:Bind ViewModel.RegFileEncodingIndex, Mode=TwoWay}" MinWidth="160">
+          <ComboBoxItem x:Uid="EncodingAuto" />
+          <ComboBoxItem x:Uid="EncodingUtf16" />
+          <ComboBoxItem x:Uid="EncodingUtf8" />
+          <ComboBoxItem x:Uid="EncodingAnsi" />
         </ComboBox>
-        <TextBox Header="Кодовая страница ANSI" Text="{x:Bind ViewModel.AnsiCodePage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+        <TextBox x:Uid="AnsiCodePageBox" Text="{x:Bind ViewModel.AnsiCodePage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                  Width="180" IsEnabled="{x:Bind ViewModel.IsAnsi, Mode=OneWay}" />
       </StackPanel>
 
-      <TextBlock Text="Содержимое образа" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="ImageTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Прочитать образ" Command="{x:Bind ViewModel.InspectCommand}" />
+        <Button x:Uid="InspectButton" Command="{x:Bind ViewModel.InspectCommand}" />
       </StackPanel>
 
-      <TextBlock Text="Приложения" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="AppsTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.AppsStatus, Mode=OneWay}" TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{x:Bind ViewModel.Apps}">
         <ItemsControl.ItemTemplate>
@@ -65,9 +64,9 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <TextBlock Text="Компоненты Windows" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="FeaturesTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.FeaturesStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Список компонентов" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="FeaturesExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <ItemsControl ItemsSource="{x:Bind ViewModel.Features}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:FeatureItem">
@@ -86,9 +85,9 @@
         </ItemsControl>
       </Expander>
 
-      <TextBlock Text="Дополнительные компоненты" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="CapabilitiesTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.CapabilitiesStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Список установленных" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="CapabilitiesExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <ItemsControl ItemsSource="{x:Bind ViewModel.Capabilities}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:CapabilityItem">
@@ -105,21 +104,20 @@
         </ItemsControl>
       </Expander>
 
-      <TextBlock Text="Добавить из Features on Demand" Style="{StaticResource BodyStrongTextBlockStyle}" />
-      <TextBlock TextWrapping="Wrap"
-                 Text="Папка LanguagesAndOptionalFeatures с ISO «Languages and Optional Features» той же базовой сборки (для 24H2, 25H2 и 26H2 — 26100). Без Windows Update." />
+      <TextBlock x:Uid="FodTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+      <TextBlock x:Uid="FodHint" TextWrapping="Wrap" />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBox Header="Папка FoD (например E:\LanguagesAndOptionalFeatures)" Text="{x:Bind ViewModel.FodPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseFodFolder_Click" />
+        <TextBox x:Uid="FodBox" Text="{x:Bind ViewModel.FodPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button x:Uid="ChooseFod" Grid.Column="1" VerticalAlignment="Bottom" Click="ChooseFodFolder_Click" />
       </Grid>
       <TextBlock Text="{x:Bind ViewModel.AvailableStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Список доступных для добавления" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="AvailableExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <StackPanel Spacing="8">
-          <TextBox PlaceholderText="Фильтр: имя или часть названия, например OpenSSH или fr-FR"
+          <TextBox x:Uid="AvailableFilter"
                    Text="{x:Bind ViewModel.AvailableFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
           <ItemsControl ItemsSource="{x:Bind ViewModel.AvailableCapabilities}">
             <ItemsControl.ItemTemplate>
@@ -138,9 +136,9 @@
         </StackPanel>
       </Expander>
 
-      <TextBlock Text="Драйверы" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="DriversTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.DriversStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Сторонние драйверы образа" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="ImageDriversExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <ItemsControl ItemsSource="{x:Bind ViewModel.ImageDrivers}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:InstalledDriverItem">
@@ -158,24 +156,23 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </Expander>
-      <CheckBox Content="Разрешить удаление драйверов, нужных для загрузки (образ может перестать загружаться)"
+      <CheckBox x:Uid="AllowBootCritical"
                 IsChecked="{x:Bind ViewModel.AllowBootCritical, Mode=TwoWay}" />
 
-      <TextBlock Text="Добавить драйверы из папки" Style="{StaticResource BodyStrongTextBlockStyle}" />
-      <TextBlock TextWrapping="Wrap"
-                 Text="Папка с пакетами драйверов (INF вместе с .cat и .sys); вложенные папки просматриваются. Пакеты добавляются в образ 1 install.wim." />
+      <TextBlock x:Uid="DriverFolderTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+      <TextBlock x:Uid="DriverFolderHint" TextWrapping="Wrap" />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBox Header="Папка драйверов (например E:\NetKVM\w11\amd64)" Text="{x:Bind ViewModel.DriverPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseDriverFolder_Click" />
-        <Button Grid.Column="2" Content="Найти пакеты" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanDriversCommand}" />
+        <TextBox x:Uid="DriverFolderBox" Text="{x:Bind ViewModel.DriverPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button x:Uid="ChooseDriverFolder" Grid.Column="1" VerticalAlignment="Bottom" Click="ChooseDriverFolder_Click" />
+        <Button x:Uid="ScanDrivers" Grid.Column="2" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanDriversCommand}" />
       </Grid>
       <TextBlock Text="{x:Bind ViewModel.DriverPackagesStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Найденные пакеты" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="DriverPackagesExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <ItemsControl ItemsSource="{x:Bind ViewModel.DriverPackages}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:DriverPackageItem">
@@ -193,25 +190,24 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </Expander>
-      <CheckBox Content="Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)"
+      <CheckBox x:Uid="ForceUnsigned"
                 IsChecked="{x:Bind ViewModel.ForceUnsigned, Mode=TwoWay}" />
 
-      <TextBlock Text="Обновления" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="UpdatesTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.UpdatesStatus, Mode=OneWay}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-      <TextBlock TextWrapping="Wrap"
-                 Text="Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя." />
+      <TextBlock x:Uid="UpdatesHint" TextWrapping="Wrap" />
       <Grid ColumnSpacing="8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBox Header="Папка обновлений (например C:\IF\upd\lcu)" Text="{x:Bind ViewModel.UpdatePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-        <Button Grid.Column="1" Content="Выбрать..." VerticalAlignment="Bottom" Click="ChooseUpdateFolder_Click" />
-        <Button Grid.Column="2" Content="Найти обновления" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanUpdatesCommand}" />
+        <TextBox x:Uid="UpdateFolderBox" Text="{x:Bind ViewModel.UpdatePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <Button x:Uid="ChooseUpdateFolder" Grid.Column="1" VerticalAlignment="Bottom" Click="ChooseUpdateFolder_Click" />
+        <Button x:Uid="ScanUpdates" Grid.Column="2" VerticalAlignment="Bottom" Command="{x:Bind ViewModel.ScanUpdatesCommand}" />
       </Grid>
       <TextBlock Text="{x:Bind ViewModel.UpdatePackagesStatus, Mode=OneWay}" TextWrapping="Wrap" />
-      <Expander Header="Найденные обновления" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+      <Expander x:Uid="UpdatePackagesExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
         <ItemsControl ItemsSource="{x:Bind ViewModel.UpdatePackages}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="local:UpdatePackageItem">
@@ -221,9 +217,9 @@
                 <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                            Foreground="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind HasNote}" />
                 <StackPanel Orientation="Horizontal" Spacing="16">
-                  <CheckBox Content="В образ" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
-                  <CheckBox Content="В WinRE" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
-                  <CheckBox Content="В boot.wim" IsChecked="{x:Bind IsForBoot, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox x:Uid="UpdateToImage" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox x:Uid="UpdateToWinRe" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox x:Uid="UpdateToBoot" IsChecked="{x:Bind IsForBoot, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
                 </StackPanel>
               </StackPanel>
             </DataTemplate>
@@ -231,26 +227,26 @@
         </ItemsControl>
       </Expander>
 
-      <CheckBox Content="Очистить хранилище компонентов после изменений (StartComponentCleanup; уменьшает образ после обновлений)"
+      <CheckBox x:Uid="CleanupComponents"
                 IsChecked="{x:Bind ViewModel.CleanupComponents, Mode=TwoWay}" />
-      <CheckBox Content="Вместе с /ResetBase (образ не становится меньше, но обновления в нём нельзя будет удалить)"
+      <CheckBox x:Uid="ResetBase"
                 IsChecked="{x:Bind ViewModel.ResetBase, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CleanupComponents, Mode=OneWay}" Margin="28,0,0,0" />
 
-      <TextBlock Text="Превью операции" Style="{StaticResource SubtitleTextBlockStyle}" />
+      <TextBlock x:Uid="PreviewTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.OperationPreview, Mode=OneWay}" IsTextSelectionEnabled="True" TextWrapping="Wrap" FontFamily="Consolas" />
 
       <StackPanel Orientation="Horizontal" Spacing="8">
-        <Button Content="Подключить движок" Command="{x:Bind ViewModel.ConnectEngineCommand}" />
-        <Button Content="Подготовить" Command="{x:Bind ViewModel.PrepareCommand}" />
-        <Button Content="Запустить" Command="{x:Bind ViewModel.StartCommand}" Style="{StaticResource AccentButtonStyle}" />
-        <Button Content="Восстановить" Command="{x:Bind ViewModel.RecoverCommand}" />
+        <Button x:Uid="ConnectEngine" Command="{x:Bind ViewModel.ConnectEngineCommand}" />
+        <Button x:Uid="PrepareButton" Command="{x:Bind ViewModel.PrepareCommand}" />
+        <Button x:Uid="StartButton" Command="{x:Bind ViewModel.StartCommand}" Style="{StaticResource AccentButtonStyle}" />
+        <Button x:Uid="RecoverButton" Command="{x:Bind ViewModel.RecoverCommand}" />
       </StackPanel>
 
       <ProgressBar IsIndeterminate="True" Visibility="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
       <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" TextWrapping="Wrap" />
       <HyperlinkButton Content="{x:Bind ViewModel.PublishedPath, Mode=OneWay}" Command="{x:Bind ViewModel.OpenResultCommand}"
                        Visibility="{x:Bind ViewModel.HasResult, Mode=OneWay}" />
-      <TextBox Header="Журнал" Text="{x:Bind ViewModel.Log, Mode=OneWay}" IsReadOnly="True"
+      <TextBox x:Uid="LogBox" Text="{x:Bind ViewModel.Log, Mode=OneWay}" IsReadOnly="True"
                AcceptsReturn="True" TextWrapping="Wrap" MinHeight="200" FontFamily="Consolas" />
     </StackPanel>
   </ScrollViewer>

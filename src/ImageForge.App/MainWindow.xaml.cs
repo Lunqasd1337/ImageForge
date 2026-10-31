@@ -28,7 +28,7 @@ public sealed partial class MainWindow : Window
         }
         catch (COMException ex)
         {
-            ViewModel.Status = "Не удалось открыть выбор папки, введите путь вручную: " + ex.Message;
+            ViewModel.Status = (Ui.FolderPickerFailed + " ") + ex.Message;
         }
     }
 
@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         }
         catch (COMException ex)
         {
-            ViewModel.Status = "Не удалось открыть выбор папки, введите путь вручную: " + ex.Message;
+            ViewModel.Status = (Ui.FolderPickerFailed + " ") + ex.Message;
         }
     }
 
@@ -64,7 +64,7 @@ public sealed partial class MainWindow : Window
         }
         catch (COMException ex)
         {
-            ViewModel.Status = "Не удалось открыть выбор папки, введите путь вручную: " + ex.Message;
+            ViewModel.Status = (Ui.FolderPickerFailed + " ") + ex.Message;
         }
     }
 
@@ -82,7 +82,7 @@ public sealed partial class MainWindow : Window
         }
         catch (COMException ex)
         {
-            ViewModel.Status = "Не удалось открыть выбор файла, введите путь вручную: " + ex.Message;
+            ViewModel.Status = (Ui.FilePickerFailed + " ") + ex.Message;
         }
     }
 }

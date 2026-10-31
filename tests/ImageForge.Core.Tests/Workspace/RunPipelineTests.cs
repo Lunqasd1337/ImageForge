@@ -527,10 +527,9 @@ public sealed class RunPipelineTests : IDisposable
         var result = await Pipeline().RunAsync(request, Ct);
 
         result.Status.ShouldBe(RunStatus.Failed);
-        result.FailedStep.ShouldBe("drivers");
+        result.FailedStep.ShouldBe("stage-inputs");
         result.Error.ShouldNotBeNull().ShouldContain(@"net\netkvm.inf");
-        _servicing.Calls.ShouldNotContain(c => c.StartsWith("driver-add", StringComparison.Ordinal));
-        _servicing.Calls.ShouldContain("unmount discard");
+        _servicing.Calls.ShouldBeEmpty();
     }
 
     [Fact]
@@ -603,10 +602,34 @@ public sealed class RunPipelineTests : IDisposable
         var result = await Pipeline().RunAsync(request, Ct);
 
         result.Status.ShouldBe(RunStatus.Failed);
-        result.FailedStep.ShouldBe("updates");
+        result.FailedStep.ShouldBe("stage-inputs");
         result.Error.ShouldNotBeNull().ShouldContain("Windows11.0-KB5134133-x64.msu");
-        _servicing.Calls.ShouldNotContain(c => c.StartsWith("package-add", StringComparison.Ordinal));
-        _servicing.Calls.ShouldContain("unmount discard");
+        _servicing.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Packages_are_copied_into_the_workspace_before_the_mount_and_used_from_there()
+    {
+        var folder = UpdatePackages();
+        var drivers = DriverPackages();
+        var request = UpdateRequest(folder, new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        // A change to the user's folders after the copy no longer reaches the image.
+        var result = await Pipeline(log, beforeStep: step =>
+        {
+            if (step == "mount")
+            {
+                File.AppendAllText(Path.Combine(folder, "Windows11.0-KB5134133-x64.msu"), "more");
+                File.WriteAllText(Path.Combine(drivers, "net", "amd64", "viostor.sys"), "replaced");
+            }
+        }).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.AddedPaths.ShouldNotBeEmpty();
+        _servicing.AddedPaths.ShouldAllBe(p => p.StartsWith(_paths.Root, StringComparison.Ordinal) && p.Contains("inputs", StringComparison.Ordinal));
+        log.ShouldContain(l => l.StartsWith("staged 1 update package", StringComparison.Ordinal));
+        log.ShouldContain(l => l.StartsWith("staged 1 driver package", StringComparison.Ordinal));
     }
 
     [Fact]

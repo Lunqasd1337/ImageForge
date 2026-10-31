@@ -21,18 +21,6 @@ public sealed partial class InstalledDriverItem(InstalledDriver driver, Action s
     public partial bool? IsSelected { get; set; } = false;
 
     partial void OnIsSelectedChanged(bool? value) => selectionChanged();
-
-    /// <summary>Also (or only) into WinRE: storage drivers the recovery environment needs to see the disk.</summary>
-    [ObservableProperty]
-    public partial bool? IsForWinRe { get; set; } = false;
-
-    partial void OnIsForWinReChanged(bool? value) => selectionChanged();
-
-    /// <summary>Into every image of boot.wim: storage and network drivers Windows Setup needs.</summary>
-    [ObservableProperty]
-    public partial bool? IsForBoot { get; set; } = false;
-
-    partial void OnIsForBootChanged(bool? value) => selectionChanged();
 }
 
 /// <summary>One INF found in the driver folder; a package with problems cannot be marked.</summary>
@@ -63,4 +51,16 @@ public sealed partial class DriverPackageItem(ScannedDriver scanned, int sameCon
     public partial bool? IsSelected { get; set; } = false;
 
     partial void OnIsSelectedChanged(bool? value) => selectionChanged();
+
+    /// <summary>Also (or only) into WinRE: storage drivers the recovery environment needs to see the disk.</summary>
+    [ObservableProperty]
+    public partial bool? IsForWinRe { get; set; } = false;
+
+    partial void OnIsForWinReChanged(bool? value) => selectionChanged();
+
+    /// <summary>Into every image of boot.wim: storage and network drivers Windows Setup needs.</summary>
+    [ObservableProperty]
+    public partial bool? IsForBoot { get; set; } = false;
+
+    partial void OnIsForBootChanged(bool? value) => selectionChanged();
 }

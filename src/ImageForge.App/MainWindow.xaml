@@ -224,6 +224,7 @@
                   <CheckBox x:Uid="UpdateToImage" IsChecked="{x:Bind IsSelected, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
                   <CheckBox x:Uid="UpdateToWinRe" IsChecked="{x:Bind IsForWinRe, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
                   <CheckBox x:Uid="UpdateToBoot" IsChecked="{x:Bind IsForBoot, Mode=TwoWay}" IsEnabled="{x:Bind CanSelect}" />
+                  <CheckBox x:Uid="UpdateToMedia" IsChecked="{x:Bind IsForMedia, Mode=TwoWay}" IsEnabled="{x:Bind CanSelectMedia}" />
                 </StackPanel>
               </StackPanel>
             </DataTemplate>

@@ -56,6 +56,12 @@ public sealed record UpdatePackageInfo(
 {
     /// <summary>A .NET Framework cumulative update (NDP in the name or in a package inside); it goes after the cleanup.</summary>
     public bool IsDotNet { get; init; }
+
+    /// <summary>
+    /// A Setup Dynamic Update: a cabinet of Windows Setup files, not a DISM package. It is expanded into the media's
+    /// sources (plan, section 11, Media) and cannot go into an image.
+    /// </summary>
+    public bool IsSetupDynamicUpdate { get; init; }
 }
 
 /// <summary>
@@ -103,17 +109,26 @@ public static class UpdatePackage
                 problems.Add(Messages.UpdateMsuEmpty);
             }
         }
-        else if (listing.Problem is null && kind == UpdateKind.Cab
+        var setupDu = false;
+        if (listing.Problem is null && kind == UpdateKind.Cab
             && !listing.Entries.Any(e => e.Name.Equals("update.mum", StringComparison.OrdinalIgnoreCase)))
         {
-            problems.Add(Messages.UpdateCabNoMum);
+            setupDu = listing.Entries.Any(e => SetupFiles.Contains(Path.GetFileName(e.Name.Replace('\\', '/'))));
+            if (!setupDu)
+            {
+                problems.Add(Messages.UpdateCabNoMum);
+            }
         }
 
         return new(fileName, kind, name.Kb, name.Architecture, name.Sha1, listing.Entries, payloads, servicingStack, problems)
         {
             IsDotNet = IsDotNetName(leaf) || payloads.Any(IsDotNetName),
+            IsSetupDynamicUpdate = setupDu,
         };
     }
+
+    // Files that only a Setup Dynamic Update carries among cabinets without update.mum (checked in S2-TARGETS-INVENTORY).
+    private static readonly HashSet<string> SetupFiles = new(["setuphost.exe", "setupprep.exe", "setupcore.dll", "setupplatform.dll"], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>An MSU in WIM format: its contents are in compressed metadata, so only the header and images are checked.</summary>
     public static UpdatePackageInfo Analyze(string fileName, WimInfo wim)

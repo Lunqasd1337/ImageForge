@@ -326,6 +326,12 @@ internal sealed class FakeServicing : IImageServicing
             {
                 File.WriteAllText(Path.Combine(mountDir, "sources", name), $"{content} (image {index})");
             }
+
+            Directory.CreateDirectory(Path.Combine(mountDir, "Windows", "Boot", "EFI"));
+            foreach (var (name, content) in BootEfiFiles)
+            {
+                File.WriteAllText(Path.Combine(mountDir, "Windows", "Boot", "EFI", name), $"{content} (image {index})");
+            }
         }
 
         if (WinRe is not null && Path.GetFileName(imageFile).Equals("install.wim", StringComparison.OrdinalIgnoreCase))
@@ -385,6 +391,9 @@ internal sealed class FakeServicing : IImageServicing
 
     /// <summary>Setup files (name → content) in the sources folder of every mounted boot.wim image.</summary>
     public Dictionary<string, string> BootSetupFiles { get; } = [];
+
+    /// <summary>Boot manager files (name → content) in Windows\Boot\EFI of every mounted boot.wim image.</summary>
+    public Dictionary<string, string> BootEfiFiles { get; } = [];
 
     public Task ExportAsync(string sourceImage, int index, string destinationImage, bool bootable, CancellationToken ct)
     {

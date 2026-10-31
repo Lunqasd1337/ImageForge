@@ -447,6 +447,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             AddUpdates = [.. UpdatePackages.Where(u => u.IsSelected == true).Select(u => u.Scanned.Package.FileName)],
             WinReUpdates = [.. UpdatePackages.Where(u => u.IsForWinRe == true).Select(u => u.Scanned.Package.FileName)],
             BootUpdates = [.. UpdatePackages.Where(u => u.IsForBoot == true).Select(u => u.Scanned.Package.FileName)],
+            SetupUpdate = UpdatePackages.FirstOrDefault(u => u.IsForMedia == true)?.Scanned.Package.FileName,
             UpdateFolder = _scannedUpdateFolder,
             CleanupComponents = CleanupComponents,
             ResetBase = CleanupComponents && ResetBase,
@@ -490,6 +491,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 .. DescribeDotNet(plan.DotNetUpdates),
                 .. DescribeWinRe(plan.WinRe),
                 .. DescribeBoot(plan.Boot),
+                .. DescribeMedia(plan.Media),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
             ];
             OperationPreview = string.Join(Environment.NewLine, lines);
@@ -501,7 +503,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var updates = ((plan.Updates?.Add.Count ?? 0) + (plan.DotNetUpdates?.Add.Count ?? 0) is > 0 and var updateCount ? (" " + Ui.PlanUpdates(updateCount)) : string.Empty)
                 + (plan.Cleanup is { } cleanupPlan ? (" " + Ui.PlanCleanup((cleanupPlan.ResetBase ? (" " + Ui.PlanResetBase) : string.Empty))) : string.Empty)
                 + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count, winRePlan.Drivers.Count)) : string.Empty)
-                + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count, bootPlan.Drivers.Count)) : string.Empty);
+                + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count, bootPlan.Drivers.Count)) : string.Empty)
+                + (plan.Media is not null ? " " + Ui.PlanMedia : string.Empty);
             Status = Ui.PlanReady(plan.Preview.Count, apps, capabilities, features, drivers, updates, encoding);
             Append(Ui.LogPlan(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint));
         }
@@ -911,6 +914,21 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static IEnumerable<string> DescribeMedia(MediaPlan? media)
+    {
+        if (media is null)
+        {
+            yield break;
+        }
+
+        yield return Ui.PreviewMedia;
+        yield return "  " + Ui.PreviewSetupDu(media.SetupUpdate.Description);
+        foreach (var warning in media.Warnings)
+        {
+            yield return "  " + Ui.Warning + " " + warning;
+        }
+    }
+
     private static IEnumerable<string> DescribeCleanup(CleanupPlan? cleanup)
     {
         if (cleanup is null)
@@ -938,7 +956,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void ShowUpdatePackagesStatus() =>
         UpdatePackagesStatus = (Ui.UpdateFilesFound(UpdatePackages.Count, UpdatePackages.Count(p => p.CanSelect)) + " ") +
             (Ui.UpdateFilesTargets(UpdatePackages.Count(p => p.IsSelected == true), UpdatePackages.Count(p => p.IsForWinRe == true)) + " ") +
-            Ui.UpdateFilesBoot(UpdatePackages.Count(p => p.IsForBoot == true));
+            Ui.UpdateFilesBoot(UpdatePackages.Count(p => p.IsForBoot == true), UpdatePackages.Count(p => p.IsForMedia == true));
 
     private void UpdateSelectionChanged()
     {
@@ -1043,6 +1061,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             package.IsSelected = false;
             package.IsForWinRe = false;
             package.IsForBoot = false;
+            package.IsForMedia = false;
         }
 
         UpdatesStatus = Ui.UpdatesNotRead;

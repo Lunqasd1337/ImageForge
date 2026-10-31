@@ -80,6 +80,9 @@ public sealed record PlanSummary(
 
     /// <summary>The packages that go into boot.wim, in order, with their warnings; null when there are none.</summary>
     public BootPlan? Boot { get; init; }
+
+    /// <summary>The Setup Dynamic Update for the media, with its warnings; null when none is chosen.</summary>
+    public MediaPlan? Media { get; init; }
 }
 
 /// <param name="Disable">Turned off in this order (dependents first), before <paramref name="Enable"/>.</param>
@@ -170,6 +173,9 @@ public sealed class WorkspaceSession(
 {
     /// <summary>Free bytes of a volume by its root; null when unknown. The engine reads the disk; tests leave it unknown.</summary>
     public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
+    /// <summary>Expands a cabinet into a folder; the engine uses expand.exe. Needed only for a Setup Dynamic Update.</summary>
+    public Func<string, string, Action<string>?, CancellationToken, Task>? ExpandCabinet { get; init; }
 
     /// <summary>The kind and file system of a volume by its root; null when unknown. The engine reads the disk.</summary>
     public Func<string, VolumeFacts?> Volumes { get; init; } = _ => null;
@@ -346,6 +352,7 @@ public sealed class WorkspaceSession(
             .. options.BootUpdates.Select(u => new AddBootUpdatePackage(u)),
             .. options.WinReDrivers.Select(d => new AddWinReDriverPackage(d, options.ForceUnsigned)),
             .. options.BootDrivers.Select(d => new AddBootDriverPackage(d, options.ForceUnsigned)),
+            .. options.SetupUpdate is { Length: > 0 } setup ? [new ApplySetupDynamicUpdate(setup)] : Array.Empty<ImageChange>(),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
@@ -359,7 +366,7 @@ public sealed class WorkspaceSession(
             };
         }
 
-        if (options.AddUpdates.Count + options.WinReUpdates.Count + options.BootUpdates.Count > 0)
+        if (options.AddUpdates.Count + options.WinReUpdates.Count + options.BootUpdates.Count > 0 || !string.IsNullOrEmpty(options.SetupUpdate))
         {
             // Hashed again here (a few seconds per GB), so the plan holds the files as they are now.
             source = (source ?? new FodChoice(null, null)) with
@@ -439,6 +446,7 @@ public sealed class WorkspaceSession(
                     Cleanup = plan.Cleanup,
                     WinRe = plan.WinRe,
                     Boot = plan.Boot,
+                    Media = plan.Media,
                 }
                 : new PlanSummary(Guid.Empty, _revision, string.Empty, [], result.Diagnostics, null, fileEncoding);
         }
@@ -547,7 +555,12 @@ public sealed class WorkspaceSession(
         try
         {
             var log = Report(progress);
-            var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log, FreeSpace = FreeSpace };
+            var pipeline = new RunPipeline(paths, servicingFactory(log), newId)
+            {
+                Log = log,
+                FreeSpace = FreeSpace,
+                ExpandCabinet = ExpandCabinet is { } expand ? (cabinet, folder, token) => expand(cabinet, folder, log, token) : null,
+            };
             var result = await pipeline.RunAsync(new RunRequest(open.SourceDir, open.OutputDir, open.ImageIndex, plan, Failure) { ImageCount = imageCount }, ct).ConfigureAwait(false);
             return new RunOutcome(operationId, StartPlanRejection.None, result.Status, result.FailedStep, result.Error, result.PublishedPath);
         }

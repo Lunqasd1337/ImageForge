@@ -254,3 +254,22 @@
 - Протокол 15: `PlanOptions.WinReDrivers`, `PlanOptions.BootDrivers`. ForceUnsigned общий для всех трёх целей.
 - Окно: у найденного пакета три отметки «В образ», «В WinRE», «В boot.wim», как у обновлений. В превью строки «Добавить в WinRE драйвер …» и «Добавить в boot.wim драйвер …».
 - Проверка в VM — [S2-TARGET-DRIVERS-UI](vm-checks/S2-TARGET-DRIVERS-UI.md).
+
+### Носитель: Setup DU и загрузчик
+
+Пункты 2 и 3 сверки с планом (раздел 11, строка Media). Порядок взят из [сценария Microsoft](https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update), шаги 26–28.
+- Core (TDD):
+  - `UpdatePackageInfo.IsSetupDynamicUpdate`: это CAB без `update.mum`, в котором есть файлы установщика (SetupHost.exe, SetupPrep.exe, SetupCore.dll, SetupPlatform.dll). Проблемой такой файл больше не считается.
+  - Изменение `ApplySetupDynamicUpdate` и `MediaPlan`. Setup DU можно выбрать только один, и ставить его в образ, WinRE или boot.wim нельзя.
+  - Без обновления boot.wim план выдаёт предупреждение. Отпечаток плана: версия 14.
+- Запуск, шаг `media` после `boot`:
+  - Setup DU копируется в `inputs` вместе с обновлениями и распаковывается `expand.exe -F:*` из System32.
+  - Затем из образа 2 boot.wim поверх него идут `setup.exe` и `setuphost.exe`.
+  - Загрузчик меняется по явной карте: `bootmgfw.efi` → каждый `bootmgfw.efi`/`bootx64.efi`/`bootia32.efi`/`bootaa64.efi` носителя, `bootmgr.efi` → каждый `bootmgr.efi`, `boot.stl` → `efi\microsoft\boot`.
+  - Условия: файла, которого нет на носителе, не создаём (кроме `boot.stl`). Версию старше исходной не ставим.
+  - `efisys.bin` и `bootmgr` не трогаются.
+  - Сборка результата теперь создаёт папки для добавленных файлов.
+- Решение по порядку: у SetupHost.exe из Setup DU версия выше, чем в boot.wim (S2-TARGETS-INVENTORY), но на носителе остаётся файл из boot.wim. Microsoft требует, чтобы файлы установщика на носителе совпадали с boot.wim. Это отменяет вывод «Setup DU последним» из S2-TARGETS-INVENTORY.
+- Протокол 16: `PlanOptions.SetupUpdate`, `PlanSummary.Media`; возможность движка `media`.
+- Окно: четвёртая отметка «На носитель (Setup DU)», доступна только у Setup DU. Строки носителя в превью.
+- Проверка в VM — [S2-MEDIA-UI](vm-checks/S2-MEDIA-UI.md).

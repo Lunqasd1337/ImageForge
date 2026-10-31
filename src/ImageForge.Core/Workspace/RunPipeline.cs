@@ -44,6 +44,11 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     /// </summary>
     public static readonly IReadOnlyList<string> SetupFiles = ["setup.exe", "setuphost.exe"];
 
+    /// <summary>Boot manager files taken from Windows\Boot\EFI of the boot.wim setup image.</summary>
+    public static readonly IReadOnlyList<string> BootManagerFiles = ["bootmgfw.efi", "bootmgr.efi", "boot.stl"];
+
+    private static readonly HashSet<string> UefiBootManagers = new(["bootmgfw.efi", "bootx64.efi", "bootia32.efi", "bootaa64.efi"], StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Where the recovery environment lives inside a mounted Windows image.</summary>
     public static readonly string WinReInImage = Path.Combine("Windows", "System32", "Recovery", "Winre.wim");
 
@@ -57,6 +62,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
     /// <summary>Free bytes of the volume with the given root; null when unknown, which skips the check. The engine reads the disk.</summary>
     public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
+    /// <summary>Expands every file of a cabinet into a folder (expand.exe -F:*); needed only for a Setup Dynamic Update.</summary>
+    public Func<string, string, CancellationToken, Task>? ExpandCabinet { get; init; }
 
     public async Task<RunResult> RunAsync(RunRequest request, CancellationToken ct)
     {
@@ -224,9 +232,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             // Media files other than install.wim that the run replaced, as a tree under the run folder.
             var replacedMedia = Path.Combine(run.Root, "media");
             IReadOnlyList<ManifestEntry> replaced = [];
+            var bootFiles = Path.Combine(run.Root, "boot-files");
             if (request.Plan.Boot is { } boot)
             {
-                replaced = await context.Step("boot", () => ServiceBootAsync(boot, replacedMedia, run, ct), ct).ConfigureAwait(false);
+                await context.Step("boot", () => ServiceBootAsync(boot, replacedMedia, bootFiles, run, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.Boot is not null || request.Plan.Media is not null)
+            {
+                replaced = await context.Step("media", () => PrepareMediaFilesAsync(request.Plan, replacedMedia, bootFiles, run, ct), ct).ConfigureAwait(false);
             }
 
             state = state with { Target = TargetStatus.Completed };
@@ -249,6 +263,8 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 staged.Add(image with { RelativePath = InstallImage });
                 foreach (var entry in replaced)
                 {
+                    // A replaced or added file can be the only one in its folder, so the copy above did not create it.
+                    Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(publication.Staging, entry.RelativePath))!);
                     var file = await TreeCopy.CopyFileAsync(Path.Combine(replacedMedia, entry.RelativePath), Path.Combine(publication.Staging, entry.RelativePath), ct).ConfigureAwait(false);
                     staged.Add(file with { RelativePath = entry.RelativePath });
                 }
@@ -576,7 +592,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     // The recipe from S2-TARGETS-INVENTORY: every image of a boot.wim copy gets the packages, a cleanup with /ResetBase
     // and a commit; the setup files of the boot image (Windows Setup) are taken for the media; then all images are
     // exported in order and the boot image stays the bootable one. Returns the media files to replace, under mediaDir.
-    private async Task<IReadOnlyList<ManifestEntry>> ServiceBootAsync(BootPlan plan, string mediaDir, RunLayout run, CancellationToken ct)
+    private async Task<bool> ServiceBootAsync(BootPlan plan, string mediaDir, string bootFiles, RunLayout run, CancellationToken ct)
     {
         var changed = plan.Add.Where(a => UpdateFolder.CurrentHash(plan.Source, a.FileName) != a.Sha256).Select(a => a.FileName).ToList();
         if (changed.Count > 0)
@@ -598,7 +614,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         var folder = Path.Combine(run.Root, "boot");
         var working = Path.Combine(folder, "boot.wim");
         TryDeleteDirectory(mediaDir);
+        TryDeleteDirectory(bootFiles);
         Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(bootFiles);
         Directory.CreateDirectory(Path.Combine(mediaDir, "sources"));
         File.Copy(source, working, overwrite: true);
         File.SetAttributes(working, FileAttributes.Normal);
@@ -630,14 +648,13 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             Log?.Invoke($"boot cleanup: packages {current.Packages.Count} -> {cleaned.Packages.Count}");
             if (index == bootIndex)
             {
-                foreach (var name in SetupFiles)
+                // Kept for the media step; a source does not have to carry every file.
+                foreach (var file in SetupFiles.Select(n => Path.Combine("sources", n)).Concat(BootManagerFiles.Select(n => Path.Combine("Windows", "Boot", "EFI", n))))
                 {
-                    var serviced = Path.Combine(mount, "sources", name);
+                    var serviced = Path.Combine(mount, file);
                     if (File.Exists(serviced))
                     {
-                        var media = Path.Combine(paths.Base, "sources", name);
-                        File.Copy(serviced, Path.Combine(mediaDir, "sources", name), overwrite: true);
-                        Log?.Invoke($"setup file {name}: media {FileVersion(media)} -> boot.wim {FileVersion(serviced)}");
+                        File.Copy(serviced, Path.Combine(bootFiles, Path.GetFileName(file)), overwrite: true);
                     }
                 }
             }
@@ -663,8 +680,112 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
         Log?.Invoke($"boot.wim: {Megabytes(new FileInfo(source).Length)} MB -> {Megabytes(new FileInfo(exported).Length)} MB, boot index {result.BootIndex}");
         TryDeleteDirectory(folder);
+        return true;
+    }
+
+    /// <summary>
+    /// The media files of Microsoft's media dynamic update sample, in its order: the Setup Dynamic Update is expanded into
+    /// sources, then the setup files and the boot manager of the serviced boot.wim go over it, so that the media and
+    /// boot.wim carry the same Windows Setup. Each target is taken from an explicit map, only where the media has that
+    /// file (boot.stl is added), and never with an older version than the source media had. Returns the files to replace
+    /// or add, under mediaDir.
+    /// </summary>
+    private async Task<IReadOnlyList<ManifestEntry>> PrepareMediaFilesAsync(ExecutionPlan plan, string mediaDir, string bootFiles, RunLayout run, CancellationToken ct)
+    {
+        if (plan.Boot is null)
+        {
+            TryDeleteDirectory(mediaDir);
+        }
+
+        Directory.CreateDirectory(Path.Combine(mediaDir, "sources"));
+        if (plan.Media is { } media)
+        {
+            if (UpdateFolder.CurrentHash(media.Source, media.SetupUpdate.FileName) != media.SetupUpdate.Sha256)
+            {
+                throw new InvalidDataException($"Update packages changed or went missing since the preview: {media.SetupUpdate.FileName}.");
+            }
+
+            var expand = ExpandCabinet ?? throw new InvalidOperationException("This engine cannot expand a Setup Dynamic Update.");
+            var expanded = Path.Combine(run.Root, "setup-du");
+            TryDeleteDirectory(expanded);
+            Directory.CreateDirectory(expanded);
+            Log?.Invoke($"setup du {media.SetupUpdate.Description}: expand");
+            await expand(UpdateFolder.Full(media.Source, media.SetupUpdate.FileName), expanded, ct).ConfigureAwait(false);
+            var files = Directory.EnumerateFiles(expanded, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(expanded, f)).ToList();
+            if (files.Count == 0)
+            {
+                throw new InvalidDataException($"{media.SetupUpdate.FileName} expanded to no files.");
+            }
+
+            var replacing = 0;
+            foreach (var file in files)
+            {
+                var target = Path.Combine(mediaDir, "sources", file);
+                replacing += File.Exists(Path.Combine(paths.Base, "sources", file)) ? 1 : 0;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                await TreeCopy.CopyFileAsync(Path.Combine(expanded, file), target, ct).ConfigureAwait(false);
+            }
+
+            Log?.Invoke($"setup du: {files.Count} files into sources, {replacing} of them replace media files");
+            TryDeleteDirectory(expanded);
+        }
+
+        if (plan.Boot is not null)
+        {
+            foreach (var (from, target) in BootFileMap())
+            {
+                var serviced = Path.Combine(bootFiles, from);
+                if (!File.Exists(serviced))
+                {
+                    continue;
+                }
+
+                var original = Path.Combine(paths.Base, target);
+                if (NumericVersion(original) is { } was && NumericVersion(serviced) is { } now && now < was)
+                {
+                    Log?.Invoke($"media file {target}: kept {was}, boot.wim has older {now}");
+                    continue;
+                }
+
+                var destination = Path.Combine(mediaDir, target);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(serviced, destination, overwrite: true);
+                Log?.Invoke(SetupFiles.Contains(from)
+                    ? $"setup file {from}: media {FileVersion(original)} -> boot.wim {FileVersion(serviced)}"
+                    : $"boot file {target}: media {FileVersion(original)} -> boot.wim {FileVersion(serviced)}");
+            }
+
+            TryDeleteDirectory(bootFiles);
+        }
+
         var replaced = await SourceManifest.ComputeAsync(mediaDir, ct).ConfigureAwait(false);
         return replaced.Entries;
+    }
+
+    // The map of Microsoft's sample: setup files into sources; bootmgfw.efi over every UEFI boot manager of the media
+    // (efi\boot\bootx64.efi and the like), bootmgr.efi over every bootmgr.efi, and boot.stl into efi\microsoft\boot.
+    private IEnumerable<(string From, string Target)> BootFileMap()
+    {
+        foreach (var name in SetupFiles)
+        {
+            yield return (name, Path.Combine("sources", name));
+        }
+
+        var mediaFiles = Directory.EnumerateFiles(paths.Base, "b*.efi", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(paths.Base, f)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var file in mediaFiles)
+        {
+            var name = Path.GetFileName(file);
+            if (UefiBootManagers.Contains(name))
+            {
+                yield return ("bootmgfw.efi", file);
+            }
+            else if (name.Equals("bootmgr.efi", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return ("bootmgr.efi", file);
+            }
+        }
+
+        yield return ("boot.stl", Path.Combine("efi", "microsoft", "boot", "boot.stl"));
     }
 
     private static WimInfo ReadWim(string file)
@@ -672,6 +793,19 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         using var stream = File.OpenRead(file);
         var info = WimArchive.Read(stream);
         return info.Problem is null ? info : throw new InvalidDataException($"{file}: {info.Problem}");
+    }
+
+    private static Version? NumericVersion(string file)
+    {
+        if (!File.Exists(file))
+        {
+            return null;
+        }
+
+        var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(file);
+        return info.FileMajorPart + info.FileMinorPart + info.FileBuildPart + info.FilePrivatePart == 0
+            ? null
+            : new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
     }
 
     private static string FileVersion(string file) =>
@@ -842,7 +976,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     }
 
     private static bool HasInputs(ExecutionPlan plan) =>
-        plan.Updates is not null || plan.DotNetUpdates is not null || plan.WinRe is not null || plan.Boot is not null || plan.Drivers?.Add.Count > 0;
+        plan.Media is not null || plan.Updates is not null || plan.DotNetUpdates is not null || plan.WinRe is not null || plan.Boot is not null || plan.Drivers?.Add.Count > 0;
 
     /// <summary>
     /// Copies the update and driver packages into the run folder and checks them against the plan's hashes (plan, section 6:
@@ -857,6 +991,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
         var updates = new[] { plan.Updates, plan.DotNetUpdates }.OfType<UpdatePlan>().SelectMany(u => u.Add.Select(a => (u.Source, Addition: a)))
             .Concat(plan.WinRe?.Add.Select(a => (plan.WinRe.Source, Addition: a)) ?? [])
             .Concat(plan.Boot?.Add.Select(a => (plan.Boot.Source, Addition: a)) ?? [])
+            .Concat(plan.Media is { } m ? [(m.Source, Addition: m.SetupUpdate)] : [])
             .DistinctBy(u => (u.Source.ToUpperInvariant(), u.Addition.FileName.ToUpperInvariant()))
             .ToList();
         var changed = new List<string>();
@@ -943,6 +1078,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             WinRe = plan.WinRe is { } w ? w with { Source = UpdatesOf(w.Source), DriverSource = Restaged(w.DriverSource) } : null,
             Boot = plan.Boot is { } b ? b with { Source = UpdatesOf(b.Source), DriverSource = Restaged(b.DriverSource) } : null,
             Drivers = plan.Drivers is { Source: { } ds, Add.Count: > 0 } dp ? dp with { Source = StagedDrivers(ds) } : plan.Drivers,
+            Media = plan.Media is { } media ? media with { Source = Staged(media.Source) } : null,
         };
     }
 

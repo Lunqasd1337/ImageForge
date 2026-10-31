@@ -43,6 +43,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var bootChanges = new List<(string FileName, int Index)>();
         var winReDrivers = new List<(string InfPath, bool ForceUnsigned, int Index)>();
         var bootDrivers = new List<(string InfPath, bool ForceUnsigned, int Index)>();
+        var setupChanges = new List<(string FileName, int Index)>();
         CleanupPlan? cleanup = null;
         for (var i = 0; i < request.Changes.Count; i++)
         {
@@ -65,6 +66,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is AddBootDriverPackage bootDriver)
             {
                 bootDrivers.Add((bootDriver.InfPath, bootDriver.ForceUnsigned, i));
+            }
+            else if (request.Changes[i] is ApplySetupDynamicUpdate setupUpdate)
+            {
+                setupChanges.Add((setupUpdate.FileName, i));
             }
             else if (request.Changes[i] is AddUpdatePackage update)
             {
@@ -120,8 +125,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             var b = boot ?? new BootPlan([], request.UpdateSource?.Folder ?? string.Empty, []);
             boot = b with { Drivers = forBoot.Add, DriverSource = forBoot.Source, Warnings = [.. b.Warnings, .. forBoot.Warnings] };
         }
+
+        var media = setupChanges.Count > 0 ? PlanMedia(setupChanges, request.UpdateSource, boot is not null, diagnostics) : null;
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
-            && cleanup is null && winRe is null && boot is null)
+            && cleanup is null && winRe is null && boot is null && media is null)
         {
             diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, Messages.PlanFeaturesUnchanged));
         }
@@ -165,6 +172,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Cleanup = cleanup,
             WinRe = winRe,
             Boot = boot,
+            Media = media,
         };
         return new PlanResult(plan with { Fingerprint = PlanFingerprint.Compute(plan) }, []);
     }
@@ -533,8 +541,25 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             source!.Folder, warnings);
     }
 
+    /// <summary>One Setup Dynamic Update for the media; without boot.wim servicing the setup files can disagree, so it warns.</summary>
+    private static MediaPlan? PlanMedia(List<(string FileName, int Index)> changes, UpdateFolder? source, bool bootServiced, List<PlanningDiagnostic> diagnostics)
+    {
+        if (changes.Count > 1)
+        {
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateNotSetupDynamicUpdate, changes[1].Index, Messages.SetupDuOnlyOne));
+            return null;
+        }
+
+        if (CollectUpdates(changes, source, diagnostics, forMedia: true) is not [var only])
+        {
+            return null;
+        }
+
+        return new MediaPlan(only.Addition, source!.Folder, bootServiced ? [] : [Messages.SetupDuWithoutBoot]);
+    }
+
     private static List<(UpdateAddition Addition, bool ServicingStack, UpdatePackageInfo Package)>? CollectUpdates(
-        List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
+        List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics, bool forMedia = false)
     {
         var count = diagnostics.Count;
         var add = new List<(UpdateAddition Addition, bool ServicingStack, UpdatePackageInfo Package)>();
@@ -560,6 +585,14 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             {
                 var problems = scanned.Package.Problems.Count > 0 ? string.Join("; ", scanned.Package.Problems) : Messages.UpdateFileNotRead;
                 diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, Messages.UpdatePackageInvalid(fileName, problems)));
+                continue;
+            }
+
+            if (scanned.Package.IsSetupDynamicUpdate != forMedia)
+            {
+                diagnostics.Add(forMedia
+                    ? new PlanningDiagnostic(PlanningCodes.UpdateNotSetupDynamicUpdate, index, Messages.UpdateNotSetupDu(fileName))
+                    : new PlanningDiagnostic(PlanningCodes.UpdateIsSetupDynamicUpdate, index, Messages.UpdateIsSetupDu(fileName)));
                 continue;
             }
 
@@ -591,7 +624,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
     private static string Describe(UpdatePackageInfo p) =>
         $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : Messages.UpdateNoKb)}, {p.Kind.ToString().ToUpperInvariant()}" +
-        $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? Messages.UpdateServicingStack : string.Empty)}";
+        $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? Messages.UpdateServicingStack : string.Empty)}" +
+        $"{(p.IsSetupDynamicUpdate ? Messages.UpdateSetupDu : string.Empty)}";
 
     /// <summary>Drivers for WinRE or boot.wim: checked like those for the image, without the image's driver list.</summary>
     private static DriverPlan? PlanTargetDrivers(List<(string InfPath, bool ForceUnsigned, int Index)> changes, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
@@ -752,7 +786,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 13;
+    private const int FormatVersion = 14;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -900,6 +934,12 @@ public static class PlanFingerprint
             {
                 Append(builder, "boot-driver", addition.InfPath, addition.ContentHash, addition.ForceUnsigned);
             }
+        }
+
+        if (plan.Media is { } media)
+        {
+            Append(builder, "media-source", media.Source);
+            Append(builder, "setup-du", media.SetupUpdate.FileName, media.SetupUpdate.Sha256);
         }
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));

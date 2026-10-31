@@ -538,6 +538,20 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.CommittedWinRe.ShouldBe(["WINRE+M1+export"]);
     }
 
+    [Fact]
+    public void A_setup_dynamic_update_is_planned_for_the_media_from_the_update_folder()
+    {
+        _dir.WriteFile("updates/readme.txt", "not scanned");
+        File.WriteAllBytes(_dir.Combine("updates/windows11.0-kb5128977-x64.cab"), Updates.UpdatePackageTests.BuildCabinet([("setuphost.exe", 10)]));
+        _session.Open(_folders);
+
+        var plan = _session.Plan(new PlanOptions(null) { SetupUpdate = "windows11.0-kb5128977-x64.cab", UpdateFolder = _dir.Combine("updates") });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.Media.ShouldNotBeNull().SetupUpdate.FileName.ShouldBe("windows11.0-kb5128977-x64.cab");
+        plan.Media.Warnings.ShouldHaveSingleItem();
+    }
+
     private static RegFileInput RegFile(string body) =>
         new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 

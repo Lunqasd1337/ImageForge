@@ -49,6 +49,7 @@
   <data name="UpdateToImage.Content" xml:space="preserve"><value>В образ</value></data>
   <data name="UpdateToWinRe.Content" xml:space="preserve"><value>В WinRE</value></data>
   <data name="UpdateToBoot.Content" xml:space="preserve"><value>В boot.wim</value></data>
+  <data name="UpdateToMedia.Content" xml:space="preserve"><value>На носитель (Setup DU)</value></data>
   <data name="CleanupComponents.Content" xml:space="preserve"><value>Очистить хранилище компонентов после изменений (StartComponentCleanup; уменьшает образ после обновлений)</value></data>
   <data name="ResetBase.Content" xml:space="preserve"><value>Вместе с /ResetBase (образ не становится меньше, но обновления в нём нельзя будет удалить)</value></data>
   <data name="PreviewTitle.Text" xml:space="preserve"><value>Превью операции</value></data>
@@ -162,7 +163,7 @@
   <data name="Present" xml:space="preserve"><value>есть</value></data>
   <data name="PreviewAppx" xml:space="preserve"><value>Удалить приложение {0} ({1})</value></data>
   <data name="PreviewBeforePrepare" xml:space="preserve"><value>Превью появится после подготовки: укажите папки и нажмите «Подготовить».</value></data>
-  <data name="PreviewBoot" xml:space="preserve"><value>boot.wim (sources\boot.wim): добавить в каждый образ выбранные обновления и драйверы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; setup.exe и setuphost.exe программы установки — в sources носителя</value></data>
+  <data name="PreviewBoot" xml:space="preserve"><value>boot.wim (sources\boot.wim): добавить в каждый образ выбранные обновления и драйверы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; на носитель из него идут setup.exe и setuphost.exe (в sources) и загрузчик: bootmgfw.efi на место bootx64.efi и других, bootmgr.efi, boot.stl</value></data>
   <data name="PreviewBootAdd" xml:space="preserve"><value>Добавить в boot.wim {0}</value></data>
   <data name="PreviewBootDriverAdd" xml:space="preserve"><value>Добавить в boot.wim драйвер {0}{1}</value></data>
   <data name="PreviewCapabilityAdd" xml:space="preserve"><value>Добавить дополнительный компонент {0}</value></data>
@@ -206,7 +207,7 @@
   <data name="RunRejected" xml:space="preserve"><value>Запуск отклонён ({0}). Нажмите «Подготовить» ещё раз.</value></data>
   <data name="Running" xml:space="preserve"><value>Выполняется. Не закрывайте окно: прерванный запуск потребует восстановления.</value></data>
   <data name="UpdateFileNotRead" xml:space="preserve"><value>Файл не прочитан.</value></data>
-  <data name="UpdateFilesBoot" xml:space="preserve"><value>в boot.wim: {0}.</value></data>
+  <data name="UpdateFilesBoot" xml:space="preserve"><value>в boot.wim: {0}, на носитель: {1}.</value></data>
   <data name="UpdateFilesFound" xml:space="preserve"><value>Найдено файлов: {0}, можно добавить: {1},</value></data>
   <data name="UpdateFilesTargets" xml:space="preserve"><value>в образ: {0}, в WinRE: {1},</value></data>
   <data name="UpdateFolderChanged" xml:space="preserve"><value>Папка изменилась; нажмите «Найти обновления».</value></data>
@@ -218,4 +219,8 @@
   <data name="UpdatesHashing" xml:space="preserve"><value>Чтение и хеширование файлов (несколько секунд на гигабайт)...</value></data>
   <data name="UpdatesNotRead" xml:space="preserve"><value>Обновления образа ещё не прочитаны.</value></data>
   <data name="Warning" xml:space="preserve"><value>Внимание:</value></data>
+  <data name="UpdateSetupDuNote" xml:space="preserve"><value>Setup Dynamic Update: файлы программы установки, не пакет DISM. В образ его не поставить, только «На носитель»: он распаковывается в sources.</value></data>
+  <data name="PreviewMedia" xml:space="preserve"><value>Носитель: распаковать Setup DU в sources до файлов из boot.wim, чтобы setup.exe и setuphost.exe на носителе совпадали с boot.wim (так в сценарии Microsoft)</value></data>
+  <data name="PreviewSetupDu" xml:space="preserve"><value>Распаковать {0}</value></data>
+  <data name="PlanMedia" xml:space="preserve"><value>Setup DU на носитель.</value></data>
 </root>

@@ -22,20 +22,20 @@ public sealed partial class UpdatePackageItem(ScannedUpdate scanned, int sameCon
                 UpdateContainer.Cabinet => "cabinet",
                 _ => "-",
             };
-            return $"{p.Kind} · {(p.Kb is { } kb ? "KB" + kb : "без KB")} · {p.Architecture ?? "-"} · {container}"
-                + $"{(p.HasServicingStack ? " · стек обслуживания" : string.Empty)} · SHA-1 в имени {(p.Sha1FromName is null ? "нет" : "есть")}";
+            return $"{p.Kind} · {(p.Kb is { } kb ? "KB" + kb : Ui.UpdateNoKb)} · {p.Architecture ?? "-"} · {container}"
+                + (p.HasServicingStack ? " · " + Ui.UpdateServicingStack : string.Empty) + " · " + Ui.UpdateSha1InName(p.Sha1FromName is null ? Ui.None : Ui.Present);
         }
     }
 
     public string Note => Scanned.Package.Problems.Count > 0 ? string.Join(" ", Scanned.Package.Problems)
-        : Scanned.Sha256 is null ? "Файл не прочитан."
-        : sameContent > 1 ? $"Такое же содержимое ещё у {sameContent - 1} {Files(sameContent - 1)} в этой папке; отмеченные копии поставятся один раз."
+        : Scanned.Sha256 is null ? Ui.UpdateFileNotRead
+        : sameContent > 1 ? Ui.UpdateSameContent(sameContent - 1, Files(sameContent - 1))
         : string.Empty;
 
     public bool HasNote => Note.Length > 0;
 
     // Genitive after «у»: у 1 файла, у 21 файла, у 2 файлов, у 11 файлов.
-    private static string Files(int n) => n % 10 == 1 && n % 100 != 11 ? "файла" : "файлов";
+    private static string Files(int n) => n % 10 == 1 && n % 100 != 11 ? Ui.FileGenitiveOne : Ui.FileGenitiveMany;
 
     public bool CanSelect => Scanned.Package.Problems.Count == 0 && Scanned.Sha256 is not null;
 

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <!-- Window controls by x:Uid: Name.Property. -->
+  <data name="SourceBox.Header" xml:space="preserve"><value>Источник (папка дистрибутива, например C:\IF\fixture\media)</value></data>
+  <data name="WorkBox.Header" xml:space="preserve"><value>Рабочая папка (например C:\IF\ws)</value></data>
+  <data name="OutputBox.Header" xml:space="preserve"><value>Папка результата (например C:\IF\result)</value></data>
+  <data name="EditionBox.Header" xml:space="preserve"><value>Редакция в sources\install.wim</value></data>
+  <data name="RegistryTitle.Text" xml:space="preserve"><value>Реестр</value></data>
+  <data name="RegistryHint.Text" xml:space="preserve"><value>Файл .reg в формате «Windows Registry Editor Version 5.00». Если не выбраны ни файл, ни другие изменения, применяется проверочный маркер M1.</value></data>
+  <data name="RegFileBox.Header" xml:space="preserve"><value>Файл .reg</value></data>
+  <data name="ChooseRegFile.Content" xml:space="preserve"><value>Выбрать...</value></data>
+  <data name="ClearRegFile.Content" xml:space="preserve"><value>Убрать</value></data>
+  <data name="EncodingBox.Header" xml:space="preserve"><value>Кодировка</value></data>
+  <data name="AnsiCodePageBox.Header" xml:space="preserve"><value>Кодовая страница ANSI</value></data>
+  <data name="ImageTitle.Text" xml:space="preserve"><value>Содержимое образа</value></data>
+  <data name="InspectButton.Content" xml:space="preserve"><value>Прочитать образ</value></data>
+  <data name="AppsTitle.Text" xml:space="preserve"><value>Приложения</value></data>
+  <data name="FeaturesTitle.Text" xml:space="preserve"><value>Компоненты Windows</value></data>
+  <data name="FeaturesExpander.Header" xml:space="preserve"><value>Список компонентов</value></data>
+  <data name="CapabilitiesTitle.Text" xml:space="preserve"><value>Дополнительные компоненты</value></data>
+  <data name="CapabilitiesExpander.Header" xml:space="preserve"><value>Список установленных</value></data>
+  <data name="FodTitle.Text" xml:space="preserve"><value>Добавить из Features on Demand</value></data>
+  <data name="FodHint.Text" xml:space="preserve"><value>Папка LanguagesAndOptionalFeatures с ISO «Languages and Optional Features» той же базовой сборки (для 24H2, 25H2 и 26H2 — 26100). Без Windows Update.</value></data>
+  <data name="FodBox.Header" xml:space="preserve"><value>Папка FoD (например E:\LanguagesAndOptionalFeatures)</value></data>
+  <data name="ChooseFod.Content" xml:space="preserve"><value>Выбрать...</value></data>
+  <data name="AvailableExpander.Header" xml:space="preserve"><value>Список доступных для добавления</value></data>
+  <data name="AvailableFilter.PlaceholderText" xml:space="preserve"><value>Фильтр: имя или часть названия, например OpenSSH или fr-FR</value></data>
+  <data name="DriversTitle.Text" xml:space="preserve"><value>Драйверы</value></data>
+  <data name="ImageDriversExpander.Header" xml:space="preserve"><value>Сторонние драйверы образа</value></data>
+  <data name="AllowBootCritical.Content" xml:space="preserve"><value>Разрешить удаление драйверов, нужных для загрузки (образ может перестать загружаться)</value></data>
+  <data name="DriverFolderTitle.Text" xml:space="preserve"><value>Добавить драйверы из папки</value></data>
+  <data name="DriverFolderHint.Text" xml:space="preserve"><value>Папка с пакетами драйверов (INF вместе с .cat и .sys); вложенные папки просматриваются. Пакеты добавляются в выбранную редакцию install.wim.</value></data>
+  <data name="DriverFolderBox.Header" xml:space="preserve"><value>Папка драйверов (например E:\NetKVM\w11\amd64)</value></data>
+  <data name="ChooseDriverFolder.Content" xml:space="preserve"><value>Выбрать...</value></data>
+  <data name="ScanDrivers.Content" xml:space="preserve"><value>Найти пакеты</value></data>
+  <data name="DriverPackagesExpander.Header" xml:space="preserve"><value>Найденные пакеты</value></data>
+  <data name="ForceUnsigned.Content" xml:space="preserve"><value>Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)</value></data>
+  <data name="UpdatesTitle.Text" xml:space="preserve"><value>Обновления</value></data>
+  <data name="UpdatesHint.Text" xml:space="preserve"><value>Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя.</value></data>
+  <data name="UpdateFolderBox.Header" xml:space="preserve"><value>Папка обновлений (например C:\IF\upd\lcu)</value></data>
+  <data name="ChooseUpdateFolder.Content" xml:space="preserve"><value>Выбрать...</value></data>
+  <data name="ScanUpdates.Content" xml:space="preserve"><value>Найти обновления</value></data>
+  <data name="UpdatePackagesExpander.Header" xml:space="preserve"><value>Найденные обновления</value></data>
+  <data name="UpdateToImage.Content" xml:space="preserve"><value>В образ</value></data>
+  <data name="UpdateToWinRe.Content" xml:space="preserve"><value>В WinRE</value></data>
+  <data name="UpdateToBoot.Content" xml:space="preserve"><value>В boot.wim</value></data>
+  <data name="CleanupComponents.Content" xml:space="preserve"><value>Очистить хранилище компонентов после изменений (StartComponentCleanup; уменьшает образ после обновлений)</value></data>
+  <data name="ResetBase.Content" xml:space="preserve"><value>Вместе с /ResetBase (образ не становится меньше, но обновления в нём нельзя будет удалить)</value></data>
+  <data name="PreviewTitle.Text" xml:space="preserve"><value>Превью операции</value></data>
+  <data name="ConnectEngine.Content" xml:space="preserve"><value>Подключить движок</value></data>
+  <data name="PrepareButton.Content" xml:space="preserve"><value>Подготовить</value></data>
+  <data name="StartButton.Content" xml:space="preserve"><value>Запустить</value></data>
+  <data name="RecoverButton.Content" xml:space="preserve"><value>Восстановить</value></data>
+  <data name="LogBox.Header" xml:space="preserve"><value>Журнал</value></data>
+  <data name="EncodingAuto.Content" xml:space="preserve"><value>Авто (по BOM)</value></data>
+  <data name="EncodingUtf16.Content" xml:space="preserve"><value>UTF-16</value></data>
+  <data name="EncodingUtf8.Content" xml:space="preserve"><value>UTF-8</value></data>
+  <data name="EncodingAnsi.Content" xml:space="preserve"><value>ANSI</value></data>
+  <!-- Texts from code, read through Ui. -->
+  <data name="AnsiCodePageInvalid" xml:space="preserve"><value>Кодовая страница ANSI должна быть числом, например 1251.</value></data>
+  <data name="AppsCount" xml:space="preserve"><value>Предустановленных приложений: {0}. Отметьте те, что нужно удалить.</value></data>
+  <data name="AppsNotRead" xml:space="preserve"><value>Образ ещё не прочитан. Чтение копирует дистрибутив в рабочую папку (если копии ещё нет) и монтирует её только для чтения.</value></data>
+  <data name="AppxFramework" xml:space="preserve"><value>библиотека</value></data>
+  <data name="AppxNeededBy" xml:space="preserve"><value>Нужна приложениям: {0}. Удалить можно только вместе с ними.</value></data>
+  <data name="AvailableCount" xml:space="preserve"><value>Можно добавить: {0}, показано: {1}, отмечено: {2}.</value></data>
+  <data name="CapabilitiesCount" xml:space="preserve"><value>Установленных дополнительных компонентов: {0}. Отметьте те, что нужно удалить.</value></data>
+  <data name="CapabilitiesNotRead" xml:space="preserve"><value>Дополнительные компоненты ещё не прочитаны.</value></data>
+  <data name="CapabilitiesNotReadReason" xml:space="preserve"><value>Дополнительные компоненты не прочитаны:</value></data>
+  <data name="DriverBootCriticalNote" xml:space="preserve"><value>Нужен для загрузки: удалить можно только с разрешением ниже.</value></data>
+  <data name="DriverCatalog" xml:space="preserve"><value>каталог</value></data>
+  <data name="DriverFilesNotRead" xml:space="preserve"><value>Файлы пакета не прочитаны.</value></data>
+  <data name="DriverFolderChanged" xml:space="preserve"><value>Папка изменилась; нажмите «Найти пакеты».</value></data>
+  <data name="DriverFolderPrompt" xml:space="preserve"><value>Укажите папку с драйверами и нажмите «Найти пакеты».</value></data>
+  <data name="DriverNoCatalog" xml:space="preserve"><value>без подписи</value></data>
+  <data name="DriverNotInf" xml:space="preserve"><value>не INF драйвера</value></data>
+  <data name="DriverPackagesCount" xml:space="preserve"><value>Найдено INF: {0}, можно добавить: {1}, отмечено: {2}.</value></data>
+  <data name="DriverSameContent" xml:space="preserve"><value>Такое же содержимое ещё у {0} INF в этой папке; отмеченные копии добавятся один раз.</value></data>
+  <data name="DriverUnsignedNote" xml:space="preserve"><value>Без подписи: добавляется только с ForceUnsigned (разрешение ниже).</value></data>
+  <data name="DriversNotRead" xml:space="preserve"><value>Драйверы образа ещё не прочитаны.</value></data>
+  <data name="DriversSearching" xml:space="preserve"><value>Поиск пакетов...</value></data>
+  <data name="EditionChanged" xml:space="preserve"><value>Редакция изменилась; нажмите «Прочитать образ».</value></data>
+  <data name="EditionChosen" xml:space="preserve"><value>Меняется «{0}» (образ {1} из {2}); остальные редакции попадут в результат без изменений.</value></data>
+  <data name="EditionsBeforeInspect" xml:space="preserve"><value>Редакции появятся после «Прочитать образ»; по умолчанию меняется Pro, остальные остаются как есть.</value></data>
+  <data name="EditionsNotRead" xml:space="preserve"><value>Редакции install.wim не прочитаны; меняется образ {0}.</value></data>
+  <data name="EngineConnected" xml:space="preserve"><value>Движок подключён. Укажите папки и нажмите «Подготовить».</value></data>
+  <data name="EngineDidNotStart" xml:space="preserve"><value>Движок не запустился.</value></data>
+  <data name="EngineError" xml:space="preserve"><value>Ошибка движка:</value></data>
+  <data name="EngineIncompatible" xml:space="preserve"><value>Несовместимый движок: протокол {0}.</value></data>
+  <data name="EngineLost" xml:space="preserve"><value>Связь с движком потеряна. Подключите движок снова; незавершённый запуск потребует восстановления.</value></data>
+  <data name="EngineNotConnected" xml:space="preserve"><value>Движок не подключён.</value></data>
+  <data name="EngineNotFound" xml:space="preserve"><value>Не найден движок: {0}</value></data>
+  <data name="EnginePipeForeign" xml:space="preserve"><value>Канал движка принадлежит другому процессу.</value></data>
+  <data name="EngineRejected" xml:space="preserve"><value>Движок отклонил запрос:</value></data>
+  <data name="EngineStartFailed" xml:space="preserve"><value>Не удалось запустить движок.</value></data>
+  <data name="EngineStarting" xml:space="preserve"><value>Запуск движка (потребуется подтверждение UAC)...</value></data>
+  <data name="EngineUacCancelled" xml:space="preserve"><value>Запуск движка отменён в окне UAC.</value></data>
+  <data name="FeatureFromMedia" xml:space="preserve"><value>файлы будут взяты из sources\sxs дистрибутива</value></data>
+  <data name="FeaturesBlocked" xml:space="preserve"><value>Компоненты изменить нельзя:</value></data>
+  <data name="FeaturesCount" xml:space="preserve"><value>Компонентов: {0}, включено: {1}.</value></data>
+  <data name="FeaturesHint" xml:space="preserve"><value>Отметка означает «включён после запуска»: снимите её, чтобы выключить, поставьте, чтобы включить.</value></data>
+  <data name="FeaturesNotRead" xml:space="preserve"><value>Компоненты ещё не прочитаны.</value></data>
+  <data name="FileGenitiveMany" xml:space="preserve"><value>файлов</value></data>
+  <data name="FileGenitiveOne" xml:space="preserve"><value>файла</value></data>
+  <data name="FilePickerFailed" xml:space="preserve"><value>Не удалось открыть выбор файла, введите путь вручную:</value></data>
+  <data name="FolderInvalid" xml:space="preserve"><value>Папка не подходит:</value></data>
+  <data name="FolderPickerFailed" xml:space="preserve"><value>Не удалось открыть выбор папки, введите путь вручную:</value></data>
+  <data name="FoldersChangedApps" xml:space="preserve"><value>Папки изменились; прочитайте образ снова.</value></data>
+  <data name="FoldersChangedEditions" xml:space="preserve"><value>Папки изменились; редакции появятся после «Прочитать образ».</value></data>
+  <data name="FoldersInvalid" xml:space="preserve"><value>Папки не подходят:</value></data>
+  <data name="ImageDriversCount" xml:space="preserve"><value>Сторонних драйверов: {0}, нужных для загрузки: {1}. Отметьте те, что нужно удалить.</value></data>
+  <data name="ImageDriversNone" xml:space="preserve"><value>Сторонних драйверов в образе нет.</value></data>
+  <data name="ImageDriversNotRead" xml:space="preserve"><value>Драйверы образа не прочитаны:</value></data>
+  <data name="ImageNotRead" xml:space="preserve"><value>Образ не прочитан:</value></data>
+  <data name="ImageRead" xml:space="preserve"><value>Образ прочитан. Отметьте изменения и нажмите «Подготовить».</value></data>
+  <data name="Inspecting" xml:space="preserve"><value>Чтение приложений и компонентов из образа...</value></data>
+  <data name="LastRun" xml:space="preserve"><value>последний запуск {0:N}: {1}{2}</value></data>
+  <data name="LastRunStep" xml:space="preserve"><value>на шаге {0}</value></data>
+  <data name="LocationNested" xml:space="preserve"><value>{0} находится внутри папки «{1}»</value></data>
+  <data name="LocationNotLocal" xml:space="preserve"><value>{0}: нужен полный путь на локальном диске</value></data>
+  <data name="LocationOutputDir" xml:space="preserve"><value>папка результата</value></data>
+  <data name="LocationSame" xml:space="preserve"><value>{0} и {1} совпадают</value></data>
+  <data name="LocationSource" xml:space="preserve"><value>источник</value></data>
+  <data name="LocationWorkDir" xml:space="preserve"><value>рабочая папка</value></data>
+  <data name="LogDriverFolder" xml:space="preserve"><value>Папка драйверов {0}: INF {1}, годных для x64 {2}</value></data>
+  <data name="LogEngine" xml:space="preserve"><value>Движок {0}, протокол {1}, PID {2}, экземпляр {3}</value></data>
+  <data name="LogOutcome" xml:space="preserve"><value>Итог: {0} {1} {2} {3} {4}</value></data>
+  <data name="LogPlan" xml:space="preserve"><value>План {0}, ревизия {1}, отпечаток {2}</value></data>
+  <data name="LogRecovery" xml:space="preserve"><value>Восстановление:</value></data>
+  <data name="LogRun" xml:space="preserve"><value>Запуск плана {0}</value></data>
+  <data name="LogUpdateFolder" xml:space="preserve"><value>Папка обновлений {0}: файлов {1}, годных {2}</value></data>
+  <data name="LogWorkspace" xml:space="preserve"><value>Рабочая папка {0}, ревизия {1}, цель {2}, {3}</value></data>
+  <data name="NoRuns" xml:space="preserve"><value>запусков не было</value></data>
+  <data name="None" xml:space="preserve"><value>нет</value></data>
+  <data name="PackagesNotRead" xml:space="preserve"><value>Пакеты образа не прочитаны:</value></data>
+  <data name="PackagesStatus" xml:space="preserve"><value>Пакетов обслуживания: {0}. Накопительное обновление: {1}, стек обслуживания: {2}.</value></data>
+  <data name="PlanApps" xml:space="preserve"><value>Удаляемых приложений: {0}.</value></data>
+  <data name="PlanBoot" xml:space="preserve"><value>Обновлений в boot.wim: {0}.</value></data>
+  <data name="PlanCapabilityAdditions" xml:space="preserve"><value>Добавляемых: {0}.</value></data>
+  <data name="PlanCapabilityRemovals" xml:space="preserve"><value>Удаляемых дополнительных компонентов: {0}.</value></data>
+  <data name="PlanCleanup" xml:space="preserve"><value>Очистка хранилища компонентов{0}.</value></data>
+  <data name="PlanDiagnostic" xml:space="preserve"><value>изменение {0}: {1}</value></data>
+  <data name="PlanDrivers" xml:space="preserve"><value>Удаляемых драйверов: {0}, добавляемых: {1}.</value></data>
+  <data name="PlanFeatures" xml:space="preserve"><value>Включаемых компонентов: {0}, выключаемых: {1}.</value></data>
+  <data name="PlanNotBuilt" xml:space="preserve"><value>План не построен, ничего не будет применено.</value></data>
+  <data name="PlanReady" xml:space="preserve"><value>План готов, изменений реестра: {0}.{1}{2}{3}{4}{5}{6} Проверьте превью и нажмите «Запустить».</value></data>
+  <data name="PlanResetBase" xml:space="preserve"><value>с /ResetBase</value></data>
+  <data name="PlanUpdates" xml:space="preserve"><value>Добавляемых обновлений: {0}.</value></data>
+  <data name="PlanWinRe" xml:space="preserve"><value>Обновлений в WinRE: {0}.</value></data>
+  <data name="Present" xml:space="preserve"><value>есть</value></data>
+  <data name="PreviewAppx" xml:space="preserve"><value>Удалить приложение {0} ({1})</value></data>
+  <data name="PreviewBeforePrepare" xml:space="preserve"><value>Превью появится после подготовки: укажите папки и нажмите «Подготовить».</value></data>
+  <data name="PreviewBoot" xml:space="preserve"><value>boot.wim (sources\boot.wim): обновить все образы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; setup.exe и setuphost.exe программы установки — в sources носителя</value></data>
+  <data name="PreviewBootAdd" xml:space="preserve"><value>Добавить в boot.wim {0}</value></data>
+  <data name="PreviewCapabilityAdd" xml:space="preserve"><value>Добавить дополнительный компонент {0}</value></data>
+  <data name="PreviewCapabilityAddNamed" xml:space="preserve"><value>Добавить дополнительный компонент {0} ({1})</value></data>
+  <data name="PreviewCapabilityDependencies" xml:space="preserve"><value>DISM может сам добавить нужные им компоненты (например, базовый языковой пакет); они будут перечислены в журнале запуска.</value></data>
+  <data name="PreviewCapabilityRemove" xml:space="preserve"><value>Удалить дополнительный компонент {0}</value></data>
+  <data name="PreviewCapabilityRemoveNamed" xml:space="preserve"><value>Удалить дополнительный компонент {0} ({1})</value></data>
+  <data name="PreviewCleanup" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup) после остальных изменений</value></data>
+  <data name="PreviewCleanupResetBase" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup /ResetBase) после остальных изменений</value></data>
+  <data name="PreviewDriverAdd" xml:space="preserve"><value>Добавить драйвер {0}{1}</value></data>
+  <data name="PreviewDriverBootCritical" xml:space="preserve"><value>(нужен для загрузки)</value></data>
+  <data name="PreviewDriverRemove" xml:space="preserve"><value>Удалить драйвер {0}{1}</value></data>
+  <data name="PreviewDriverSameContent" xml:space="preserve"><value>То же содержимое, добавляется один раз: {0}</value></data>
+  <data name="PreviewDriverUnsigned" xml:space="preserve"><value>(без подписи, ForceUnsigned)</value></data>
+  <data name="PreviewFeatureAddedOff" xml:space="preserve"><value>(добавлен планом: зависит от выключаемого)</value></data>
+  <data name="PreviewFeatureAddedOn" xml:space="preserve"><value>(добавлен планом: нужен включаемому)</value></data>
+  <data name="PreviewFeatureDefaults" xml:space="preserve"><value>DISM может сам включить вложенные компоненты по умолчанию; они будут перечислены в журнале запуска.</value></data>
+  <data name="PreviewFeatureDisable" xml:space="preserve"><value>Выключить компонент {0}{1}</value></data>
+  <data name="PreviewFeatureEnable" xml:space="preserve"><value>Включить компонент {0}{1}</value></data>
+  <data name="PreviewNetFx3Source" xml:space="preserve"><value>Файлы .NET Framework 3.5 будут взяты из sources\sxs дистрибутива.</value></data>
+  <data name="PreviewSource" xml:space="preserve"><value>Источник: {0}</value></data>
+  <data name="PreviewUpdateAdd" xml:space="preserve"><value>Добавить обновление {0}</value></data>
+  <data name="PreviewUpdateDuration" xml:space="preserve"><value>Установка накопительного обновления идёт 10–15 минут, сохранение образа после неё — до получаса; отмена их не прерывает.</value></data>
+  <data name="PreviewUpdateSameContent" xml:space="preserve"><value>То же содержимое, ставится один раз: {0}</value></data>
+  <data name="PreviewWinRe" xml:space="preserve"><value>WinRE (Windows\System32\Recovery\Winre.wim): извлечь, обновить, очистить с /ResetBase, экспортировать и вернуть в образ</value></data>
+  <data name="PreviewWinReAdd" xml:space="preserve"><value>Добавить в WinRE {0}</value></data>
+  <data name="Recovering" xml:space="preserve"><value>Восстановление...</value></data>
+  <data name="RecoveryDone" xml:space="preserve"><value>Восстановление завершено. Нажмите «Подготовить».</value></data>
+  <data name="RecoveryFailed" xml:space="preserve"><value>Восстановить автоматически не удалось. Пришлите журнал.</value></data>
+  <data name="RecoveryNeeded" xml:space="preserve"><value>Предыдущий запуск или чтение не завершены. Нажмите «Восстановить» и повторите.</value></data>
+  <data name="RegFileEncoding" xml:space="preserve"><value>Кодировка файла: {0}.</value></data>
+  <data name="RegFileNotFound" xml:space="preserve"><value>Файл .reg не найден:</value></data>
+  <data name="RegFileReadFailed" xml:space="preserve"><value>Не удалось прочитать файл .reg:</value></data>
+  <data name="RegFileRejected" xml:space="preserve"><value>Файл .reg не принят, ничего не будет применено.{0}</value></data>
+  <data name="RegFileTooLarge" xml:space="preserve"><value>Файл .reg больше {0} КБ, такие файлы не принимаются.</value></data>
+  <data name="RunDone" xml:space="preserve"><value>Готово. Результат сохранён.</value></data>
+  <data name="RunFailed" xml:space="preserve"><value>Запуск не удался ({0}) на шаге {1}: {2}. Исходник и прежний результат не изменены.</value></data>
+  <data name="RunRejected" xml:space="preserve"><value>Запуск отклонён ({0}). Нажмите «Подготовить» ещё раз.</value></data>
+  <data name="Running" xml:space="preserve"><value>Выполняется. Не закрывайте окно: прерванный запуск потребует восстановления.</value></data>
+  <data name="UpdateFileNotRead" xml:space="preserve"><value>Файл не прочитан.</value></data>
+  <data name="UpdateFilesBoot" xml:space="preserve"><value>в boot.wim: {0}.</value></data>
+  <data name="UpdateFilesFound" xml:space="preserve"><value>Найдено файлов: {0}, можно добавить: {1},</value></data>
+  <data name="UpdateFilesTargets" xml:space="preserve"><value>в образ: {0}, в WinRE: {1},</value></data>
+  <data name="UpdateFolderChanged" xml:space="preserve"><value>Папка изменилась; нажмите «Найти обновления».</value></data>
+  <data name="UpdateFolderPrompt" xml:space="preserve"><value>Укажите папку с обновлениями и нажмите «Найти обновления».</value></data>
+  <data name="UpdateNoKb" xml:space="preserve"><value>без KB</value></data>
+  <data name="UpdateSameContent" xml:space="preserve"><value>Такое же содержимое ещё у {0} {1} в этой папке; отмеченные копии поставятся один раз.</value></data>
+  <data name="UpdateServicingStack" xml:space="preserve"><value>стек обслуживания</value></data>
+  <data name="UpdateSha1InName" xml:space="preserve"><value>SHA-1 в имени: {0}</value></data>
+  <data name="UpdatesHashing" xml:space="preserve"><value>Чтение и хеширование файлов (несколько секунд на гигабайт)...</value></data>
+  <data name="UpdatesNotRead" xml:space="preserve"><value>Обновления образа ещё не прочитаны.</value></data>
+  <data name="Warning" xml:space="preserve"><value>Внимание:</value></data>
+</root>

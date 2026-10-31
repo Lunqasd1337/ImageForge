@@ -128,6 +128,25 @@ public sealed class UpdatePackageTests : IDisposable
         info.HasServicingStack.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("windows11.0-kb5054979-x64-ndp481_0123456789abcdef0123456789abcdef01234567.msu", true)]
+    [InlineData("Windows11.0-KB5054979-x64-NDP481.cab", true)]
+    [InlineData("windows11.0-kb5070001-x64.msu", false)]
+    [InlineData("SSU-26300.1000-x64.cab", false)]
+    public void A_dotnet_cumulative_update_is_told_by_ndp_in_its_name(string name, bool dotNet)
+    {
+        UpdatePackage.Analyze(name, new CabinetListing([new("update.mum", 1)], null)).IsDotNet.ShouldBe(dotNet);
+        UpdatePackage.Analyze(name, new WimInfo(1, 1, 1, [], null)).IsDotNet.ShouldBe(dotNet);
+    }
+
+    [Fact]
+    public void An_msu_with_an_ndp_package_inside_is_a_dotnet_update()
+    {
+        var info = UpdatePackage.Analyze("windows11.0-kb5054979-x64.msu", new CabinetListing([new("Windows11.0-KB5054979-x64-NDP481.cab", 1)], null));
+
+        info.IsDotNet.ShouldBeTrue();
+    }
+
     [Fact]
     public void A_cab_is_a_servicing_package_only_with_update_mum()
     {

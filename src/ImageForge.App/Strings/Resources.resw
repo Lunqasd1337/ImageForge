@@ -40,7 +40,7 @@
   <data name="DriverPackagesExpander.Header" xml:space="preserve"><value>Найденные пакеты</value></data>
   <data name="ForceUnsigned.Content" xml:space="preserve"><value>Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)</value></data>
   <data name="UpdatesTitle.Text" xml:space="preserve"><value>Обновления</value></data>
-  <data name="UpdatesHint.Text" xml:space="preserve"><value>Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя.</value></data>
+  <data name="UpdatesHint.Text" xml:space="preserve"><value>Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов; обновление .NET Framework (ndp в имени файла) ставится отдельно, после очистки хранилища. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя.</value></data>
   <data name="UpdateFolderBox.Header" xml:space="preserve"><value>Папка обновлений (например C:\IF\upd\lcu)</value></data>
   <data name="ChooseUpdateFolder.Content" xml:space="preserve"><value>Выбрать...</value></data>
   <data name="ScanUpdates.Content" xml:space="preserve"><value>Найти обновления</value></data>
@@ -162,6 +162,7 @@
   <data name="PreviewCapabilityRemoveNamed" xml:space="preserve"><value>Удалить дополнительный компонент {0} ({1})</value></data>
   <data name="PreviewCleanup" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup) после остальных изменений</value></data>
   <data name="PreviewCleanupResetBase" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup /ResetBase) после остальных изменений</value></data>
+  <data name="PreviewDotNet" xml:space="preserve"><value>Обновления .NET Framework: после очистки хранилища компонентов, отдельным шагом</value></data>
   <data name="PreviewDriverAdd" xml:space="preserve"><value>Добавить драйвер {0}{1}</value></data>
   <data name="PreviewDriverBootCritical" xml:space="preserve"><value>(нужен для загрузки)</value></data>
   <data name="PreviewDriverRemove" xml:space="preserve"><value>Удалить драйвер {0}{1}</value></data>

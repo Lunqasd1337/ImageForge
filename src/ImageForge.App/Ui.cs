@@ -127,6 +127,7 @@ internal static class Ui
     public static string PreviewCapabilityRemoveNamed(object? a0, object? a1) => Format(nameof(PreviewCapabilityRemoveNamed), a0, a1);
     public static string PreviewCleanup => Get(nameof(PreviewCleanup));
     public static string PreviewCleanupResetBase => Get(nameof(PreviewCleanupResetBase));
+    public static string PreviewDotNet => Get(nameof(PreviewDotNet));
     public static string PreviewDriverAdd(object? a0, object? a1) => Format(nameof(PreviewDriverAdd), a0, a1);
     public static string PreviewDriverBootCritical => Get(nameof(PreviewDriverBootCritical));
     public static string PreviewDriverRemove(object? a0, object? a1) => Format(nameof(PreviewDriverRemove), a0, a1);

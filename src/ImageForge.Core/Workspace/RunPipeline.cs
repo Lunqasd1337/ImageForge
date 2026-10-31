@@ -120,11 +120,6 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 mounted = true;
                 return true;
             }, ct).ConfigureAwait(false);
-            if (request.Plan.AppxRemovals.Count > 0)
-            {
-                await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
-            }
-
             if (request.Plan.Capabilities is { } capabilities)
             {
                 await context.Step("capabilities", () => ChangeCapabilitiesAsync(capabilities, mountDir, ct), ct).ConfigureAwait(false);
@@ -145,9 +140,20 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await context.Step("drivers", () => ChangeDriversAsync(drivers, mountDir, ct), ct).ConfigureAwait(false);
             }
 
+            // Plan, section 11 (install): final LCU, then drivers and removals, cleanup, then .NET.
+            if (request.Plan.AppxRemovals.Count > 0)
+            {
+                await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
             if (request.Plan.Cleanup is { } cleanup)
             {
                 await context.Step("cleanup", () => CleanupAsync(cleanup, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.DotNetUpdates is { } dotNet)
+            {
+                await context.Step("dotnet", () => AddUpdatesAsync(dotNet, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             if (request.Plan.WinRe is { } winRe)

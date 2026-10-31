@@ -463,13 +463,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             HasPlan = true;
             string[] lines =
             [
-                .. plan.AppxRemovals.Select(DescribeRemoval),
+                // The order of the run (plan, section 11).
                 .. plan.CapabilityRemovals.Select(DescribeCapabilityRemoval),
                 .. DescribeCapabilityAdditions(plan),
                 .. DescribeFeatureChanges(plan.FeatureChanges),
-                .. DescribeDrivers(plan.Drivers),
                 .. DescribeUpdates(plan.Updates),
+                .. DescribeDrivers(plan.Drivers),
+                .. plan.AppxRemovals.Select(DescribeRemoval),
                 .. DescribeCleanup(plan.Cleanup),
+                .. DescribeDotNet(plan.DotNetUpdates),
                 .. DescribeWinRe(plan.WinRe),
                 .. DescribeBoot(plan.Boot),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
@@ -480,7 +482,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 + (plan.CapabilityAdditions.Count > 0 ? (" " + Ui.PlanCapabilityAdditions(plan.CapabilityAdditions.Count)) : string.Empty);
             var features = plan.FeatureChanges is { } f ? (" " + Ui.PlanFeatures(f.Enable.Count, f.Disable.Count)) : string.Empty;
             var drivers = plan.Drivers is { } driverPlan ? (" " + Ui.PlanDrivers(driverPlan.Remove.Count, driverPlan.Add.Count)) : string.Empty;
-            var updates = (plan.Updates is { } updatePlan ? (" " + Ui.PlanUpdates(updatePlan.Add.Count)) : string.Empty)
+            var updates = ((plan.Updates?.Add.Count ?? 0) + (plan.DotNetUpdates?.Add.Count ?? 0) is > 0 and var updateCount ? (" " + Ui.PlanUpdates(updateCount)) : string.Empty)
                 + (plan.Cleanup is { } cleanupPlan ? (" " + Ui.PlanCleanup((cleanupPlan.ResetBase ? (" " + Ui.PlanResetBase) : string.Empty))) : string.Empty)
                 + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count)) : string.Empty)
                 + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count)) : string.Empty);
@@ -817,6 +819,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var warning in updates.Warnings)
         {
             yield return "  " + Ui.Warning + " " + warning;
+        }
+    }
+
+    private static IEnumerable<string> DescribeDotNet(UpdatePlan? dotNet)
+    {
+        if (dotNet is null)
+        {
+            yield break;
+        }
+
+        yield return Ui.PreviewDotNet;
+        foreach (var addition in dotNet.Add)
+        {
+            yield return "  " + Ui.PreviewUpdateAdd(addition.Description);
         }
     }
 

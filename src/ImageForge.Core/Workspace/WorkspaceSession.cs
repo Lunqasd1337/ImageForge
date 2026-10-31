@@ -66,6 +66,9 @@ public sealed record PlanSummary(
     /// <summary>Update packages to add, in order, with their warnings; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
 
+    /// <summary>.NET Framework cumulative updates, added after the cleanup; null when there are none.</summary>
+    public UpdatePlan? DotNetUpdates { get; init; }
+
     /// <summary>The component store cleanup, with its warnings; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
 
@@ -377,6 +380,7 @@ public sealed class WorkspaceSession(
                     FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
                     Drivers = plan.Drivers,
                     Updates = plan.Updates,
+                    DotNetUpdates = plan.DotNetUpdates,
                     Cleanup = plan.Cleanup,
                     WinRe = plan.WinRe,
                     Boot = plan.Boot,

@@ -115,6 +115,9 @@ public sealed record ExecutionPlan(
     /// <summary>Update packages to add, after the feature changes and before the drivers; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
 
+    /// <summary>.NET Framework cumulative updates, added after the component store cleanup (plan, section 11); null when there are none.</summary>
+    public UpdatePlan? DotNetUpdates { get; init; }
+
     /// <summary>The component store cleanup, after all other servicing and before the registry; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
 
@@ -160,6 +163,7 @@ public sealed record DriverAddition(string InfPath, string ContentHash, bool For
 /// <param name="Add">One DISM call each, in this order: servicing stack packages first.</param>
 /// <param name="Source">The update folder the files are in.</param>
 /// <param name="Warnings">Shown in the preview.</param>
+/// <summary>Packages to add, in order; for <see cref="ExecutionPlan.DotNetUpdates"/>, after the component store cleanup.</summary>
 public sealed record UpdatePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
 
 /// <param name="ResetBase">Superseded component versions are removed too; updates in the image can no longer be uninstalled.</param>

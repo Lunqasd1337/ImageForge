@@ -94,6 +94,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var capabilities = capabilityChanges.Count > 0 ? PlanCapabilities(capabilityChanges, request, diagnostics) : null;
         var drivers = driverChanges.Count > 0 ? PlanDrivers(driverChanges, request, diagnostics) : null;
         var updates = updateChanges.Count > 0 ? PlanUpdates(updateChanges, request.UpdateSource, diagnostics) : null;
+        var (mainUpdates, dotNetUpdates) = SplitDotNet(updates, request.UpdateSource);
         var winRe = winReChanges.Count > 0 ? PlanWinRe(winReChanges, request.UpdateSource, diagnostics) : null;
         var boot = bootChanges.Count > 0 ? PlanUpdates(bootChanges, request.UpdateSource, diagnostics) is { } bootUpdates
             ? new BootPlan(bootUpdates.Add, bootUpdates.Source, bootUpdates.Warnings)
@@ -138,7 +139,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             Features = features,
             Capabilities = capabilities,
             Drivers = drivers,
-            Updates = updates,
+            Updates = mainUpdates,
+            DotNetUpdates = dotNetUpdates,
             Cleanup = cleanup,
             WinRe = winRe,
             Boot = boot,
@@ -469,6 +471,24 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
     /// Updates come only from the scanned folder, whole and with a hash; the same file content is added once. Servicing
     /// stack packages go first. DISM checks the signature and applicability when the run adds each one.
     /// </summary>
+    /// <summary>The .NET Framework cumulative updates go into their own step after the cleanup; the warnings stay with the main step.</summary>
+    private static (UpdatePlan? Main, UpdatePlan? DotNet) SplitDotNet(UpdatePlan? updates, UpdateFolder? source)
+    {
+        if (updates is null)
+        {
+            return (null, null);
+        }
+
+        var dotNet = updates.Add.Where(a => source!.Packages.Any(p => p.Package.FileName == a.FileName && p.Package.IsDotNet)).ToList();
+        if (dotNet.Count == 0)
+        {
+            return (updates, null);
+        }
+
+        var main = updates.Add.Except(dotNet).ToList();
+        return (main.Count > 0 || updates.Warnings.Count > 0 ? updates with { Add = main } : null, new UpdatePlan(dotNet, updates.Source, []));
+    }
+
     private static UpdatePlan? PlanUpdates(List<(string FileName, int Index)> changes, UpdateFolder? source, List<PlanningDiagnostic> diagnostics)
     {
         if (CollectUpdates(changes, source, diagnostics) is not { } add)
@@ -477,7 +497,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         }
 
         var warnings = new List<string>();
-        var cumulative = add.Where(a => !a.ServicingStack && a.Package.Kind == UpdateKind.Msu && a.Package.Kb is not null)
+        var cumulative = add.Where(a => !a.ServicingStack && !a.Package.IsDotNet && a.Package.Kind == UpdateKind.Msu && a.Package.Kb is not null)
             .Select(a => $"KB{a.Package.Kb}").Distinct().ToList();
         if (cumulative.Count > 1)
         {
@@ -680,7 +700,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 10;
+    private const int FormatVersion = 11;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -789,6 +809,15 @@ public static class PlanFingerprint
         if (plan.Cleanup is { } cleanup)
         {
             Append(builder, "cleanup", cleanup.ResetBase);
+        }
+
+        if (plan.DotNetUpdates is { } dotNet)
+        {
+            Append(builder, "dotnet-source", dotNet.Source);
+            foreach (var addition in dotNet.Add)
+            {
+                Append(builder, "dotnet-update", addition.FileName, addition.Sha256);
+            }
         }
 
         if (plan.WinRe is { } winRe)

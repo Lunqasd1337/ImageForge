@@ -531,6 +531,27 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task The_install_steps_follow_the_recipe_dotnet_after_the_cleanup_and_apps_after_the_updates()
+    {
+        _servicing.Provisioned.Add(Clipchamp);
+        var folder = UpdatePackages();
+        File.WriteAllBytes(Path.Combine(folder, DotNetCu), Updates.WimArchiveTests.BuildWim("<WIM><IMAGE INDEX=\"1\"><NAME>dotnet</NAME></IMAGE></WIM>"));
+        var request = UpdateRequest(folder, new AddUpdatePackage(DotNetCu), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"),
+            new AddDriverPackage(@"net\netkvm.inf"), new CleanupComponentStore(false));
+        var appx = AppxRequest(Clipchamp, Clipchamp).Plan;
+        request = request with { Plan = request.Plan with { AppxRemovals = appx.AppxRemovals, AppxInventory = appx.AppxInventory } };
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        var steps = _servicing.Calls.Where(c => c is "cleanup" || c.StartsWith("package-add", StringComparison.Ordinal)
+            || c.StartsWith("driver-add", StringComparison.Ordinal) || c.StartsWith("appx-remove", StringComparison.Ordinal)).ToList();
+        steps.ShouldBe(["package-add Windows11.0-KB5134133-x64.msu", "driver-add netkvm.inf", "appx-remove Clipchamp.Clipchamp", "cleanup", "package-add " + DotNetCu]);
+    }
+
+    private const string DotNetCu = "windows11.0-kb5054979-x64-ndp481.msu";
+
+    [Fact]
     public async Task An_update_that_changes_nothing_is_logged_and_the_run_goes_on()
     {
         var request = UpdateRequest(UpdatePackages(), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"));

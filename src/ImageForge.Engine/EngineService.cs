@@ -116,7 +116,7 @@ public sealed class EngineService : IEngineService, IDisposable
         var plan = _session.Plan(options);
         _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
             $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
-        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []).Concat(plan.Boot?.Warnings ?? []))
+        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.DotNetUpdates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []).Concat(plan.Boot?.Warnings ?? []))
         {
             _log($"plan warning: {warning}");
         }

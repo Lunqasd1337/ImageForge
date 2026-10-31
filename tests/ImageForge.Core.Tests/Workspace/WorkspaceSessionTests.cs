@@ -28,6 +28,24 @@ public sealed class WorkspaceSessionTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
+    public void A_work_folder_on_a_network_drive_is_refused_and_a_synced_source_is_a_warning()
+    {
+        var network = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        {
+            Volumes = _ => new VolumeFacts(VolumeKind.Network, "NTFS"),
+        };
+        network.Open(_folders).Problems.ShouldContain(p => p.Kind == LocationProblemKind.NetworkVolume && p.Location == WorkspaceLocations.WorkDir);
+
+        var synced = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        {
+            IsSynced = path => path == _folders.SourceDir,
+        };
+        var summary = synced.Open(_folders);
+        summary.Problems.ShouldBeEmpty();
+        summary.Warnings.ShouldHaveSingleItem().Kind.ShouldBe(LocationProblemKind.SyncedFolder);
+    }
+
+    [Fact]
     public async Task The_shown_plan_runs_and_reports_progress()
     {
         _session.Open(_folders).Problems.ShouldBeEmpty();

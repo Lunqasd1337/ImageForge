@@ -12,6 +12,8 @@
       <TextBox x:Uid="SourceBox" Text="{x:Bind ViewModel.SourcePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
       <TextBox x:Uid="WorkBox" Text="{x:Bind ViewModel.WorkPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
       <TextBox x:Uid="OutputBox" Text="{x:Bind ViewModel.OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+      <TextBlock Text="{x:Bind ViewModel.FoldersWarning, Mode=OneWay}" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                 Visibility="{x:Bind ViewModel.HasFoldersWarning, Mode=OneWay}" />
       <ComboBox x:Uid="EditionBox" ItemsSource="{x:Bind ViewModel.EditionNames}"
                 SelectedIndex="{x:Bind ViewModel.EditionIndex, Mode=TwoWay}" MinWidth="360" />
       <TextBlock TextWrapping="Wrap" Text="{x:Bind ViewModel.EditionStatus, Mode=OneWay}" />

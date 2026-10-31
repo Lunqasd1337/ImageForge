@@ -21,7 +21,11 @@ public sealed class EngineService : IEngineService, IDisposable
     {
         _requestShutdown = requestShutdown;
         _log = log ?? (_ => { });
-        _session = new WorkspaceSession(line => new DismImageServicing(Dism(), line), Guid.NewGuid) { FreeSpace = DiskSpace.FreeBytes };
+        _session = new WorkspaceSession(line => new DismImageServicing(Dism(), line), Guid.NewGuid) {
+            FreeSpace = DiskSpace.FreeBytes,
+            Volumes = LocalVolumes.Facts,
+            IsSynced = LocalVolumes.IsSynced,
+        };
     }
 
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)

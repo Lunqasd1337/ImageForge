@@ -84,6 +84,10 @@ internal static class Ui
     public static string Inspecting => Get(nameof(Inspecting));
     public static string LastRun(object? a0, object? a1, object? a2) => Format(nameof(LastRun), a0, a1, a2);
     public static string LastRunStep(object? a0) => Format(nameof(LastRunStep), a0);
+    public static string LocationNetwork(object? a0) => Format(nameof(LocationNetwork), a0);
+    public static string LocationNotNtfs(object? a0, object? a1) => Format(nameof(LocationNotNtfs), a0, a1);
+    public static string LocationSynced(object? a0) => Format(nameof(LocationSynced), a0);
+    public static string FoldersWarning(object? a0) => Format(nameof(FoldersWarning), a0);
     public static string LocationNested(object? a0, object? a1) => Format(nameof(LocationNested), a0, a1);
     public static string LocationNotLocal(object? a0) => Format(nameof(LocationNotLocal), a0);
     public static string LocationOutputDir => Get(nameof(LocationOutputDir));

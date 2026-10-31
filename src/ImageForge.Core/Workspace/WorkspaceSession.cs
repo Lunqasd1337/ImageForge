@@ -30,6 +30,9 @@ public sealed record WorkspaceSummary(
 
     /// <summary>The image this workspace services; the other editions are kept unchanged.</summary>
     public int ImageIndex { get; init; }
+
+    /// <summary>A network or synced source or output: allowed, shown before the copy.</summary>
+    public IReadOnlyList<LocationProblem> Warnings { get; init; } = [];
 }
 
 /// <param name="FileDiagnostics">Problems in the .reg file itself (decoding, syntax); the plan is not built then.</param>
@@ -168,6 +171,14 @@ public sealed class WorkspaceSession(
     /// <summary>Free bytes of a volume by its root; null when unknown. The engine reads the disk; tests leave it unknown.</summary>
     public Func<string, long?> FreeSpace { get; init; } = _ => null;
 
+    /// <summary>The kind and file system of a volume by its root; null when unknown. The engine reads the disk.</summary>
+    public Func<string, VolumeFacts?> Volumes { get; init; } = _ => null;
+
+    /// <summary>Whether a folder is synced by OneDrive or a similar client. The engine knows the user's sync roots.</summary>
+    public Func<string, bool> IsSynced { get; init; } = _ => false;
+
+    private IReadOnlyList<LocationProblem> _warnings = [];
+
     private readonly Func<string, IWorkspacePaths> _layoutFactory = layoutFactory ?? (dir => WorkspaceLayout.Create(dir));
     private readonly Func<string, string, string, IReadOnlyList<LocationProblem>> _validate = validateLocations ?? WorkspaceLocations.Validate;
     private readonly StartRequestLedger _ledger = new(newId);
@@ -196,6 +207,9 @@ public sealed class WorkspaceSession(
             _revision++;
 
             var problems = _validate(request.SourceDir, request.WorkDir, request.OutputDir);
+            var volumes = problems.Count > 0 ? [] : WorkspaceLocations.CheckVolumes(request.SourceDir, request.WorkDir, request.OutputDir, Volumes, IsSynced);
+            problems = [.. problems, .. volumes.Where(p => !p.IsWarning)];
+            _warnings = [.. volumes.Where(p => p.IsWarning)];
             if (problems.Count > 0)
             {
                 return new WorkspaceSummary(Guid.Empty, _revision, TargetStatus.Pending, null, false, problems);
@@ -491,6 +505,7 @@ public sealed class WorkspaceSession(
             {
                 Editions = _editions,
                 ImageIndex = open.Request.ImageIndex,
+                Warnings = _warnings,
             };
         }
     }

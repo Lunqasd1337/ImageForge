@@ -120,6 +120,10 @@
   <data name="Inspecting" xml:space="preserve"><value>Чтение приложений и компонентов из образа...</value></data>
   <data name="LastRun" xml:space="preserve"><value>последний запуск {0:N}: {1}{2}</value></data>
   <data name="LastRunStep" xml:space="preserve"><value>на шаге {0}</value></data>
+  <data name="LocationNetwork" xml:space="preserve"><value>{0}: сетевой диск (рабочая папка должна быть на локальном диске)</value></data>
+  <data name="LocationNotNtfs" xml:space="preserve"><value>{0}: файловая система {1}, а для монтирования образа нужен NTFS</value></data>
+  <data name="LocationSynced" xml:space="preserve"><value>{0}: синхронизируемая папка (OneDrive, Dropbox и т. п.)</value></data>
+  <data name="FoldersWarning" xml:space="preserve"><value>Внимание: {0}. Работать можно, но копирование будет медленнее, а синхронизация может мешать чтению и записи.</value></data>
   <data name="LocationNested" xml:space="preserve"><value>{0} находится внутри папки «{1}»</value></data>
   <data name="LocationNotLocal" xml:space="preserve"><value>{0}: нужен полный путь на локальном диске</value></data>
   <data name="LocationOutputDir" xml:space="preserve"><value>папка результата</value></data>

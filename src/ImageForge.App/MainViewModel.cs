@@ -46,6 +46,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial string EditionStatus { get; set; } = Ui.EditionsBeforeInspect;
 
+    /// <summary>A network or synced source or output; empty when there is none.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFoldersWarning))]
+    public partial string FoldersWarning { get; set; } = string.Empty;
+
+    public bool HasFoldersWarning => FoldersWarning.Length > 0;
+
     /// <summary>The .reg file to apply; empty plans the M1 validation marker.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRegFile))]
@@ -685,6 +692,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void ShowWorkspace(WorkspaceSummary workspace)
     {
         RecoveryRequired = workspace.RecoveryRequired;
+        FoldersWarning = workspace.Warnings.Count > 0 ? Ui.FoldersWarning(string.Join("; ", workspace.Warnings.Select(Describe))) : string.Empty;
+        if (FoldersWarning.Length > 0)
+        {
+            Append(FoldersWarning);
+        }
+
         var last = workspace.LastRun is { } run ? Ui.LastRun(run.RunId, run.Status, (run.FailedStep is null ? string.Empty : (" " + Ui.LastRunStep(run.FailedStep)))) : Ui.NoRuns;
         Append(Ui.LogWorkspace(workspace.WorkspaceId, workspace.Revision, workspace.Target, last));
     }
@@ -1038,6 +1051,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             ClearInventory();
             AppsStatus = Ui.FoldersChangedApps;
+            FoldersWarning = string.Empty;
             FeaturesStatus = Ui.FeaturesNotRead;
             CapabilitiesStatus = Ui.CapabilitiesNotRead;
             DriversStatus = Ui.DriversNotRead;
@@ -1068,6 +1082,9 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         LocationProblemKind.NotLocalPath => Ui.LocationNotLocal(Name(problem.Location)),
         LocationProblemKind.Same => Ui.LocationSame(Name(problem.Location), Name(problem.Other)),
+        LocationProblemKind.NetworkVolume => Ui.LocationNetwork(Name(problem.Location)),
+        LocationProblemKind.NotNtfs => Ui.LocationNotNtfs(Name(problem.Location), problem.Other),
+        LocationProblemKind.SyncedFolder => Ui.LocationSynced(Name(problem.Location)),
         _ => Ui.LocationNested(Name(problem.Location), Name(problem.Other)),
     };
 

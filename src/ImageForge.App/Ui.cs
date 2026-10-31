@@ -172,7 +172,7 @@ internal static class Ui
     public static string RunRejected(object? a0) => Format(nameof(RunRejected), a0);
     public static string Running => Get(nameof(Running));
     public static string UpdateFileNotRead => Get(nameof(UpdateFileNotRead));
-    public static string UpdateFilesBoot(object? a0) => Format(nameof(UpdateFilesBoot), a0);
+    public static string UpdateFilesBoot(object? a0, object? a1) => Format(nameof(UpdateFilesBoot), a0, a1);
     public static string UpdateFilesFound(object? a0, object? a1) => Format(nameof(UpdateFilesFound), a0, a1);
     public static string UpdateFilesTargets(object? a0, object? a1) => Format(nameof(UpdateFilesTargets), a0, a1);
     public static string UpdateFolderChanged => Get(nameof(UpdateFolderChanged));
@@ -184,4 +184,12 @@ internal static class Ui
     public static string UpdatesHashing => Get(nameof(UpdatesHashing));
     public static string UpdatesNotRead => Get(nameof(UpdatesNotRead));
     public static string Warning => Get(nameof(Warning));
+
+    public static string UpdateSetupDuNote => Get(nameof(UpdateSetupDuNote));
+
+    public static string PreviewMedia => Get(nameof(PreviewMedia));
+
+    public static string PreviewSetupDu(object? a0) => Format(nameof(PreviewSetupDu), a0);
+
+    public static string PlanMedia => Get(nameof(PlanMedia));
 }

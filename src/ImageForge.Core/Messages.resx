@@ -110,4 +110,9 @@
   <data name="WimSplit" xml:space="preserve"><value>WIM разбит на части ({0} из {1}), DISM не примет такой пакет</value></data>
   <data name="WimTruncated" xml:space="preserve"><value>файл обрезан: заголовок WIM не дочитан</value></data>
   <data name="WinReNeedsSafeOs" xml:space="preserve"><value>В WinRE накопительное обновление ставит только стек обслуживания; саму среду восстановления обновляет Safe OS Dynamic Update (.cab) того же месяца.</value></data>
+  <data name="UpdateIsSetupDu" xml:space="preserve"><value>{0} — Setup Dynamic Update: это файлы программы установки, а не пакет DISM. Его можно отметить только «На носитель».</value></data>
+  <data name="UpdateNotSetupDu" xml:space="preserve"><value>{0} — не Setup Dynamic Update: на носитель распаковывается только CAB с файлами программы установки.</value></data>
+  <data name="SetupDuOnlyOne" xml:space="preserve"><value>На носитель можно распаковать только один Setup Dynamic Update.</value></data>
+  <data name="SetupDuWithoutBoot" xml:space="preserve"><value>boot.wim не обновляется: setuphost.exe и другие файлы установщика на носителе будут из Setup DU, а в boot.wim останутся прежние. Microsoft обновляет их вместе; лучше отметить накопительное обновление «В boot.wim».</value></data>
+  <data name="UpdateSetupDu" xml:space="preserve"><value>, Setup DU</value></data>
 </root>

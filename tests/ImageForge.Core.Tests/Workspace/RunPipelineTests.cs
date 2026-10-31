@@ -724,6 +724,115 @@ public sealed class RunPipelineTests : IDisposable
         Directory.Exists(_output).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task The_boot_manager_of_boot_wim_replaces_every_boot_manager_of_the_media_by_the_map()
+    {
+        BootMedia();
+        _dir.WriteFile("media/efi/boot/bootx64.efi", "X64-OLD");
+        _dir.WriteFile("media/bootmgr.efi", "MGR-OLD");
+        _dir.WriteFile("media/bootmgr", "BIOS");
+        _servicing.BootEfiFiles["bootmgfw.efi"] = "FW-NEW";
+        _servicing.BootEfiFiles["bootmgr.efi"] = "MGR-NEW";
+        _servicing.BootEfiFiles["boot.stl"] = "STL";
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(UpdatePackages(), new AddBootUpdatePackage("Windows11.0-KB5134133-x64.msu")), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        File.ReadAllText(Path.Combine(_output, "efi", "boot", "bootx64.efi")).ShouldBe("FW-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "bootmgr.efi")).ShouldBe("MGR-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "efi", "microsoft", "boot", "boot.stl")).ShouldBe("STL (image 2)");
+        File.ReadAllText(Path.Combine(_output, "bootmgr")).ShouldBe("BIOS");
+        File.Exists(Path.Combine(_output, "efi", "boot", "bootia32.efi")).ShouldBeFalse();
+        File.ReadAllText(Path.Combine(_output, "sources", "setup.exe")).ShouldBe("SETUP-OLD");
+        log.ShouldContain(l => l.StartsWith("boot file ", StringComparison.Ordinal) && l.Contains("bootx64.efi", StringComparison.Ordinal));
+        File.ReadAllText(_dir.Combine("media", "efi", "boot", "bootx64.efi")).ShouldBe("X64-OLD");
+    }
+
+    private const string SetupDu = @"setup\windows11.0-kb5128977-x64.cab";
+
+    private string SetupDuPackages()
+    {
+        var folder = UpdatePackages();
+        _dir.WriteFile("updates/setup/placeholder.txt", "-");
+        File.WriteAllBytes(Path.Combine(folder, "setup", "windows11.0-kb5128977-x64.cab"),
+            Updates.UpdatePackageTests.BuildCabinet([("setuphost.exe", 10), ("setupprep.exe", 10)]));
+        return folder;
+    }
+
+    private readonly List<string> _expanded = [];
+
+    private Task ExpandSetupDu(string cabinet, string folder, CancellationToken ct)
+    {
+        _expanded.Add(cabinet);
+        File.WriteAllText(Path.Combine(folder, "setuphost.exe"), "HOST-DU");
+        File.WriteAllText(Path.Combine(folder, "setupprep.exe"), "PREP-DU");
+        Directory.CreateDirectory(Path.Combine(folder, "replacementmanifests"));
+        File.WriteAllText(Path.Combine(folder, "replacementmanifests", "x.man"), "MAN");
+        return Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task The_setup_dynamic_update_goes_into_sources_first_and_the_setup_files_of_boot_wim_over_it()
+    {
+        BootMedia();
+        _servicing.BootSetupFiles["setup.exe"] = "SETUP-NEW";
+        _servicing.BootSetupFiles["setuphost.exe"] = "HOST-NEW";
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(
+            UpdateRequest(SetupDuPackages(), new AddBootUpdatePackage("Windows11.0-KB5134133-x64.msu"), new ApplySetupDynamicUpdate(SetupDu)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _expanded.ShouldHaveSingleItem().ShouldStartWith(_paths.Root);
+        File.ReadAllText(Path.Combine(_output, "sources", "setuphost.exe")).ShouldBe("HOST-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "sources", "setup.exe")).ShouldBe("SETUP-NEW (image 2)");
+        File.ReadAllText(Path.Combine(_output, "sources", "setupprep.exe")).ShouldBe("PREP-DU");
+        File.ReadAllText(Path.Combine(_output, "sources", "replacementmanifests", "x.man")).ShouldBe("MAN");
+        log.ShouldContain("setup du: 3 files into sources, 1 of them replace media files");
+        log.IndexOf("setup du: 3 files into sources, 1 of them replace media files").ShouldBeLessThan(log.FindIndex(l => l.StartsWith("setup file setuphost.exe", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_setup_dynamic_update_alone_changes_only_the_files_of_sources()
+    {
+        BootMedia();
+
+        var result = await Pipeline().RunAsync(UpdateRequest(SetupDuPackages(), new ApplySetupDynamicUpdate(SetupDu)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "registry", "unmount commit", "export"]);
+        File.ReadAllText(Path.Combine(_output, "sources", "setuphost.exe")).ShouldBe("HOST-DU");
+        File.ReadAllText(Path.Combine(_output, "sources", "setup.exe")).ShouldBe("SETUP-OLD");
+        File.ReadAllBytes(Path.Combine(_output, "sources", "boot.wim")).ShouldBe(File.ReadAllBytes(_dir.Combine("media", "sources", "boot.wim")));
+    }
+
+    [Fact]
+    public async Task Without_a_cabinet_expander_the_run_stops_at_the_media_step()
+    {
+        BootMedia();
+
+        var result = await Pipeline(canExpand: false).RunAsync(UpdateRequest(SetupDuPackages(), new ApplySetupDynamicUpdate(SetupDu)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("media");
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_changed_setup_dynamic_update_stops_the_run_before_the_mount()
+    {
+        BootMedia();
+        var folder = SetupDuPackages();
+        var request = UpdateRequest(folder, new ApplySetupDynamicUpdate(SetupDu));
+        File.AppendAllText(Path.Combine(folder, "setup", "windows11.0-kb5128977-x64.cab"), "more");
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.FailedStep.ShouldBe("stage-inputs");
+        _servicing.Calls.ShouldBeEmpty();
+    }
+
     private const string SafeOs = "windows11.0-kb5130881-x64.cab";
 
     private string WinRePackages()
@@ -930,10 +1039,11 @@ public sealed class RunPipelineTests : IDisposable
 
     private WorkspaceState State() => new StateStore<WorkspaceState>(_paths.StateFile).Load().State!;
 
-    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null, Func<string, long?>? freeSpace = null) =>
+    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null, Func<string, long?>? freeSpace = null, bool canExpand = true) =>
         new(_paths, _servicing, Guid.NewGuid)
         {
             FreeSpace = freeSpace ?? (_ => null),
+            ExpandCabinet = canExpand ? ExpandSetupDu : null,
             Log = log is null ? null : log.Add,
             BeforeStep = beforeStep is null ? null : (step, _) =>
             {

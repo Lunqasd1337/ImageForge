@@ -20,10 +20,14 @@ public static class DismCli
     public static Encoding OutputEncoding { get; } =
         CodePagesEncodingProvider.Instance.GetEncoding((int)PInvoke.GetOEMCP()) ?? Encoding.UTF8;
 
-    public static async Task<CliResult> RunAsync(IReadOnlyList<string> arguments, Action<string>? onLine, CancellationToken ct)
+    public static Task<CliResult> RunAsync(IReadOnlyList<string> arguments, Action<string>? onLine, CancellationToken ct) =>
+        RunToolAsync(TrustedPath, arguments, onLine, ct);
+
+    /// <summary>Runs another System32 tool the same way, such as expand.exe.</summary>
+    public static async Task<CliResult> RunToolAsync(string path, IReadOnlyList<string> arguments, Action<string>? onLine, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var startInfo = new ProcessStartInfo(TrustedPath)
+        var startInfo = new ProcessStartInfo(path)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,

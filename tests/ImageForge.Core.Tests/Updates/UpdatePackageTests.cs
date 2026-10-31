@@ -159,6 +159,20 @@ public sealed class UpdatePackageTests : IDisposable
     }
 
     [Fact]
+    public void A_cab_of_setup_files_without_update_mum_is_a_setup_dynamic_update()
+    {
+        var setup = UpdatePackage.Analyze("windows11.0-kb5128977-x64.cab", new CabinetListing(
+            [new("SetupHost.exe", 1), new("SetupPrep.exe", 1), new(@"replacementmanifests\x.man", 1), new("appraiser.sdb", 1)], null));
+
+        setup.Problems.ShouldBeEmpty();
+        setup.IsSetupDynamicUpdate.ShouldBeTrue();
+        setup.Kb.ShouldBe(5128977);
+        UpdatePackage.Analyze("SSU-26300.1000-x64.cab", new CabinetListing([new("update.mum", 1), new("SetupHost.exe", 1)], null))
+            .IsSetupDynamicUpdate.ShouldBeFalse();
+        UpdatePackage.Analyze("drivers.cab", new CabinetListing([new("viostor.inf", 1)], null)).IsSetupDynamicUpdate.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Other_architectures_unknown_extensions_and_unreadable_files_are_problems()
     {
         UpdatePackage.Analyze("windows11.0-kb5070002-arm64.msu", new CabinetListing([new("Windows11.0-KB5070002-arm64.cab", 1)], null))

@@ -129,7 +129,16 @@ public sealed record ExecutionPlan(
 
     /// <summary>boot.wim servicing, after install.wim is exported; null when nothing goes into boot.wim.</summary>
     public BootPlan? Boot { get; init; }
+
+    /// <summary>The Setup Dynamic Update for the media's sources, after boot.wim; null when none is chosen.</summary>
+    public MediaPlan? Media { get; init; }
 }
+
+/// <summary>
+/// The media files step (plan, section 11): <paramref name="SetupUpdate"/> is expanded into sources; then, if boot.wim was
+/// serviced, its setup and boot manager files replace those on the media, as in Microsoft's media dynamic update sample.
+/// </summary>
+public sealed record MediaPlan(UpdateAddition SetupUpdate, string Source, IReadOnlyList<string> Warnings);
 
 /// <param name="Disable">Passed to DISM in this order, dependents first; runs before <paramref name="Enable"/>.</param>
 /// <param name="Enable">Passed to DISM in this order, parents first.</param>
@@ -246,6 +255,8 @@ public static class PlanningCodes
     public const string DriverUnsigned = "driver.unsigned";
     public const string UpdateSourceMissing = "update.source.missing";
     public const string UpdatePackageInvalid = "update.package.invalid";
+    public const string UpdateIsSetupDynamicUpdate = "update.setup-du";
+    public const string UpdateNotSetupDynamicUpdate = "update.not-setup-du";
     public const string RegistryRootNotSupportedYet = "registry.root.not-supported-yet";
     public const string RegistryValueInvalid = "registry.value.invalid";
     public const string RegistryKeyDeleteRoot = "registry.key.delete-root";

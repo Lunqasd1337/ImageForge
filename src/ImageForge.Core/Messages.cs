@@ -120,4 +120,9 @@ public static class Messages
     public static string WimSplit(object? a0, object? a1) => Format(nameof(WimSplit), a0, a1);
     public static string WimTruncated => Get(nameof(WimTruncated));
     public static string WinReNeedsSafeOs => Get(nameof(WinReNeedsSafeOs));
+    public static string UpdateIsSetupDu(object? a0) => Format(nameof(UpdateIsSetupDu), a0);
+    public static string UpdateNotSetupDu(object? a0) => Format(nameof(UpdateNotSetupDu), a0);
+    public static string SetupDuOnlyOne => Get(nameof(SetupDuOnlyOne));
+    public static string SetupDuWithoutBoot => Get(nameof(SetupDuWithoutBoot));
+    public static string UpdateSetupDu => Get(nameof(UpdateSetupDu));
 }

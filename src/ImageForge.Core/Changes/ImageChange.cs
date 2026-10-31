@@ -144,6 +144,12 @@ public sealed record AddWinReUpdatePackage(string FileName) : ImageChange;
 /// </summary>
 public sealed record AddBootUpdatePackage(string FileName) : ImageChange;
 
+/// <summary>
+/// Expands a Setup Dynamic Update from the scanned update folder into the media's sources, before the setup and boot
+/// manager files of the serviced boot.wim are copied over it (plan, section 11, Media).
+/// </summary>
+public sealed record ApplySetupDynamicUpdate(string FileName) : ImageChange;
+
 /// <summary>Adds a driver package from the scanned driver folder to WinRE: storage drivers first of all (plan, section 12).</summary>
 public sealed record AddWinReDriverPackage(string InfPath, bool ForceUnsigned = false) : ImageChange;
 

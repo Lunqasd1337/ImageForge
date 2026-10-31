@@ -249,7 +249,7 @@ public sealed class WorkspaceSession(
             var features = inventory.Features;
             var capabilities = inventory.Capabilities;
             var featureProblems = features.Problems.Count > 0 ? features.Problems
-                : features.Parents is null ? ["Зависимости части компонентов не прочитаны (подробности в журнале); изменять компоненты нельзя."]
+                : features.Parents is null ? [Messages.FeatureParentsNotRead]
                 : [];
             return new InspectionSummary(
                 _revision,
@@ -522,8 +522,8 @@ public sealed class WorkspaceSession(
     private static AppxPackageView View(ProvisionedAppxPackage package, AppxInventory inventory)
     {
         var family = package.Identity.FamilyName;
-        var blocked = package.Facts is null ? $"Зависимости не прочитаны ({package.FactsProblem}); удалить нельзя."
-            : inventory.InboxDependencies?.Contains(family, StringComparer.OrdinalIgnoreCase) == true ? "Нужна встроенным приложениям Windows; удалить нельзя."
+        var blocked = package.Facts is null ? Messages.AppxFactsNotRead(package.FactsProblem)
+            : inventory.InboxDependencies?.Contains(family, StringComparer.OrdinalIgnoreCase) == true ? Messages.AppxNeededByInbox
             : null;
         return new AppxPackageView(
             package.DisplayName, package.PackageName, family, package.Identity.Version.ToString(4), package.Identity.Architecture,
@@ -545,9 +545,9 @@ public sealed class WorkspaceSession(
     private static FeatureView View(WindowsFeature feature, FeatureInventory inventory, bool mediaHasNetFx3)
     {
         var fromMedia = feature.State == FeatureState.DisabledWithPayloadRemoved;
-        var blocked = feature.State == FeatureState.Unknown ? $"Состояние «{feature.RawState}» не поддерживается; изменить нельзя."
+        var blocked = feature.State == FeatureState.Unknown ? Messages.FeatureStateUnsupported(feature.RawState)
             : fromMedia && !(mediaHasNetFx3 && string.Equals(feature.Name, FeatureSources.NetFx3, StringComparison.OrdinalIgnoreCase))
-                ? "Файлов компонента нет в образе, а подходящего источника нет; включить нельзя."
+                ? Messages.FeatureNoSource
             : null;
         return new FeatureView(feature.Name, inventory.DisplayNames.GetValueOrDefault(feature.Name, feature.Name), feature.RawState, feature.IsOn, blocked)
         {

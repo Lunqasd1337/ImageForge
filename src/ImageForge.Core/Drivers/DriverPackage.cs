@@ -37,12 +37,12 @@ public static class DriverPackage
         var signature = document.Value("Version", "Signature");
         if (signature is null)
         {
-            return new(infRelativePath, null, [], ["Нет раздела [Version] с подписью: это не INF драйвера."]);
+            return new(infRelativePath, null, [], [Messages.InfNoVersion]);
         }
 
         if (!signature.Equals("$WINDOWS NT$", StringComparison.OrdinalIgnoreCase) && !signature.Equals("$Chicago$", StringComparison.OrdinalIgnoreCase))
         {
-            return new(infRelativePath, null, [], [$"Подпись {signature} не относится к драйверам Windows NT."]);
+            return new(infRelativePath, null, [], [Messages.InfWrongSignature(signature)]);
         }
 
         var architectures = document.Lines("Manufacturer")
@@ -67,16 +67,16 @@ public static class DriverPackage
         var problems = new List<string>();
         if (!architectures.Contains(Arch, StringComparer.OrdinalIgnoreCase))
         {
-            problems.Add("В [Manufacturer] нет раздела для x64 (NTamd64).");
+            problems.Add(Messages.InfNoX64);
         }
 
         if (inf.CatalogFile is { } cat && !exists(Combine(folder, cat)))
         {
-            problems.Add($"Нет файла каталога {cat}.");
+            problems.Add(Messages.InfNoCatalog(cat));
         }
 
         var files = Files(document, folder);
-        problems.AddRange(files.Where(f => !exists(f)).Select(f => $"Нет файла {f}."));
+        problems.AddRange(files.Where(f => !exists(f)).Select(f => Messages.InfFileMissing(f)));
         return new(infRelativePath, inf, files, problems);
     }
 

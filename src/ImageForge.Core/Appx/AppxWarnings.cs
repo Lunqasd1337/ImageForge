@@ -9,9 +9,9 @@ public static class AppxWarnings
         return identity.FamilyName switch
         {
             "Microsoft.WindowsStore_8wekyb3d8bbwe" =>
-                "Без Microsoft Store приложения из магазина нельзя будет установить или обновить, а вернуть сам магазин сложно.",
+                Messages.AppxStoreWarning,
             "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" =>
-                "Без App Installer не будет winget, и пакеты .msix и .appx не откроются двойным щелчком.",
+                Messages.AppxInstallerWarning,
             _ => null,
         };
     }

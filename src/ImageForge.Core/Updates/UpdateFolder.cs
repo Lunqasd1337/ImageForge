@@ -17,7 +17,7 @@ public sealed record UpdateFolder(string Folder, IReadOnlyList<ScannedUpdate> Pa
         {
             if (!Path.IsPathFullyQualified(folder) || !Directory.Exists(folder))
             {
-                return new(folder, [], "папка не найдена (нужен полный путь)");
+                return new(folder, [], Messages.FolderNotFound);
             }
 
             var packages = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
@@ -26,7 +26,7 @@ public sealed record UpdateFolder(string Folder, IReadOnlyList<ScannedUpdate> Pa
                 .Order(StringComparer.OrdinalIgnoreCase)
                 .Select(path => ScanFile(folder, path))
                 .ToList();
-            return new(folder, packages, packages.Count == 0 ? "в папке нет файлов .msu и .cab" : null);
+            return new(folder, packages, packages.Count == 0 ? Messages.UpdateFolderEmpty : null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -68,7 +68,7 @@ public sealed record UpdateFolder(string Folder, IReadOnlyList<ScannedUpdate> Pa
 #pragma warning restore CA5350
             if (actual != expected)
             {
-                package = package with { Problems = [.. package.Problems, $"SHA-1 файла {actual} не совпадает с указанным в имени: файл повреждён или скачан не полностью"] };
+                package = package with { Problems = [.. package.Problems, Messages.UpdateSha1Mismatch(actual)] };
             }
         }
 

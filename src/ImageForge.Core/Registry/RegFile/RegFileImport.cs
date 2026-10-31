@@ -55,21 +55,21 @@ public static class RegFileDiagnosticText
         ArgumentNullException.ThrowIfNull(diagnostic);
         var text = diagnostic.Code switch
         {
-            RegFileCodes.EncodingAmbiguous => "Кодировку нельзя определить: в файле нет BOM. Выберите UTF-16, UTF-8 или ANSI с кодовой страницей",
-            RegFileCodes.EncodingInvalid => "Байты файла не подходят к выбранной кодировке",
-            RegFileCodes.EncodingUnsupported => "Эта кодировка или кодовая страница не поддерживается",
-            RegFileCodes.HeaderMissing => "Первая строка должна быть «Windows Registry Editor Version 5.00»",
-            RegFileCodes.FormatUnsupported => "Формат REGEDIT4 не поддерживается, нужен «Windows Registry Editor Version 5.00»",
-            RegFileCodes.KeyMalformed => "Неверная строка ключа",
-            RegFileCodes.ValueOutsideKey => "Значение стоит до первого [ключа]",
-            RegFileCodes.ValueMalformed => "Неверная запись значения",
-            RegFileCodes.ValueTypeUnsupported => "Тип значения не поддерживается",
-            RegFileCodes.LineUnrecognized => "Строка не похожа на ключ, значение или комментарий",
-            RegFileCodes.TooLarge => $"Файл больше {RegFileImport.MaxBytes / 1024} КБ",
-            RegFileCodes.Empty => "В файле нет ни одного ключа или значения",
-            _ => "Ошибка в файле",
+            RegFileCodes.EncodingAmbiguous => Messages.RegEncodingAmbiguous,
+            RegFileCodes.EncodingInvalid => Messages.RegEncodingInvalid,
+            RegFileCodes.EncodingUnsupported => Messages.RegEncodingUnsupported,
+            RegFileCodes.HeaderMissing => Messages.RegHeaderMissing,
+            RegFileCodes.FormatUnsupported => Messages.RegFormatUnsupported,
+            RegFileCodes.KeyMalformed => Messages.RegKeyMalformed,
+            RegFileCodes.ValueOutsideKey => Messages.RegValueOutsideKey,
+            RegFileCodes.ValueMalformed => Messages.RegValueMalformed,
+            RegFileCodes.ValueTypeUnsupported => Messages.RegValueTypeUnsupported,
+            RegFileCodes.LineUnrecognized => Messages.RegLineUnrecognized,
+            RegFileCodes.TooLarge => Messages.RegTooLarge(RegFileImport.MaxBytes / 1024),
+            RegFileCodes.Empty => Messages.RegEmpty,
+            _ => Messages.RegError,
         };
 
-        return diagnostic.Line > 0 ? $"строка {diagnostic.Line}: {text} ({diagnostic.Message})" : $"{text} ({diagnostic.Message})";
+        return diagnostic.Line > 0 ? Messages.RegErrorAtLine(diagnostic.Line, text, diagnostic.Message) : $"{text} ({diagnostic.Message})";
     }
 }

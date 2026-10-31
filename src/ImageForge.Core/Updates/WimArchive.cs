@@ -35,12 +35,12 @@ public static class WimArchive
         stream.Position = 0;
         if (stream.ReadAtLeast(header, HeaderSize, throwOnEndOfStream: false) < HeaderSize)
         {
-            return new(0, 0, 0, [], "файл обрезан: заголовок WIM не дочитан");
+            return new(0, 0, 0, [], Messages.WimTruncated);
         }
 
         if (!HasMagic(header))
         {
-            return new(0, 0, 0, [], "нет подписи MSWIM: это не файл WIM");
+            return new(0, 0, 0, [], Messages.WimNoSignature);
         }
 
         var span = header.AsSpan();
@@ -49,12 +49,12 @@ public static class WimArchive
         var count = (int)Math.Min(BitConverter.ToUInt32(span[44..]), int.MaxValue);
         if (parts != 1 || part != 1)
         {
-            return new(part, parts, count, [], $"WIM разбит на части ({part} из {parts}), DISM не примет такой пакет");
+            return new(part, parts, count, [], Messages.WimSplit(part, parts));
         }
 
         if (count == 0)
         {
-            return new(part, parts, count, [], "в WIM нет ни одного образа");
+            return new(part, parts, count, [], Messages.WimNoImages);
         }
 
         var xmlSize = (long)(BitConverter.ToUInt64(span[72..]) & 0x00FF_FFFF_FFFF_FFFF);

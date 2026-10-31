@@ -29,7 +29,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
         if (request.Changes.Count == 0)
         {
-            return Fail(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Нет изменений для применения."));
+            return Fail(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, Messages.PlanEmpty));
         }
 
         var diagnostics = new List<PlanningDiagnostic>();
@@ -101,7 +101,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
             && cleanup is null && winRe is null && boot is null)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, "Компоненты уже в нужном состоянии; изменять нечего."));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.EmptyChangeSet, -1, Messages.PlanFeaturesUnchanged));
         }
 
         if (diagnostics.Count > 0)
@@ -160,7 +160,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (inventory is null || inventory.Problems.Count > 0)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.AppxInventoryMissing, index, "Список приложений образа не прочитан или прочитан с ошибками; удаление невозможно."));
+                PlanningCodes.AppxInventoryMissing, index, Messages.AppxInventoryMissing));
             return [];
         }
 
@@ -169,7 +169,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             .ToList();
         if (matches.Count == 0)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.AppxNotProvisioned, index, $"В образе нет приложения {remove.FamilyName}."));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.AppxNotProvisioned, index, Messages.AppxNotProvisioned(remove.FamilyName)));
             return [];
         }
 
@@ -194,7 +194,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             if (package.Facts is not { } facts)
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.AppxDependenciesUnknown, index, $"Зависимости {package.DisplayName} не прочитаны ({package.FactsProblem}); удаление заблокировано."));
+                    PlanningCodes.AppxDependenciesUnknown, index, Messages.AppxDependenciesUnknown(package.DisplayName, package.FactsProblem)));
                 blocked = true;
                 continue;
             }
@@ -203,14 +203,14 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             if (dependents.Count > 0)
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.AppxRequiredByKept, index, $"{package.DisplayName} нужна приложениям, которые остаются: {string.Join(", ", dependents)}. Отметьте и их или оставьте {package.DisplayName}."));
+                    PlanningCodes.AppxRequiredByKept, index, Messages.AppxRequiredByKept(package.DisplayName, string.Join(", ", dependents))));
                 blocked = true;
             }
 
             if (inventory.InboxDependencies?.Contains(family, StringComparer.OrdinalIgnoreCase) == true)
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.AppxRequiredByInbox, index, $"{package.DisplayName} нужна встроенным приложениям Windows; её нельзя удалить."));
+                    PlanningCodes.AppxRequiredByInbox, index, Messages.AppxRequiredByInbox(package.DisplayName)));
                 blocked = true;
             }
 
@@ -218,7 +218,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             if (facts.IsFramework && (inventory.InboxDependencies is null || kept.Any(k => k.Facts?.DependsOn is null)))
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.AppxFrameworkBlocked, index, $"{package.DisplayName} — библиотека, а зависимости части приложений не прочитаны; удаление заблокировано."));
+                    PlanningCodes.AppxFrameworkBlocked, index, Messages.AppxFrameworkBlocked(package.DisplayName)));
                 blocked = true;
             }
         }
@@ -238,7 +238,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             if (next is null)
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.AppxDependencyCycle, -1, $"Приложения зависят друг от друга по кругу: {string.Join(", ", pending.Select(p => p.DisplayName))}; порядок удаления не определить."));
+                    PlanningCodes.AppxDependencyCycle, -1, Messages.AppxDependencyCycle(string.Join(", ", pending.Select(p => p.DisplayName)))));
                 return [];
             }
 
@@ -258,7 +258,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (request.Features is not { Problems.Count: 0, Parents: { } parents } inventory)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.FeatureInventoryMissing, changes[0].Index, "Список компонентов образа или их зависимости не прочитаны; изменить компоненты нельзя."));
+                PlanningCodes.FeatureInventoryMissing, changes[0].Index, Messages.FeatureInventoryMissing));
             return null;
         }
 
@@ -278,7 +278,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             var result = turnOn ? FeatureDependencies.Enable(inventory, parents, name) : FeatureDependencies.Disable(inventory, parents, name);
             foreach (var problem in result.Problems)
             {
-                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.FeatureBlocked, index, $"Компонент {name}: {problem}"));
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.FeatureBlocked, index, Messages.FeatureBlocked(name, problem)));
                 blocked = true;
             }
 
@@ -305,7 +305,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         foreach (var conflict in disable.Where(needed.Contains))
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.FeatureConflict, -1, $"Компонент {conflict} нужно и включить, и выключить; уберите одно из изменений."));
+                PlanningCodes.FeatureConflict, -1, Messages.FeatureConflict(conflict)));
             blocked = true;
         }
 
@@ -315,7 +315,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             {
                 diagnostics.Add(new PlanningDiagnostic(
                     PlanningCodes.FeatureSourceMissing, index,
-                    $"Файлов компонента {feature} нет в образе, а в sources\\sxs дистрибутива нет подходящего пакета; загрузка из Windows Update не используется."));
+                    Messages.FeatureNoSxs(feature)));
                 blocked = true;
             }
         }
@@ -335,7 +335,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (request.Capabilities is not { Problems.Count: 0 } inventory)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.CapabilityInventoryMissing, changes[0].Index, "Список дополнительных компонентов (Capabilities) не прочитан; изменить их нельзя."));
+                PlanningCodes.CapabilityInventoryMissing, changes[0].Index, Messages.CapabilityInventoryMissing));
             return null;
         }
 
@@ -353,21 +353,21 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             if (!adding && capability is not { State: CapabilityState.Installed })
             {
                 diagnostics.Add(new PlanningDiagnostic(
-                    PlanningCodes.CapabilityNotInstalled, index, $"Дополнительный компонент {name} не установлен в образе."));
+                    PlanningCodes.CapabilityNotInstalled, index, Messages.CapabilityNotInstalled(name)));
             }
             else if (adding && capability is not { State: CapabilityState.NotPresent })
             {
                 diagnostics.Add(new PlanningDiagnostic(
                     PlanningCodes.CapabilityNotAvailable, index, capability is null
-                        ? $"Дополнительного компонента {name} нет в списке образа."
-                        : $"Дополнительный компонент {name} уже в состоянии «{capability.RawState}»; добавить нельзя."));
+                        ? Messages.CapabilityNotListed(name)
+                        : Messages.CapabilityWrongState(name, capability.RawState)));
             }
             else if (adding && request.FodSource is null)
             {
                 diagnostics.Add(new PlanningDiagnostic(
                     PlanningCodes.CapabilitySourceMissing, index, request.FodSourceProblem is { } problem
-                        ? $"Папка Features on Demand не подходит: {problem}"
-                        : "Для добавления нужна папка Features on Demand (LanguagesAndOptionalFeatures с ISO); она не указана."));
+                        ? Messages.FodFolderInvalid(problem)
+                        : Messages.FodFolderMissing));
             }
             else
             {
@@ -394,7 +394,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         if (request.Drivers is not { Problems.Count: 0 } inventory)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.DriverInventoryMissing, changes[0].Index, "Список драйверов образа не прочитан; изменить драйверы нельзя."));
+                PlanningCodes.DriverInventoryMissing, changes[0].Index, Messages.DriverInventoryMissing));
             return null;
         }
 
@@ -410,19 +410,19 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
                 if (driver is null)
                 {
                     diagnostics.Add(new PlanningDiagnostic(
-                        PlanningCodes.DriverNotInstalled, index, $"В образе нет стороннего драйвера {removal.PublishedName}."));
+                        PlanningCodes.DriverNotInstalled, index, Messages.DriverNotInstalled(removal.PublishedName)));
                 }
                 else if (driver.BootCritical && !removal.AllowBootCritical)
                 {
                     diagnostics.Add(new PlanningDiagnostic(
-                        PlanningCodes.DriverBootCritical, index, $"Драйвер {driver.PublishedName} ({driver.InfName}) нужен для загрузки; удалить его можно только с отдельным подтверждением."));
+                        PlanningCodes.DriverBootCritical, index, Messages.DriverBootCritical(driver.PublishedName, driver.InfName)));
                 }
                 else if (!remove.Any(r => r.PublishedName == driver.PublishedName))
                 {
                     remove.Add(new DriverRemoval(driver.PublishedName, Describe(driver), driver.BootCritical));
                     if (driver.BootCritical)
                     {
-                        warnings.Add($"Удаляется драйвер, нужный для загрузки: {driver.PublishedName} ({driver.InfName}). Без него образ может не загрузиться.");
+                        warnings.Add(Messages.DriverBootCriticalWarning(driver.PublishedName, driver.InfName));
                     }
                 }
             }
@@ -448,14 +448,14 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
                 add.Add(new DriverAddition(scanned.Package.InfPath, hash, unsigned, Describe(scanned.Package), []));
                 if (unsigned)
                 {
-                    warnings.Add($"Пакет {scanned.Package.InfPath} без подписи добавляется с ForceUnsigned: DISM не проверит подпись, и в установленной системе драйвер может не загрузиться.");
+                    warnings.Add(Messages.DriverUnsignedWarning(scanned.Package.InfPath));
                 }
 
                 var name = scanned.Package.InfPath[(scanned.Package.InfPath.LastIndexOf('\\') + 1)..];
                 foreach (var present in inventory.Drivers.Where(d => string.Equals(d.InfName, name, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(d.Version, inf.DriverVersion, StringComparison.OrdinalIgnoreCase)))
                 {
-                    warnings.Add($"В образе уже есть {present.PublishedName} ({present.InfName} {present.Version}); такой же пакет DISM не добавит второй раз.");
+                    warnings.Add(Messages.DriverAlreadyPresent(present.PublishedName, present.InfName, present.Version));
                 }
             }
         }
@@ -481,7 +481,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             .Select(a => $"KB{a.Package.Kb}").Distinct().ToList();
         if (cumulative.Count > 1)
         {
-            warnings.Add($"Выбрано несколько MSU ({string.Join(", ", cumulative)}): DISM поставит каждый по очереди, а накопительному обновлению обычно достаточно последнего.");
+            warnings.Add(Messages.UpdateSeveralMsu(string.Join(", ", cumulative)));
         }
 
         return new UpdatePlan([.. add.Where(a => a.ServicingStack).Concat(add.Where(a => !a.ServicingStack)).Select(a => a.Addition)], source!.Folder, warnings);
@@ -501,7 +501,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var warnings = new List<string>();
         if (add.All(a => a.Package.Kind == UpdateKind.Msu))
         {
-            warnings.Add("В WinRE накопительное обновление ставит только стек обслуживания; саму среду восстановления обновляет Safe OS Dynamic Update (.cab) того же месяца.");
+            warnings.Add(Messages.WinReNeedsSafeOs);
         }
 
         return new WinRePlan(
@@ -520,22 +520,22 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             {
                 diagnostics.Add(new PlanningDiagnostic(
                     PlanningCodes.UpdateSourceMissing, index, source?.Problem is { } problem
-                        ? $"Папка обновлений не подходит: {problem}."
-                        : "Папка обновлений не указана или не просканирована."));
+                        ? Messages.UpdateFolderInvalid(problem)
+                        : Messages.UpdateFolderMissing));
                 continue;
             }
 
             var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.FileName, fileName, StringComparison.OrdinalIgnoreCase));
             if (scanned is null)
             {
-                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateSourceMissing, index, $"В папке обновлений нет {fileName}."));
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdateSourceMissing, index, Messages.UpdateFileMissing(fileName)));
                 continue;
             }
 
             if (scanned.Package.Problems.Count > 0 || scanned.Sha256 is null)
             {
-                var problems = scanned.Package.Problems.Count > 0 ? string.Join("; ", scanned.Package.Problems) : "файл не прочитан";
-                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, $"Пакет {fileName} нельзя добавить: {problems}."));
+                var problems = scanned.Package.Problems.Count > 0 ? string.Join("; ", scanned.Package.Problems) : Messages.UpdateFileNotRead;
+                diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UpdatePackageInvalid, index, Messages.UpdatePackageInvalid(fileName, problems)));
                 continue;
             }
 
@@ -559,12 +559,12 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
     }
 
     private static CleanupPlan PlanCleanup(bool resetBase) => new(resetBase, resetBase
-        ? ["С /ResetBase вытесненные версии компонентов удаляются насовсем: обновления, уже стоящие в образе, нельзя будет удалить."]
+        ? [Messages.ResetBaseWarning]
         : []);
 
     private static string Describe(UpdatePackageInfo p) =>
-        $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : "без KB")}, {p.Kind.ToString().ToUpperInvariant()}" +
-        $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? ", стек обслуживания" : string.Empty)}";
+        $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : Messages.UpdateNoKb)}, {p.Kind.ToString().ToUpperInvariant()}" +
+        $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? Messages.UpdateServicingStack : string.Empty)}";
 
     private static ScannedDriver? PlanDriverAddition(AddDriverPackage addition, int index, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
     {
@@ -572,29 +572,29 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         {
             diagnostics.Add(new PlanningDiagnostic(
                 PlanningCodes.DriverSourceMissing, index, source?.Problem is { } problem
-                    ? $"Папка драйверов не подходит: {problem}"
-                    : "Для добавления драйверов нужна папка с пакетами; она не указана."));
+                    ? Messages.DriverFolderInvalid(problem)
+                    : Messages.DriverFolderMissing));
             return null;
         }
 
         var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.InfPath, addition.InfPath, StringComparison.OrdinalIgnoreCase));
         if (scanned is null)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverSourceMissing, index, $"В папке драйверов нет {addition.InfPath}."));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverSourceMissing, index, Messages.DriverFileMissing(addition.InfPath)));
             return null;
         }
 
         if (scanned.Package.Inf is null || scanned.Package.Problems.Count > 0 || scanned.ContentHash is null)
         {
-            var problems = scanned.Package.Problems.Count > 0 ? string.Join(" ", scanned.Package.Problems) : "файлы пакета не прочитаны.";
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverPackageInvalid, index, $"Пакет {addition.InfPath} нельзя добавить: {problems}"));
+            var problems = scanned.Package.Problems.Count > 0 ? string.Join(" ", scanned.Package.Problems) : Messages.DriverFilesNotRead;
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverPackageInvalid, index, Messages.DriverPackageInvalid(addition.InfPath, problems)));
             return null;
         }
 
         if (scanned.Package.IsUnsigned && !addition.ForceUnsigned)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.DriverUnsigned, index, $"У пакета {addition.InfPath} нет каталога (подписи); добавить его можно только с ForceUnsigned."));
+                PlanningCodes.DriverUnsigned, index, Messages.DriverUnsigned(addition.InfPath)));
             return null;
         }
 
@@ -617,39 +617,39 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         };
         if (keyPath is null)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UnsupportedChange, index, "Тип изменения не поддерживается."));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.UnsupportedChange, index, Messages.ChangeUnsupported));
             return null;
         }
 
         var mapping = mapper.Map(keyPath);
         if (mapping.Location is not { } location)
         {
-            diagnostics.Add(new PlanningDiagnostic(CodeFor(mapping.Error), index, $"Путь реестра не может быть применён: {keyPath}"));
+            diagnostics.Add(new PlanningDiagnostic(CodeFor(mapping.Error), index, Messages.RegistryPathUnmapped(keyPath)));
             return null;
         }
 
         if (kind == RegistryChangeKind.DeleteKey && location.SubKey.Length == 0)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryKeyDeleteRoot, index, $"Нельзя удалить корень куста: {keyPath}"));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryKeyDeleteRoot, index, Messages.RegistryDeleteRoot(keyPath)));
             return null;
         }
 
         if (valueName is not null && (valueName.Length > MaxValueNameLength || valueName.Contains('\0', StringComparison.Ordinal)))
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое имя значения в {keyPath}"));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, Messages.RegistryValueNameInvalid(keyPath)));
             return null;
         }
 
         if (location.Hive == OfflineHive.DefaultUserClasses && !(FirstLogonDelivery.CanHold(location.SubKey) && FirstLogonDelivery.CanHold(valueName ?? string.Empty)))
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.FirstLogonUnrepresentable, index, $"Перевод строки в имени нельзя передать через .reg для первого входа: {keyPath}"));
+                PlanningCodes.FirstLogonUnrepresentable, index, Messages.RegistryFirstLogonNewline(keyPath)));
             return null;
         }
 
         if (value is not null && !IsWellFormed(value))
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, $"Недопустимое значение реестра в {keyPath}"));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.RegistryValueInvalid, index, Messages.RegistryValueInvalid(keyPath)));
             return null;
         }
 

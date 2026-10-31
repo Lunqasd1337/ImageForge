@@ -21,7 +21,7 @@ public static class ImageEditions
             using var stream = File.OpenRead(file);
             var wim = WimArchive.Read(stream);
             return wim.Problem is null && wim.Images.Count == wim.ImageCount
-                ? [.. wim.Images.Select((image, i) => new ImageEdition(i + 1, image.Name ?? $"Образ {i + 1}"))]
+                ? [.. wim.Images.Select((image, i) => new ImageEdition(i + 1, image.Name ?? Messages.EditionUnnamed(i + 1)))]
                 : [];
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

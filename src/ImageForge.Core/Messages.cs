@@ -1,0 +1,122 @@
+using System.Globalization;
+using System.Resources;
+
+namespace ImageForge.Core;
+
+/// <summary>Core texts shown in the window, from Messages.resx (plan, section 14). The engine log stays in English.</summary>
+public static class Messages
+{
+    private static readonly ResourceManager Resources = new("ImageForge.Core.Messages", typeof(Messages).Assembly);
+
+    /// <summary>The text of a resource; a missing one is a build mistake, so it throws.</summary>
+    public static string Get(string name) =>
+        Resources.GetString(name, CultureInfo.CurrentUICulture) ?? throw new MissingManifestResourceException(name);
+
+    private static string Format(string name, params object?[] args) => string.Format(CultureInfo.CurrentCulture, Get(name), args);
+
+    public static string AppxDependenciesUnknown(object? a0, object? a1) => Format(nameof(AppxDependenciesUnknown), a0, a1);
+    public static string AppxDependencyCycle(object? a0) => Format(nameof(AppxDependencyCycle), a0);
+    public static string AppxFactsNotRead(object? a0) => Format(nameof(AppxFactsNotRead), a0);
+    public static string AppxFrameworkBlocked(object? a0) => Format(nameof(AppxFrameworkBlocked), a0);
+    public static string AppxInstallerWarning => Get(nameof(AppxInstallerWarning));
+    public static string AppxInventoryMissing => Get(nameof(AppxInventoryMissing));
+    public static string AppxNeededByInbox => Get(nameof(AppxNeededByInbox));
+    public static string AppxNotProvisioned(object? a0) => Format(nameof(AppxNotProvisioned), a0);
+    public static string AppxRequiredByInbox(object? a0) => Format(nameof(AppxRequiredByInbox), a0);
+    public static string AppxRequiredByKept(object? a0, object? a1) => Format(nameof(AppxRequiredByKept), a0, a1);
+    public static string AppxStoreWarning => Get(nameof(AppxStoreWarning));
+    public static string CabMultiVolume => Get(nameof(CabMultiVolume));
+    public static string CabNoSignature => Get(nameof(CabNoSignature));
+    public static string CabTableTruncated => Get(nameof(CabTableTruncated));
+    public static string CabTruncated(object? a0, object? a1) => Format(nameof(CabTruncated), a0, a1);
+    public static string CapabilityInventoryMissing => Get(nameof(CapabilityInventoryMissing));
+    public static string CapabilityNotInstalled(object? a0) => Format(nameof(CapabilityNotInstalled), a0);
+    public static string CapabilityNotListed(object? a0) => Format(nameof(CapabilityNotListed), a0);
+    public static string CapabilityWrongState(object? a0, object? a1) => Format(nameof(CapabilityWrongState), a0, a1);
+    public static string ChangeUnsupported => Get(nameof(ChangeUnsupported));
+    public static string DriverAlreadyPresent(object? a0, object? a1, object? a2) => Format(nameof(DriverAlreadyPresent), a0, a1, a2);
+    public static string DriverBootCritical(object? a0, object? a1) => Format(nameof(DriverBootCritical), a0, a1);
+    public static string DriverBootCriticalWarning(object? a0, object? a1) => Format(nameof(DriverBootCriticalWarning), a0, a1);
+    public static string DriverFileMissing(object? a0) => Format(nameof(DriverFileMissing), a0);
+    public static string DriverFilesNotRead => Get(nameof(DriverFilesNotRead));
+    public static string DriverFolderEmpty => Get(nameof(DriverFolderEmpty));
+    public static string DriverFolderInvalid(object? a0) => Format(nameof(DriverFolderInvalid), a0);
+    public static string DriverFolderMissing => Get(nameof(DriverFolderMissing));
+    public static string DriverInventoryMissing => Get(nameof(DriverInventoryMissing));
+    public static string DriverNotInstalled(object? a0) => Format(nameof(DriverNotInstalled), a0);
+    public static string DriverPackageInvalid(object? a0, object? a1) => Format(nameof(DriverPackageInvalid), a0, a1);
+    public static string DriverUnsigned(object? a0) => Format(nameof(DriverUnsigned), a0);
+    public static string DriverUnsignedWarning(object? a0) => Format(nameof(DriverUnsignedWarning), a0);
+    public static string DriversNotRead => Get(nameof(DriversNotRead));
+    public static string EditionUnnamed(object? a0) => Format(nameof(EditionUnnamed), a0);
+    public static string FeatureBlocked(object? a0, object? a1) => Format(nameof(FeatureBlocked), a0, a1);
+    public static string FeatureConflict(object? a0) => Format(nameof(FeatureConflict), a0);
+    public static string FeatureInventoryMissing => Get(nameof(FeatureInventoryMissing));
+    public static string FeatureNoSource => Get(nameof(FeatureNoSource));
+    public static string FeatureNoSxs(object? a0) => Format(nameof(FeatureNoSxs), a0);
+    public static string FeatureParentsNotRead => Get(nameof(FeatureParentsNotRead));
+    public static string FeatureStateUnsupported(object? a0) => Format(nameof(FeatureStateUnsupported), a0);
+    public static string FodFolderInvalid(object? a0) => Format(nameof(FodFolderInvalid), a0);
+    public static string FodFolderMissing => Get(nameof(FodFolderMissing));
+    public static string FolderNotFound => Get(nameof(FolderNotFound));
+    public static string InfFileMissing(object? a0) => Format(nameof(InfFileMissing), a0);
+    public static string InfNoCatalog(object? a0) => Format(nameof(InfNoCatalog), a0);
+    public static string InfNoVersion => Get(nameof(InfNoVersion));
+    public static string InfNoX64 => Get(nameof(InfNoX64));
+    public static string InfWrongSignature(object? a0) => Format(nameof(InfWrongSignature), a0);
+    public static string PackagesNotRead => Get(nameof(PackagesNotRead));
+    public static string PlanEmpty => Get(nameof(PlanEmpty));
+    public static string PlanFeaturesUnchanged => Get(nameof(PlanFeaturesUnchanged));
+    public static string RegEmpty => Get(nameof(RegEmpty));
+    public static string RegEncodingAmbiguous => Get(nameof(RegEncodingAmbiguous));
+    public static string RegEncodingInvalid => Get(nameof(RegEncodingInvalid));
+    public static string RegEncodingUnsupported => Get(nameof(RegEncodingUnsupported));
+    public static string RegError => Get(nameof(RegError));
+    public static string RegErrorAtLine(object? a0, object? a1, object? a2) => Format(nameof(RegErrorAtLine), a0, a1, a2);
+    public static string RegFormatUnsupported => Get(nameof(RegFormatUnsupported));
+    public static string RegHeaderMissing => Get(nameof(RegHeaderMissing));
+    public static string RegKeyMalformed => Get(nameof(RegKeyMalformed));
+    public static string RegLineUnrecognized => Get(nameof(RegLineUnrecognized));
+    public static string RegPreviewClassesRoot(object? a0) => Format(nameof(RegPreviewClassesRoot), a0);
+    public static string RegPreviewCreateKey => Get(nameof(RegPreviewCreateKey));
+    public static string RegPreviewCurrentControlSet(object? a0) => Format(nameof(RegPreviewCurrentControlSet), a0);
+    public static string RegPreviewDefaultValue => Get(nameof(RegPreviewDefaultValue));
+    public static string RegPreviewDeleteKey => Get(nameof(RegPreviewDeleteKey));
+    public static string RegPreviewDeleteValue => Get(nameof(RegPreviewDeleteValue));
+    public static string RegPreviewFirstLogon(object? a0, object? a1) => Format(nameof(RegPreviewFirstLogon), a0, a1);
+    public static string RegPreviewHive(object? a0, object? a1, object? a2) => Format(nameof(RegPreviewHive), a0, a1, a2);
+    public static string RegPreviewHiveRoot => Get(nameof(RegPreviewHiveRoot));
+    public static string RegPreviewSetValue => Get(nameof(RegPreviewSetValue));
+    public static string RegPreviewValue(object? a0) => Format(nameof(RegPreviewValue), a0);
+    public static string RegPreviewValueData(object? a0, object? a1) => Format(nameof(RegPreviewValueData), a0, a1);
+    public static string RegTooLarge(object? a0) => Format(nameof(RegTooLarge), a0);
+    public static string RegValueMalformed => Get(nameof(RegValueMalformed));
+    public static string RegValueOutsideKey => Get(nameof(RegValueOutsideKey));
+    public static string RegValueTypeUnsupported => Get(nameof(RegValueTypeUnsupported));
+    public static string RegistryDeleteRoot(object? a0) => Format(nameof(RegistryDeleteRoot), a0);
+    public static string RegistryFirstLogonNewline(object? a0) => Format(nameof(RegistryFirstLogonNewline), a0);
+    public static string RegistryPathUnmapped(object? a0) => Format(nameof(RegistryPathUnmapped), a0);
+    public static string RegistryValueInvalid(object? a0) => Format(nameof(RegistryValueInvalid), a0);
+    public static string RegistryValueNameInvalid(object? a0) => Format(nameof(RegistryValueNameInvalid), a0);
+    public static string ResetBaseWarning => Get(nameof(ResetBaseWarning));
+    public static string UpdateCabNoMum => Get(nameof(UpdateCabNoMum));
+    public static string UpdateFileMissing(object? a0) => Format(nameof(UpdateFileMissing), a0);
+    public static string UpdateFileNotRead => Get(nameof(UpdateFileNotRead));
+    public static string UpdateFolderEmpty => Get(nameof(UpdateFolderEmpty));
+    public static string UpdateFolderInvalid(object? a0) => Format(nameof(UpdateFolderInvalid), a0);
+    public static string UpdateFolderMissing => Get(nameof(UpdateFolderMissing));
+    public static string UpdateMsuEmpty => Get(nameof(UpdateMsuEmpty));
+    public static string UpdateNoKb => Get(nameof(UpdateNoKb));
+    public static string UpdateNotMsuOrCab => Get(nameof(UpdateNotMsuOrCab));
+    public static string UpdatePackageInvalid(object? a0, object? a1) => Format(nameof(UpdatePackageInvalid), a0, a1);
+    public static string UpdateServicingStack => Get(nameof(UpdateServicingStack));
+    public static string UpdateSeveralMsu(object? a0) => Format(nameof(UpdateSeveralMsu), a0);
+    public static string UpdateSha1Mismatch(object? a0) => Format(nameof(UpdateSha1Mismatch), a0);
+    public static string UpdateWimNotMsu => Get(nameof(UpdateWimNotMsu));
+    public static string UpdateWrongArchitecture(object? a0) => Format(nameof(UpdateWrongArchitecture), a0);
+    public static string WimNoImages => Get(nameof(WimNoImages));
+    public static string WimNoSignature => Get(nameof(WimNoSignature));
+    public static string WimSplit(object? a0, object? a1) => Format(nameof(WimSplit), a0, a1);
+    public static string WimTruncated => Get(nameof(WimTruncated));
+    public static string WinReNeedsSafeOs => Get(nameof(WinReNeedsSafeOs));
+}

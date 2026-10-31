@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="AppxDependenciesUnknown" xml:space="preserve"><value>Зависимости {0} не прочитаны ({1}); удаление заблокировано.</value></data>
+  <data name="AppxDependencyCycle" xml:space="preserve"><value>Приложения зависят друг от друга по кругу: {0}; порядок удаления не определить.</value></data>
+  <data name="AppxFactsNotRead" xml:space="preserve"><value>Зависимости не прочитаны ({0}); удалить нельзя.</value></data>
+  <data name="AppxFrameworkBlocked" xml:space="preserve"><value>{0} — библиотека, а зависимости части приложений не прочитаны; удаление заблокировано.</value></data>
+  <data name="AppxInstallerWarning" xml:space="preserve"><value>Без App Installer не будет winget, и пакеты .msix и .appx не откроются двойным щелчком.</value></data>
+  <data name="AppxInventoryMissing" xml:space="preserve"><value>Список приложений образа не прочитан или прочитан с ошибками; удаление невозможно.</value></data>
+  <data name="AppxNeededByInbox" xml:space="preserve"><value>Нужна встроенным приложениям Windows; удалить нельзя.</value></data>
+  <data name="AppxNotProvisioned" xml:space="preserve"><value>В образе нет приложения {0}.</value></data>
+  <data name="AppxRequiredByInbox" xml:space="preserve"><value>{0} нужна встроенным приложениям Windows; её нельзя удалить.</value></data>
+  <data name="AppxRequiredByKept" xml:space="preserve"><value>{0} нужна приложениям, которые остаются: {1}. Отметьте и их или оставьте {0}.</value></data>
+  <data name="AppxStoreWarning" xml:space="preserve"><value>Без Microsoft Store приложения из магазина нельзя будет установить или обновить, а вернуть сам магазин сложно.</value></data>
+  <data name="CabMultiVolume" xml:space="preserve"><value>многотомный cabinet не поддерживается</value></data>
+  <data name="CabNoSignature" xml:space="preserve"><value>нет подписи MSCF: это не файл cabinet</value></data>
+  <data name="CabTableTruncated" xml:space="preserve"><value>файл обрезан: таблица файлов не дочитана</value></data>
+  <data name="CabTruncated" xml:space="preserve"><value>файл обрезан: в заголовке {0} байт, на диске {1}</value></data>
+  <data name="CapabilityInventoryMissing" xml:space="preserve"><value>Список дополнительных компонентов (Capabilities) не прочитан; изменить их нельзя.</value></data>
+  <data name="CapabilityNotInstalled" xml:space="preserve"><value>Дополнительный компонент {0} не установлен в образе.</value></data>
+  <data name="CapabilityNotListed" xml:space="preserve"><value>Дополнительного компонента {0} нет в списке образа.</value></data>
+  <data name="CapabilityWrongState" xml:space="preserve"><value>Дополнительный компонент {0} уже в состоянии «{1}»; добавить нельзя.</value></data>
+  <data name="ChangeUnsupported" xml:space="preserve"><value>Тип изменения не поддерживается.</value></data>
+  <data name="DriverAlreadyPresent" xml:space="preserve"><value>В образе уже есть {0} ({1} {2}); такой же пакет DISM не добавит второй раз.</value></data>
+  <data name="DriverBootCritical" xml:space="preserve"><value>Драйвер {0} ({1}) нужен для загрузки; удалить его можно только с отдельным подтверждением.</value></data>
+  <data name="DriverBootCriticalWarning" xml:space="preserve"><value>Удаляется драйвер, нужный для загрузки: {0} ({1}). Без него образ может не загрузиться.</value></data>
+  <data name="DriverFileMissing" xml:space="preserve"><value>В папке драйверов нет {0}.</value></data>
+  <data name="DriverFilesNotRead" xml:space="preserve"><value>файлы пакета не прочитаны.</value></data>
+  <data name="DriverFolderEmpty" xml:space="preserve"><value>в папке нет файлов .inf</value></data>
+  <data name="DriverFolderInvalid" xml:space="preserve"><value>Папка драйверов не подходит: {0}</value></data>
+  <data name="DriverFolderMissing" xml:space="preserve"><value>Для добавления драйверов нужна папка с пакетами; она не указана.</value></data>
+  <data name="DriverInventoryMissing" xml:space="preserve"><value>Список драйверов образа не прочитан; изменить драйверы нельзя.</value></data>
+  <data name="DriverNotInstalled" xml:space="preserve"><value>В образе нет стороннего драйвера {0}.</value></data>
+  <data name="DriverPackageInvalid" xml:space="preserve"><value>Пакет {0} нельзя добавить: {1}</value></data>
+  <data name="DriverUnsigned" xml:space="preserve"><value>У пакета {0} нет каталога (подписи); добавить его можно только с ForceUnsigned.</value></data>
+  <data name="DriverUnsignedWarning" xml:space="preserve"><value>Пакет {0} без подписи добавляется с ForceUnsigned: DISM не проверит подпись, и в установленной системе драйвер может не загрузиться.</value></data>
+  <data name="DriversNotRead" xml:space="preserve"><value>Список драйверов не прочитан.</value></data>
+  <data name="EditionUnnamed" xml:space="preserve"><value>Образ {0}</value></data>
+  <data name="FeatureBlocked" xml:space="preserve"><value>Компонент {0}: {1}</value></data>
+  <data name="FeatureConflict" xml:space="preserve"><value>Компонент {0} нужно и включить, и выключить; уберите одно из изменений.</value></data>
+  <data name="FeatureInventoryMissing" xml:space="preserve"><value>Список компонентов образа или их зависимости не прочитаны; изменить компоненты нельзя.</value></data>
+  <data name="FeatureNoSource" xml:space="preserve"><value>Файлов компонента нет в образе, а подходящего источника нет; включить нельзя.</value></data>
+  <data name="FeatureNoSxs" xml:space="preserve"><value>Файлов компонента {0} нет в образе, а в sources\sxs дистрибутива нет подходящего пакета; загрузка из Windows Update не используется.</value></data>
+  <data name="FeatureParentsNotRead" xml:space="preserve"><value>Зависимости части компонентов не прочитаны (подробности в журнале); изменять компоненты нельзя.</value></data>
+  <data name="FeatureStateUnsupported" xml:space="preserve"><value>Состояние «{0}» не поддерживается; изменить нельзя.</value></data>
+  <data name="FodFolderInvalid" xml:space="preserve"><value>Папка Features on Demand не подходит: {0}</value></data>
+  <data name="FodFolderMissing" xml:space="preserve"><value>Для добавления нужна папка Features on Demand (LanguagesAndOptionalFeatures с ISO); она не указана.</value></data>
+  <data name="FolderNotFound" xml:space="preserve"><value>папка не найдена (нужен полный путь)</value></data>
+  <data name="InfFileMissing" xml:space="preserve"><value>Нет файла {0}.</value></data>
+  <data name="InfNoCatalog" xml:space="preserve"><value>Нет файла каталога {0}.</value></data>
+  <data name="InfNoVersion" xml:space="preserve"><value>Нет раздела [Version] с подписью: это не INF драйвера.</value></data>
+  <data name="InfNoX64" xml:space="preserve"><value>В [Manufacturer] нет раздела для x64 (NTamd64).</value></data>
+  <data name="InfWrongSignature" xml:space="preserve"><value>Подпись {0} не относится к драйверам Windows NT.</value></data>
+  <data name="PackagesNotRead" xml:space="preserve"><value>Список пакетов не прочитан.</value></data>
+  <data name="PlanEmpty" xml:space="preserve"><value>Нет изменений для применения.</value></data>
+  <data name="PlanFeaturesUnchanged" xml:space="preserve"><value>Компоненты уже в нужном состоянии; изменять нечего.</value></data>
+  <data name="RegEmpty" xml:space="preserve"><value>В файле нет ни одного ключа или значения</value></data>
+  <data name="RegEncodingAmbiguous" xml:space="preserve"><value>Кодировку нельзя определить: в файле нет BOM. Выберите UTF-16, UTF-8 или ANSI с кодовой страницей</value></data>
+  <data name="RegEncodingInvalid" xml:space="preserve"><value>Байты файла не подходят к выбранной кодировке</value></data>
+  <data name="RegEncodingUnsupported" xml:space="preserve"><value>Эта кодировка или кодовая страница не поддерживается</value></data>
+  <data name="RegError" xml:space="preserve"><value>Ошибка в файле</value></data>
+  <data name="RegErrorAtLine" xml:space="preserve"><value>строка {0}: {1} ({2})</value></data>
+  <data name="RegFormatUnsupported" xml:space="preserve"><value>Формат REGEDIT4 не поддерживается, нужен «Windows Registry Editor Version 5.00»</value></data>
+  <data name="RegHeaderMissing" xml:space="preserve"><value>Первая строка должна быть «Windows Registry Editor Version 5.00»</value></data>
+  <data name="RegKeyMalformed" xml:space="preserve"><value>Неверная строка ключа</value></data>
+  <data name="RegLineUnrecognized" xml:space="preserve"><value>Строка не похожа на ключ, значение или комментарий</value></data>
+  <data name="RegPreviewClassesRoot" xml:space="preserve"><value>SOFTWARE\{0} (HKCR по политике ImageForge записывается в машинные классы)</value></data>
+  <data name="RegPreviewCreateKey" xml:space="preserve"><value>Создать ключ</value></data>
+  <data name="RegPreviewCurrentControlSet" xml:space="preserve"><value>{0} в ControlSet, который указан в SYSTEM\Select\Current</value></data>
+  <data name="RegPreviewDefaultValue" xml:space="preserve"><value>(по умолчанию)</value></data>
+  <data name="RegPreviewDeleteKey" xml:space="preserve"><value>Удалить ключ со всем содержимым</value></data>
+  <data name="RegPreviewDeleteValue" xml:space="preserve"><value>Удалить значение</value></data>
+  <data name="RegPreviewFirstLogon" xml:space="preserve"><value>  При первом входе каждого пользователя (Active Setup, reg import из {0}), ключ HKCU\Software\Classes{1}</value></data>
+  <data name="RegPreviewHive" xml:space="preserve"><value>  Куст: офлайн {0} ({1}), ключ {2}</value></data>
+  <data name="RegPreviewHiveRoot" xml:space="preserve"><value>(корень куста)</value></data>
+  <data name="RegPreviewSetValue" xml:space="preserve"><value>Записать значение</value></data>
+  <data name="RegPreviewValue" xml:space="preserve"><value>  Значение: {0}</value></data>
+  <data name="RegPreviewValueData" xml:space="preserve"><value>  Значение: {0} = {1}</value></data>
+  <data name="RegTooLarge" xml:space="preserve"><value>Файл больше {0} КБ</value></data>
+  <data name="RegValueMalformed" xml:space="preserve"><value>Неверная запись значения</value></data>
+  <data name="RegValueOutsideKey" xml:space="preserve"><value>Значение стоит до первого [ключа]</value></data>
+  <data name="RegValueTypeUnsupported" xml:space="preserve"><value>Тип значения не поддерживается</value></data>
+  <data name="RegistryDeleteRoot" xml:space="preserve"><value>Нельзя удалить корень куста: {0}</value></data>
+  <data name="RegistryFirstLogonNewline" xml:space="preserve"><value>Перевод строки в имени нельзя передать через .reg для первого входа: {0}</value></data>
+  <data name="RegistryPathUnmapped" xml:space="preserve"><value>Путь реестра не может быть применён: {0}</value></data>
+  <data name="RegistryValueInvalid" xml:space="preserve"><value>Недопустимое значение реестра в {0}</value></data>
+  <data name="RegistryValueNameInvalid" xml:space="preserve"><value>Недопустимое имя значения в {0}</value></data>
+  <data name="ResetBaseWarning" xml:space="preserve"><value>С /ResetBase вытесненные версии компонентов удаляются насовсем: обновления, уже стоящие в образе, нельзя будет удалить.</value></data>
+  <data name="UpdateCabNoMum" xml:space="preserve"><value>в CAB нет update.mum: это не пакет обслуживания Windows</value></data>
+  <data name="UpdateFileMissing" xml:space="preserve"><value>В папке обновлений нет {0}.</value></data>
+  <data name="UpdateFileNotRead" xml:space="preserve"><value>файл не прочитан</value></data>
+  <data name="UpdateFolderEmpty" xml:space="preserve"><value>в папке нет файлов .msu и .cab</value></data>
+  <data name="UpdateFolderInvalid" xml:space="preserve"><value>Папка обновлений не подходит: {0}.</value></data>
+  <data name="UpdateFolderMissing" xml:space="preserve"><value>Папка обновлений не указана или не просканирована.</value></data>
+  <data name="UpdateMsuEmpty" xml:space="preserve"><value>в MSU нет пакетов для установки (SSU, KB .cab, .wim или .psf)</value></data>
+  <data name="UpdateNoKb" xml:space="preserve"><value>без KB</value></data>
+  <data name="UpdateNotMsuOrCab" xml:space="preserve"><value>это не .msu и не .cab</value></data>
+  <data name="UpdatePackageInvalid" xml:space="preserve"><value>Пакет {0} нельзя добавить: {1}.</value></data>
+  <data name="UpdateServicingStack" xml:space="preserve"><value>, стек обслуживания</value></data>
+  <data name="UpdateSeveralMsu" xml:space="preserve"><value>Выбрано несколько MSU ({0}): DISM поставит каждый по очереди, а накопительному обновлению обычно достаточно последнего.</value></data>
+  <data name="UpdateSha1Mismatch" xml:space="preserve"><value>SHA-1 файла {0} не совпадает с указанным в имени: файл повреждён или скачан не полностью</value></data>
+  <data name="UpdateWimNotMsu" xml:space="preserve"><value>файл в формате WIM, а пакетом обновления в таком формате бывает только .msu</value></data>
+  <data name="UpdateWrongArchitecture" xml:space="preserve"><value>пакет для {0}, а образ x64</value></data>
+  <data name="WimNoImages" xml:space="preserve"><value>в WIM нет ни одного образа</value></data>
+  <data name="WimNoSignature" xml:space="preserve"><value>нет подписи MSWIM: это не файл WIM</value></data>
+  <data name="WimSplit" xml:space="preserve"><value>WIM разбит на части ({0} из {1}), DISM не примет такой пакет</value></data>
+  <data name="WimTruncated" xml:space="preserve"><value>файл обрезан: заголовок WIM не дочитан</value></data>
+  <data name="WinReNeedsSafeOs" xml:space="preserve"><value>В WinRE накопительное обновление ставит только стек обслуживания; саму среду восстановления обновляет Safe OS Dynamic Update (.cab) того же месяца.</value></data>
+</root>

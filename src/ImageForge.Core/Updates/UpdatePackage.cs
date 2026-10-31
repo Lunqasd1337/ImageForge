@@ -75,12 +75,12 @@ public static class UpdatePackage
         var problems = new List<string>();
         if (kind == UpdateKind.Unknown)
         {
-            problems.Add("это не .msu и не .cab");
+            problems.Add(Messages.UpdateNotMsuOrCab);
         }
 
         if (name.Architecture is { } arch && arch != "x64")
         {
-            problems.Add($"пакет для {arch}, а образ x64");
+            problems.Add(Messages.UpdateWrongArchitecture(arch));
         }
 
         if (listing.Problem is { } problem)
@@ -96,13 +96,13 @@ public static class UpdatePackage
             servicingStack |= payloads.Any(IsServicingStack);
             if (payloads.Count == 0)
             {
-                problems.Add("в MSU нет пакетов для установки (SSU, KB .cab, .wim или .psf)");
+                problems.Add(Messages.UpdateMsuEmpty);
             }
         }
         else if (listing.Problem is null && kind == UpdateKind.Cab
             && !listing.Entries.Any(e => e.Name.Equals("update.mum", StringComparison.OrdinalIgnoreCase)))
         {
-            problems.Add("в CAB нет update.mum: это не пакет обслуживания Windows");
+            problems.Add(Messages.UpdateCabNoMum);
         }
 
         return new(fileName, kind, name.Kb, name.Architecture, name.Sha1, listing.Entries, payloads, servicingStack, problems);
@@ -119,12 +119,12 @@ public static class UpdatePackage
         var problems = new List<string>();
         if (!isMsu)
         {
-            problems.Add("файл в формате WIM, а пакетом обновления в таком формате бывает только .msu");
+            problems.Add(Messages.UpdateWimNotMsu);
         }
 
         if (name.Architecture is { } arch && arch != "x64")
         {
-            problems.Add($"пакет для {arch}, а образ x64");
+            problems.Add(Messages.UpdateWrongArchitecture(arch));
         }
 
         if (wim.Problem is { } problem)

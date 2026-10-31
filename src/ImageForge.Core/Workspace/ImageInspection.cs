@@ -10,10 +10,10 @@ namespace ImageForge.Core.Workspace;
 public sealed record ImageInventory(AppxInventory Appx, FeatureInventory Features, CapabilityInventory Capabilities, bool MediaHasNetFx3)
 {
     /// <summary>The third-party drivers; empty with no problems when the inventory did not read them.</summary>
-    public DriverInventory Drivers { get; init; } = new([], ["Список драйверов не прочитан."]);
+    public DriverInventory Drivers { get; init; } = new([], [Messages.DriversNotRead]);
 
     /// <summary>The servicing packages; the window shows the installed cumulative update and servicing stack.</summary>
-    public PackageInventory Packages { get; init; } = new([], ["Список пакетов не прочитан."]);
+    public PackageInventory Packages { get; init; } = new([], [Messages.PackagesNotRead]);
 }
 
 /// <summary>
@@ -107,7 +107,7 @@ public sealed class ImageInspection(IWorkspacePaths paths, IImageServicing servi
         {
             if (!Path.IsPathFullyQualified(folder) || !Directory.Exists(folder))
             {
-                return "папка не найдена (нужен полный путь)";
+                return Messages.FolderNotFound;
             }
 
             var metadata = Path.Combine(folder, FeatureSources.FodMetadataFolder);

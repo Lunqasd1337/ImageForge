@@ -60,7 +60,7 @@ public sealed class EngineService : IEngineService, IDisposable
         _log(options.RegFile is { } file
             ? $"plan .reg {file.FileName} ({file.Content?.Length ?? 0} bytes, {file.Encoding}, code page {file.AnsiCodePage})"
             : options.RemoveAppx.Count + options.RemoveCapabilities.Count + options.AddCapabilities.Count + options.EnableFeatures.Count + options.DisableFeatures.Count
-                + options.AddDrivers.Count + options.RemoveDrivers.Count + options.AddUpdates.Count + options.WinReUpdates.Count + options.BootUpdates.Count > 0 || options.CleanupComponents
+                + options.AddDrivers.Count + options.WinReDrivers.Count + options.BootDrivers.Count + options.RemoveDrivers.Count + options.AddUpdates.Count + options.WinReUpdates.Count + options.BootUpdates.Count > 0 || options.CleanupComponents
                 ? "plan without .reg" : "plan M1 marker");
         foreach (var family in options.RemoveAppx)
         {
@@ -95,6 +95,16 @@ public sealed class EngineService : IEngineService, IDisposable
         foreach (var driver in options.AddDrivers)
         {
             _log($"plan add driver {driver} from {options.DriverFolder ?? "(no folder)"}{(options.ForceUnsigned ? " (ForceUnsigned allowed)" : string.Empty)}");
+        }
+
+        foreach (var driver in options.WinReDrivers)
+        {
+            _log($"plan add WinRE driver {driver} from {options.DriverFolder ?? "(no folder)"}{(options.ForceUnsigned ? " (ForceUnsigned allowed)" : string.Empty)}");
+        }
+
+        foreach (var driver in options.BootDrivers)
+        {
+            _log($"plan add boot.wim driver {driver} from {options.DriverFolder ?? "(no folder)"}{(options.ForceUnsigned ? " (ForceUnsigned allowed)" : string.Empty)}");
         }
 
         foreach (var update in options.AddUpdates)

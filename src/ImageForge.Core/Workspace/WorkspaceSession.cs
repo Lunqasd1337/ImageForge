@@ -344,11 +344,13 @@ public sealed class WorkspaceSession(
             .. options.CleanupComponents ? [new CleanupComponentStore(options.ResetBase)] : Array.Empty<ImageChange>(),
             .. options.WinReUpdates.Select(u => new AddWinReUpdatePackage(u)),
             .. options.BootUpdates.Select(u => new AddBootUpdatePackage(u)),
+            .. options.WinReDrivers.Select(d => new AddWinReDriverPackage(d, options.ForceUnsigned)),
+            .. options.BootDrivers.Select(d => new AddBootDriverPackage(d, options.ForceUnsigned)),
         ];
         // The folder is checked only when something is added; it is read here, outside the lock.
         var fod = options.AddCapabilities.Count > 0 && !string.IsNullOrWhiteSpace(options.FodSource) ? options.FodSource.Trim() : null;
         var source = fod is null ? null : new FodChoice(fod, ImageInspection.FodFolderProblem(fod));
-        if (options.AddDrivers.Count > 0)
+        if (options.AddDrivers.Count + options.WinReDrivers.Count + options.BootDrivers.Count > 0)
         {
             // Scanned again here, so the hashes in the plan are those of the files as they are now.
             source = (source ?? new FodChoice(null, null)) with

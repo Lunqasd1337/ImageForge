@@ -440,6 +440,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             AllowBootCritical = AllowBootCritical,
             RemoveFeaturePayload = RemoveFeaturePayload,
             AddDrivers = [.. DriverPackages.Where(d => d.IsSelected == true).Select(d => d.Scanned.Package.InfPath)],
+            WinReDrivers = [.. DriverPackages.Where(d => d.IsForWinRe == true).Select(d => d.Scanned.Package.InfPath)],
+            BootDrivers = [.. DriverPackages.Where(d => d.IsForBoot == true).Select(d => d.Scanned.Package.InfPath)],
             DriverFolder = _scannedDriverFolder,
             ForceUnsigned = ForceUnsigned,
             AddUpdates = [.. UpdatePackages.Where(u => u.IsSelected == true).Select(u => u.Scanned.Package.FileName)],
@@ -498,8 +500,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             var drivers = plan.Drivers is { } driverPlan ? (" " + Ui.PlanDrivers(driverPlan.Remove.Count, driverPlan.Add.Count)) : string.Empty;
             var updates = ((plan.Updates?.Add.Count ?? 0) + (plan.DotNetUpdates?.Add.Count ?? 0) is > 0 and var updateCount ? (" " + Ui.PlanUpdates(updateCount)) : string.Empty)
                 + (plan.Cleanup is { } cleanupPlan ? (" " + Ui.PlanCleanup((cleanupPlan.ResetBase ? (" " + Ui.PlanResetBase) : string.Empty))) : string.Empty)
-                + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count)) : string.Empty)
-                + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count)) : string.Empty);
+                + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count, winRePlan.Drivers.Count)) : string.Empty)
+                + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count, bootPlan.Drivers.Count)) : string.Empty);
             Status = Ui.PlanReady(plan.Preview.Count, apps, capabilities, features, drivers, updates, encoding);
             Append(Ui.LogPlan(plan.PlanId, plan.WorkspaceRevision, plan.Fingerprint));
         }
@@ -874,6 +876,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             yield return ("  " + Ui.PreviewWinReAdd(addition.Description));
         }
 
+        foreach (var addition in winRe.Drivers)
+        {
+            yield return "  " + Ui.PreviewWinReDriverAdd(addition.Description, addition.ForceUnsigned ? " " + Ui.PreviewDriverUnsigned : string.Empty);
+        }
+
         foreach (var warning in winRe.Warnings)
         {
             yield return "  " + Ui.Warning + " " + warning;
@@ -891,6 +898,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var addition in boot.Add)
         {
             yield return ("  " + Ui.PreviewBootAdd(addition.Description));
+        }
+
+        foreach (var addition in boot.Drivers)
+        {
+            yield return "  " + Ui.PreviewBootDriverAdd(addition.Description, addition.ForceUnsigned ? " " + Ui.PreviewDriverUnsigned : string.Empty);
         }
 
         foreach (var warning in boot.Warnings)
@@ -953,7 +965,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     private void ShowDriverPackagesStatus() =>
-        DriverPackagesStatus = Ui.DriverPackagesCount(DriverPackages.Count, DriverPackages.Count(p => p.CanSelect), DriverPackages.Count(p => p.IsSelected == true));
+        DriverPackagesStatus = Ui.DriverPackagesCount(DriverPackages.Count, DriverPackages.Count(p => p.CanSelect), DriverPackages.Count(p => p.IsSelected == true),
+            DriverPackages.Count(p => p.IsForWinRe == true), DriverPackages.Count(p => p.IsForBoot == true));
 
     private void DriverSelectionChanged()
     {
@@ -1015,6 +1028,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var package in DriverPackages)
         {
             package.IsSelected = false;
+            package.IsForWinRe = false;
+            package.IsForBoot = false;
         }
 
         AllowBootCritical = false;

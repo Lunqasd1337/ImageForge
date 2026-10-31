@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 14;
+    public const int Version = 15;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -85,6 +85,12 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>Driver packages to add, by INF path relative to <see cref="DriverFolder"/>; the engine scans it again.</summary>
     public IReadOnlyList<string> AddDrivers { get; init; } = [];
+
+    /// <summary>Driver packages to add to WinRE (Winre.wim inside the image), relative to <see cref="DriverFolder"/>.</summary>
+    public IReadOnlyList<string> WinReDrivers { get; init; } = [];
+
+    /// <summary>Driver packages to add to every image of sources\boot.wim, relative to <see cref="DriverFolder"/>.</summary>
+    public IReadOnlyList<string> BootDrivers { get; init; } = [];
 
     /// <summary>The folder of driver packages; needed only for additions.</summary>
     public string? DriverFolder { get; init; }

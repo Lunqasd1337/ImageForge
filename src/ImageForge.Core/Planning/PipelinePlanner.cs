@@ -41,6 +41,8 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var updateChanges = new List<(string FileName, int Index)>();
         var winReChanges = new List<(string FileName, int Index)>();
         var bootChanges = new List<(string FileName, int Index)>();
+        var winReDrivers = new List<(string InfPath, bool ForceUnsigned, int Index)>();
+        var bootDrivers = new List<(string InfPath, bool ForceUnsigned, int Index)>();
         CleanupPlan? cleanup = null;
         for (var i = 0; i < request.Changes.Count; i++)
         {
@@ -55,6 +57,14 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is AddDriverPackage or RemoveDriverPackage)
             {
                 driverChanges.Add((request.Changes[i], i));
+            }
+            else if (request.Changes[i] is AddWinReDriverPackage winReDriver)
+            {
+                winReDrivers.Add((winReDriver.InfPath, winReDriver.ForceUnsigned, i));
+            }
+            else if (request.Changes[i] is AddBootDriverPackage bootDriver)
+            {
+                bootDrivers.Add((bootDriver.InfPath, bootDriver.ForceUnsigned, i));
             }
             else if (request.Changes[i] is AddUpdatePackage update)
             {
@@ -99,6 +109,17 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         var boot = bootChanges.Count > 0 ? PlanUpdates(bootChanges, request.UpdateSource, diagnostics) is { } bootUpdates
             ? new BootPlan(bootUpdates.Add, bootUpdates.Source, bootUpdates.Warnings)
             : null : null;
+        if (winReDrivers.Count > 0 && PlanTargetDrivers(winReDrivers, request.DriverSource, diagnostics) is { } forWinRe)
+        {
+            var w = winRe ?? new WinRePlan([], request.UpdateSource?.Folder ?? string.Empty, []);
+            winRe = w with { Drivers = forWinRe.Add, DriverSource = forWinRe.Source, Warnings = [.. w.Warnings, .. forWinRe.Warnings] };
+        }
+
+        if (bootDrivers.Count > 0 && PlanTargetDrivers(bootDrivers, request.DriverSource, diagnostics) is { } forBoot)
+        {
+            var b = boot ?? new BootPlan([], request.UpdateSource?.Folder ?? string.Empty, []);
+            boot = b with { Drivers = forBoot.Add, DriverSource = forBoot.Source, Warnings = [.. b.Warnings, .. forBoot.Warnings] };
+        }
         if (diagnostics.Count == 0 && changes.Count == 0 && removals.Count == 0 && features is null && capabilities is null && drivers is null && updates is null
             && cleanup is null && winRe is null && boot is null)
         {
@@ -431,31 +452,11 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
                     }
                 }
             }
-            else if (change is AddDriverPackage addition && PlanDriverAddition(addition, index, request.DriverSource, diagnostics) is { } scanned)
+            else if (change is AddDriverPackage addition
+                && PlanDriverAddition(addition.InfPath, addition.ForceUnsigned, index, request.DriverSource, diagnostics) is { } scanned
+                && AddOnce(add, scanned, addition.ForceUnsigned, warnings))
             {
-                var hash = scanned.ContentHash!;
-                var same = add.FindIndex(a => a.ContentHash == hash);
-                var unsigned = scanned.Package.IsUnsigned;
-                if (same >= 0)
-                {
-                    var first = add[same];
-                    add[same] = first with
-                    {
-                        ForceUnsigned = first.ForceUnsigned || (unsigned && addition.ForceUnsigned),
-                        SameContent = string.Equals(first.InfPath, scanned.Package.InfPath, StringComparison.OrdinalIgnoreCase) || first.SameContent.Contains(scanned.Package.InfPath, StringComparer.OrdinalIgnoreCase)
-                            ? first.SameContent
-                            : [.. first.SameContent, scanned.Package.InfPath],
-                    };
-                    continue;
-                }
-
                 var inf = scanned.Package.Inf!;
-                add.Add(new DriverAddition(scanned.Package.InfPath, hash, unsigned, Describe(scanned.Package), []));
-                if (unsigned)
-                {
-                    warnings.Add(Messages.DriverUnsignedWarning(scanned.Package.InfPath));
-                }
-
                 var name = scanned.Package.InfPath[(scanned.Package.InfPath.LastIndexOf('\\') + 1)..];
                 foreach (var present in inventory.Drivers.Where(d => string.Equals(d.InfName, name, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(d.Version, inf.DriverVersion, StringComparison.OrdinalIgnoreCase)))
@@ -592,7 +593,52 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : Messages.UpdateNoKb)}, {p.Kind.ToString().ToUpperInvariant()}" +
         $"{(p.Container == UpdateContainer.Wim ? " (WIM)" : string.Empty)}{(p.HasServicingStack ? Messages.UpdateServicingStack : string.Empty)}";
 
-    private static ScannedDriver? PlanDriverAddition(AddDriverPackage addition, int index, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
+    /// <summary>Drivers for WinRE or boot.wim: checked like those for the image, without the image's driver list.</summary>
+    private static DriverPlan? PlanTargetDrivers(List<(string InfPath, bool ForceUnsigned, int Index)> changes, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
+    {
+        var count = diagnostics.Count;
+        var add = new List<DriverAddition>();
+        var warnings = new List<string>();
+        foreach (var (infPath, forceUnsigned, index) in changes)
+        {
+            if (PlanDriverAddition(infPath, forceUnsigned, index, source, diagnostics) is { } scanned)
+            {
+                AddOnce(add, scanned, forceUnsigned, warnings);
+            }
+        }
+
+        return diagnostics.Count == count && add.Count > 0 ? new DriverPlan([], add, source!.Folder, string.Empty, warnings.Distinct().ToList()) : null;
+    }
+
+    /// <summary>Adds the package unless one with the same content is already there; then only its path is noted. True when added.</summary>
+    private static bool AddOnce(List<DriverAddition> add, ScannedDriver scanned, bool forceUnsigned, List<string> warnings)
+    {
+        var hash = scanned.ContentHash!;
+        var same = add.FindIndex(a => a.ContentHash == hash);
+        var unsigned = scanned.Package.IsUnsigned;
+        if (same >= 0)
+        {
+            var first = add[same];
+            add[same] = first with
+            {
+                ForceUnsigned = first.ForceUnsigned || (unsigned && forceUnsigned),
+                SameContent = string.Equals(first.InfPath, scanned.Package.InfPath, StringComparison.OrdinalIgnoreCase) || first.SameContent.Contains(scanned.Package.InfPath, StringComparer.OrdinalIgnoreCase)
+                    ? first.SameContent
+                    : [.. first.SameContent, scanned.Package.InfPath],
+            };
+            return false;
+        }
+
+        add.Add(new DriverAddition(scanned.Package.InfPath, hash, unsigned, Describe(scanned.Package), []));
+        if (unsigned)
+        {
+            warnings.Add(Messages.DriverUnsignedWarning(scanned.Package.InfPath));
+        }
+
+        return true;
+    }
+
+    private static ScannedDriver? PlanDriverAddition(string infPath, bool forceUnsigned, int index, DriverFolder? source, List<PlanningDiagnostic> diagnostics)
     {
         if (source is null || source.Problem is not null)
         {
@@ -603,24 +649,24 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             return null;
         }
 
-        var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.InfPath, addition.InfPath, StringComparison.OrdinalIgnoreCase));
+        var scanned = source.Packages.FirstOrDefault(p => string.Equals(p.Package.InfPath, infPath, StringComparison.OrdinalIgnoreCase));
         if (scanned is null)
         {
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverSourceMissing, index, Messages.DriverFileMissing(addition.InfPath)));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverSourceMissing, index, Messages.DriverFileMissing(infPath)));
             return null;
         }
 
         if (scanned.Package.Inf is null || scanned.Package.Problems.Count > 0 || scanned.ContentHash is null)
         {
             var problems = scanned.Package.Problems.Count > 0 ? string.Join(" ", scanned.Package.Problems) : Messages.DriverFilesNotRead;
-            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverPackageInvalid, index, Messages.DriverPackageInvalid(addition.InfPath, problems)));
+            diagnostics.Add(new PlanningDiagnostic(PlanningCodes.DriverPackageInvalid, index, Messages.DriverPackageInvalid(infPath, problems)));
             return null;
         }
 
-        if (scanned.Package.IsUnsigned && !addition.ForceUnsigned)
+        if (scanned.Package.IsUnsigned && !forceUnsigned)
         {
             diagnostics.Add(new PlanningDiagnostic(
-                PlanningCodes.DriverUnsigned, index, Messages.DriverUnsigned(addition.InfPath)));
+                PlanningCodes.DriverUnsigned, index, Messages.DriverUnsigned(infPath)));
             return null;
         }
 
@@ -706,7 +752,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 12;
+    private const int FormatVersion = 13;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -833,6 +879,12 @@ public static class PlanFingerprint
             {
                 Append(builder, "winre-update", addition.FileName, addition.Sha256);
             }
+
+            Append(builder, "winre-driver-source", winRe.DriverSource ?? string.Empty);
+            foreach (var addition in winRe.Drivers)
+            {
+                Append(builder, "winre-driver", addition.InfPath, addition.ContentHash, addition.ForceUnsigned);
+            }
         }
 
         if (plan.Boot is { } boot)
@@ -841,6 +893,12 @@ public static class PlanFingerprint
             foreach (var addition in boot.Add)
             {
                 Append(builder, "boot-update", addition.FileName, addition.Sha256);
+            }
+
+            Append(builder, "boot-driver-source", boot.DriverSource ?? string.Empty);
+            foreach (var addition in boot.Drivers)
+            {
+                Append(builder, "boot-driver", addition.InfPath, addition.ContentHash, addition.ForceUnsigned);
             }
         }
 

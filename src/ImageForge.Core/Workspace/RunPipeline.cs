@@ -477,6 +477,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
         }
 
+        CheckDrivers(plan.Drivers, plan.DriverSource);
         var inImage = Path.Combine(mountDir, WinReInImage);
         if (!File.Exists(inImage))
         {
@@ -522,6 +523,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             current = next;
         }
 
+        await AddDriversAsync("winre", winReMount, plan.Drivers, plan.DriverSource, ct).ConfigureAwait(false);
         Log?.Invoke("winre cleanup component store (ResetBase)");
         await servicing.CleanupComponentStoreAsync(winReMount, resetBase: true, ct).ConfigureAwait(false);
         var cleaned = await ReadPackagesAsync(winReMount, ct).ConfigureAwait(false);
@@ -546,6 +548,31 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
     private static long Megabytes(long bytes) => bytes / (1024 * 1024);
 
+    private static void CheckDrivers(IReadOnlyList<DriverAddition> drivers, string? source)
+    {
+        if (drivers.Count == 0)
+        {
+            return;
+        }
+
+        var folder = source ?? throw new InvalidDataException("The plan adds drivers without a driver folder.");
+        var changed = drivers.Where(a => DriverFolder.CurrentHash(folder, a.InfPath) != a.ContentHash).Select(a => a.InfPath).ToList();
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+    }
+
+    // WinRE and boot.wim have no third-party drivers to compare against, so the additions are only logged.
+    private async Task AddDriversAsync(string target, string mount, IReadOnlyList<DriverAddition> drivers, string? source, CancellationToken ct)
+    {
+        foreach (var addition in drivers)
+        {
+            Log?.Invoke($"{target} add driver {addition.InfPath}{(addition.ForceUnsigned ? " (ForceUnsigned)" : string.Empty)}");
+            await servicing.AddDriverAsync(mount, DriverFolder.Full(source!, addition.InfPath), addition.ForceUnsigned, ct).ConfigureAwait(false);
+        }
+    }
+
     // The recipe from S2-TARGETS-INVENTORY: every image of a boot.wim copy gets the packages, a cleanup with /ResetBase
     // and a commit; the setup files of the boot image (Windows Setup) are taken for the media; then all images are
     // exported in order and the boot image stays the bootable one. Returns the media files to replace, under mediaDir.
@@ -557,6 +584,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
         }
 
+        CheckDrivers(plan.Drivers, plan.DriverSource);
         var source = Path.Combine(paths.Base, "sources", "boot.wim");
         if (!File.Exists(source))
         {
@@ -595,6 +623,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 current = next;
             }
 
+            await AddDriversAsync("boot", mount, plan.Drivers, plan.DriverSource, ct).ConfigureAwait(false);
             Log?.Invoke("boot cleanup component store (ResetBase)");
             await servicing.CleanupComponentStoreAsync(mount, resetBase: true, ct).ConfigureAwait(false);
             var cleaned = await ReadPackagesAsync(mount, ct).ConfigureAwait(false);
@@ -861,50 +890,59 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             Log?.Invoke($"staged {updates.Count} update package(s), {Gb(bytes)}");
         }
 
-        var drivers = plan.Drivers;
-        if (drivers is { Source: { } driverSource, Add.Count: > 0 })
+        var driverFolders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string StagedDrivers(string source) => driverFolders.TryGetValue(source, out var folder)
+            ? folder
+            : driverFolders[source] = Path.Combine(root, driverFolders.Count == 0 ? "drivers" : $"drivers{driverFolders.Count + 1}");
+        var driverInputs = (plan.Drivers is { Source: { } imageDrivers } ? plan.Drivers.Add.Select(a => (Source: imageDrivers, Addition: a)) : [])
+            .Concat(plan.WinRe is { DriverSource: { } winReDrivers } ? plan.WinRe.Drivers.Select(a => (Source: winReDrivers, Addition: a)) : [])
+            .Concat(plan.Boot is { DriverSource: { } bootDrivers } ? plan.Boot.Drivers.Select(a => (Source: bootDrivers, Addition: a)) : [])
+            .DistinctBy(d => (d.Source.ToUpperInvariant(), d.Addition.InfPath.ToUpperInvariant()))
+            .ToList();
+        foreach (var (driverSource, addition) in driverInputs)
         {
-            var staged = Path.Combine(root, "drivers");
-            foreach (var addition in drivers.Add)
+            var staged = StagedDrivers(driverSource);
+            if (DriverFolder.CurrentPackage(driverSource, addition.InfPath) is not { } package)
             {
-                if (DriverFolder.CurrentPackage(driverSource, addition.InfPath) is not { } package)
-                {
-                    changed.Add(addition.InfPath);
-                    continue;
-                }
+                changed.Add(addition.InfPath);
+                continue;
+            }
 
-                foreach (var file in DriverFolder.PackageFiles(package).Where(f => File.Exists(DriverFolder.Full(driverSource, f))))
+            foreach (var file in DriverFolder.PackageFiles(package).Where(f => File.Exists(DriverFolder.Full(driverSource, f))))
+            {
+                var to = DriverFolder.Full(staged, file);
+                if (!File.Exists(to))
                 {
-                    var to = DriverFolder.Full(staged, file);
-                    if (!File.Exists(to))
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-                        await TreeCopy.CopyFileAsync(DriverFolder.Full(driverSource, file), to, ct).ConfigureAwait(false);
-                    }
-                }
-
-                if (DriverFolder.CurrentHash(staged, addition.InfPath) != addition.ContentHash)
-                {
-                    changed.Add(addition.InfPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    await TreeCopy.CopyFileAsync(DriverFolder.Full(driverSource, file), to, ct).ConfigureAwait(false);
                 }
             }
 
-            if (changed.Count > 0)
+            if (DriverFolder.CurrentHash(staged, addition.InfPath) != addition.ContentHash)
             {
-                throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+                changed.Add(addition.InfPath);
             }
-
-            Log?.Invoke($"staged {drivers.Add.Count} driver package(s)");
-            drivers = drivers with { Source = staged };
         }
 
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+
+        if (driverInputs.Count > 0)
+        {
+            Log?.Invoke($"staged {driverInputs.Count} driver package(s)");
+        }
+
+        string? Restaged(string? source) => source is null ? null : StagedDrivers(source);
+        string UpdatesOf(string source) => source.Length == 0 ? source : Staged(source);
         return plan with
         {
             Updates = plan.Updates is { } u ? u with { Source = Staged(u.Source) } : null,
             DotNetUpdates = plan.DotNetUpdates is { } d ? d with { Source = Staged(d.Source) } : null,
-            WinRe = plan.WinRe is { } w ? w with { Source = Staged(w.Source) } : null,
-            Boot = plan.Boot is { } b ? b with { Source = Staged(b.Source) } : null,
-            Drivers = drivers,
+            WinRe = plan.WinRe is { } w ? w with { Source = UpdatesOf(w.Source), DriverSource = Restaged(w.DriverSource) } : null,
+            Boot = plan.Boot is { } b ? b with { Source = UpdatesOf(b.Source), DriverSource = Restaged(b.DriverSource) } : null,
+            Drivers = plan.Drivers is { Source: { } ds, Add.Count: > 0 } dp ? dp with { Source = StagedDrivers(ds) } : plan.Drivers,
         };
     }
 

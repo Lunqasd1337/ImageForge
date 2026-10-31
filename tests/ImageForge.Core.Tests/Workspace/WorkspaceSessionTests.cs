@@ -517,6 +517,27 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.CommittedWinRe.ShouldBe(["WINRE+M1+export"]);
     }
 
+    [Fact]
+    public async Task Drivers_for_WinRe_are_planned_from_the_driver_folder_without_an_update_folder_and_run()
+    {
+        _servicing.WinRe = "WINRE";
+        _dir.WriteFile("drivers/net/netkvm.inf", Drivers.InfTests.Storage);
+        _dir.WriteFile("drivers/net/viostor.cat", "CAT");
+        _dir.WriteFile("drivers/net/amd64/viostor.sys", "SYS");
+        _session.Open(_folders);
+
+        var plan = _session.Plan(new PlanOptions(null) { WinReDrivers = [@"net\netkvm.inf"], DriverFolder = _dir.Combine("drivers") });
+
+        plan.Diagnostics.ShouldBeEmpty();
+        plan.Drivers.ShouldBeNull();
+        plan.WinRe.ShouldNotBeNull().Drivers.ShouldHaveSingleItem().InfPath.ShouldBe(@"net\netkvm.inf");
+        plan.WinRe.Add.ShouldBeEmpty();
+        var outcome = await _session.StartAsync(Start(plan), null, Ct);
+        outcome.Status.ShouldBe(RunStatus.Published, outcome.Error);
+        _servicing.Calls.ShouldContain("driver-add netkvm.inf");
+        _servicing.CommittedWinRe.ShouldBe(["WINRE+M1+export"]);
+    }
+
     private static RegFileInput RegFile(string body) =>
         new("t.reg", [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("Windows Registry Editor Version 5.00\r\n\r\n" + body)], RegFileEncoding.Auto, 1251);
 

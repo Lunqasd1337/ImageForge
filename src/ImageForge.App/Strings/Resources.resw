@@ -34,7 +34,7 @@
   <data name="ImageDriversExpander.Header" xml:space="preserve"><value>Сторонние драйверы образа</value></data>
   <data name="AllowBootCritical.Content" xml:space="preserve"><value>Разрешить удаление драйверов, нужных для загрузки (образ может перестать загружаться)</value></data>
   <data name="DriverFolderTitle.Text" xml:space="preserve"><value>Добавить драйверы из папки</value></data>
-  <data name="DriverFolderHint.Text" xml:space="preserve"><value>Папка с пакетами драйверов (INF вместе с .cat и .sys); вложенные папки просматриваются. Пакеты добавляются в выбранную редакцию install.wim.</value></data>
+  <data name="DriverFolderHint.Text" xml:space="preserve"><value>Папка с пакетами драйверов (INF вместе с .cat и .sys); вложенные папки просматриваются. У каждого пакета три отметки: в выбранную редакцию install.wim, в WinRE (драйвер диска, чтобы среда восстановления его видела) и во все образы boot.wim (драйверы диска и сети для установки Windows).</value></data>
   <data name="DriverFolderBox.Header" xml:space="preserve"><value>Папка драйверов (например E:\NetKVM\w11\amd64)</value></data>
   <data name="ChooseDriverFolder.Content" xml:space="preserve"><value>Выбрать...</value></data>
   <data name="ScanDrivers.Content" xml:space="preserve"><value>Найти пакеты</value></data>
@@ -78,7 +78,7 @@
   <data name="DriverFolderPrompt" xml:space="preserve"><value>Укажите папку с драйверами и нажмите «Найти пакеты».</value></data>
   <data name="DriverNoCatalog" xml:space="preserve"><value>без подписи</value></data>
   <data name="DriverNotInf" xml:space="preserve"><value>не INF драйвера</value></data>
-  <data name="DriverPackagesCount" xml:space="preserve"><value>Найдено INF: {0}, можно добавить: {1}, отмечено: {2}.</value></data>
+  <data name="DriverPackagesCount" xml:space="preserve"><value>Найдено INF: {0}, можно добавить: {1}. Отмечено в образ: {2}, в WinRE: {3}, в boot.wim: {4}.</value></data>
   <data name="DriverSameContent" xml:space="preserve"><value>Такое же содержимое ещё у {0} INF в этой папке; отмеченные копии добавятся один раз.</value></data>
   <data name="DriverUnsignedNote" xml:space="preserve"><value>Без подписи: добавляется только с ForceUnsigned (разрешение ниже).</value></data>
   <data name="DriversNotRead" xml:space="preserve"><value>Драйверы образа ещё не прочитаны.</value></data>
@@ -147,7 +147,7 @@
   <data name="PackagesPending" xml:space="preserve"><value>Незавершённых действий обслуживания: {0} ({1}).</value></data>
   <data name="PackagesStatus" xml:space="preserve"><value>Пакетов обслуживания: {0}. Накопительное обновление: {1}, стек обслуживания: {2}.</value></data>
   <data name="PlanApps" xml:space="preserve"><value>Удаляемых приложений: {0}.</value></data>
-  <data name="PlanBoot" xml:space="preserve"><value>Обновлений в boot.wim: {0}.</value></data>
+  <data name="PlanBoot" xml:space="preserve"><value>В boot.wim обновлений: {0}, драйверов: {1}.</value></data>
   <data name="PlanCapabilityAdditions" xml:space="preserve"><value>Добавляемых: {0}.</value></data>
   <data name="PlanCapabilityRemovals" xml:space="preserve"><value>Удаляемых дополнительных компонентов: {0}.</value></data>
   <data name="PlanCleanup" xml:space="preserve"><value>Очистка хранилища компонентов{0}.</value></data>
@@ -158,12 +158,13 @@
   <data name="PlanReady" xml:space="preserve"><value>План готов, изменений реестра: {0}.{1}{2}{3}{4}{5}{6} Проверьте превью и нажмите «Запустить».</value></data>
   <data name="PlanResetBase" xml:space="preserve"><value>с /ResetBase</value></data>
   <data name="PlanUpdates" xml:space="preserve"><value>Добавляемых обновлений: {0}.</value></data>
-  <data name="PlanWinRe" xml:space="preserve"><value>Обновлений в WinRE: {0}.</value></data>
+  <data name="PlanWinRe" xml:space="preserve"><value>В WinRE обновлений: {0}, драйверов: {1}.</value></data>
   <data name="Present" xml:space="preserve"><value>есть</value></data>
   <data name="PreviewAppx" xml:space="preserve"><value>Удалить приложение {0} ({1})</value></data>
   <data name="PreviewBeforePrepare" xml:space="preserve"><value>Превью появится после подготовки: укажите папки и нажмите «Подготовить».</value></data>
-  <data name="PreviewBoot" xml:space="preserve"><value>boot.wim (sources\boot.wim): обновить все образы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; setup.exe и setuphost.exe программы установки — в sources носителя</value></data>
+  <data name="PreviewBoot" xml:space="preserve"><value>boot.wim (sources\boot.wim): добавить в каждый образ выбранные обновления и драйверы, очистить с /ResetBase, экспортировать с прежним загрузочным образом; setup.exe и setuphost.exe программы установки — в sources носителя</value></data>
   <data name="PreviewBootAdd" xml:space="preserve"><value>Добавить в boot.wim {0}</value></data>
+  <data name="PreviewBootDriverAdd" xml:space="preserve"><value>Добавить в boot.wim драйвер {0}{1}</value></data>
   <data name="PreviewCapabilityAdd" xml:space="preserve"><value>Добавить дополнительный компонент {0}</value></data>
   <data name="PreviewCapabilityAddNamed" xml:space="preserve"><value>Добавить дополнительный компонент {0} ({1})</value></data>
   <data name="PreviewCapabilityDependencies" xml:space="preserve"><value>DISM может сам добавить нужные им компоненты (например, базовый языковой пакет); они будут перечислены в журнале запуска.</value></data>
@@ -188,8 +189,9 @@
   <data name="PreviewUpdateAdd" xml:space="preserve"><value>Добавить обновление {0}</value></data>
   <data name="PreviewUpdateDuration" xml:space="preserve"><value>Установка накопительного обновления идёт 10–15 минут, сохранение образа после неё — до получаса; отмена их не прерывает.</value></data>
   <data name="PreviewUpdateSameContent" xml:space="preserve"><value>То же содержимое, ставится один раз: {0}</value></data>
-  <data name="PreviewWinRe" xml:space="preserve"><value>WinRE (Windows\System32\Recovery\Winre.wim): извлечь, обновить, очистить с /ResetBase, экспортировать и вернуть в образ</value></data>
+  <data name="PreviewWinRe" xml:space="preserve"><value>WinRE (Windows\System32\Recovery\Winre.wim): извлечь, добавить выбранные обновления и драйверы, очистить с /ResetBase, экспортировать и вернуть в образ</value></data>
   <data name="PreviewWinReAdd" xml:space="preserve"><value>Добавить в WinRE {0}</value></data>
+  <data name="PreviewWinReDriverAdd" xml:space="preserve"><value>Добавить в WinRE драйвер {0}{1}</value></data>
   <data name="Recovering" xml:space="preserve"><value>Восстановление...</value></data>
   <data name="RecoveryDone" xml:space="preserve"><value>Восстановление завершено. Нажмите «Подготовить».</value></data>
   <data name="RecoveryFailed" xml:space="preserve"><value>Восстановить автоматически не удалось. Пришлите журнал.</value></data>

@@ -753,6 +753,70 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task WinRe_drivers_go_in_after_its_updates_and_before_its_cleanup_from_the_staged_copy()
+    {
+        _servicing.WinRe = "WINRE";
+        var request = UpdateRequest(WinRePackages(), new AddWinReUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddWinReDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "mount", "package-list", "package-add Windows11.0-KB5134133-x64.msu", "package-list", "driver-add netkvm.inf",
+            "cleanup resetbase", "package-list", "unmount commit", "export", "registry", "unmount commit", "export"]);
+        _servicing.AddedPaths.ShouldAllBe(p => p.Contains("inputs", StringComparison.Ordinal));
+        log.ShouldContain(@"winre add driver net\netkvm.inf");
+        log.ShouldContain(l => l.StartsWith("staged 1 driver package", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Only_drivers_for_WinRe_need_no_update_folder()
+    {
+        _servicing.WinRe = "WINRE";
+        var request = UpdateRequest(UpdatePackages(), new AddWinReDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe(["mount", "mount", "package-list", "driver-add netkvm.inf", "cleanup resetbase", "package-list", "unmount commit", "export",
+            "registry", "unmount commit", "export"]);
+        log.ShouldNotContain(l => l.StartsWith("staged", StringComparison.Ordinal) && l.Contains("update", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Boot_drivers_go_into_every_boot_wim_image()
+    {
+        BootMedia();
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(UpdatePackages(), new AddBootDriverPackage(@"net\netkvm.inf")), Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.Calls.ShouldBe([
+            "mount", "registry", "unmount commit", "export",
+            "mount", "package-list", "driver-add netkvm.inf", "cleanup resetbase", "package-list", "unmount commit",
+            "mount", "package-list", "driver-add netkvm.inf", "cleanup resetbase", "package-list", "unmount commit",
+            "export", "export bootable"]);
+        log.Count(l => l == @"boot add driver net\netkvm.inf").ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_changed_driver_for_boot_wim_stops_the_run_before_the_mount()
+    {
+        BootMedia();
+        var request = UpdateRequest(UpdatePackages(), new AddBootDriverPackage(@"net\netkvm.inf"));
+        File.WriteAllText(Path.Combine(DriverPackages(), "net", "amd64", "viostor.sys"), "replaced");
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("stage-inputs");
+        result.Error.ShouldNotBeNull().ShouldContain(@"net\netkvm.inf");
+        _servicing.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task The_expected_0x8007007E_of_the_cumulative_update_in_WinRe_does_not_stop_the_run()
     {
         _servicing.WinRe = "WINRE";

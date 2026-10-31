@@ -55,6 +55,48 @@ public sealed class DriverPlanningTests
     }
 
     [Fact]
+    public void Drivers_go_into_WinRe_and_boot_wim_on_their_own_without_the_image_inventory()
+    {
+        var plan = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid).Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(),
+            [new AddWinReDriverPackage(@"w11\netkvm.inf"), new AddBootDriverPackage(@"w10\netkvm.inf"), new AddBootDriverPackage(@"2k22\netkvm.inf")])
+        {
+            DriverSource = Source,
+        }).Plan.ShouldNotBeNull();
+
+        plan.Drivers.ShouldBeNull();
+        var winRe = plan.WinRe.ShouldNotBeNull();
+        winRe.Add.ShouldBeEmpty();
+        winRe.Warnings.ShouldBeEmpty();
+        winRe.Drivers.ShouldHaveSingleItem().InfPath.ShouldBe(@"w11\netkvm.inf");
+        winRe.DriverSource.ShouldBe(Folder);
+        var boot = plan.Boot.ShouldNotBeNull();
+        boot.Drivers.ShouldHaveSingleItem().SameContent.ShouldBe([@"2k22\netkvm.inf"]);
+        boot.DriverSource.ShouldBe(Folder);
+    }
+
+    [Fact]
+    public void An_unsigned_or_broken_driver_for_WinRe_or_boot_blocks_like_one_for_the_image()
+    {
+        var result = Plan(new AddWinReDriverPackage(@"nocat\netkvm.inf"), new AddBootDriverPackage(@"broken\netkvm.inf"));
+
+        result.Plan.ShouldBeNull();
+        result.Diagnostics.Select(d => d.Code).ShouldBe([PlanningCodes.DriverUnsigned, PlanningCodes.DriverPackageInvalid]);
+
+        var forced = Plan(new AddWinReDriverPackage(@"nocat\netkvm.inf", ForceUnsigned: true)).Plan.ShouldNotBeNull().WinRe.ShouldNotBeNull();
+        forced.Drivers.ShouldHaveSingleItem().ForceUnsigned.ShouldBeTrue();
+        forced.Warnings.ShouldHaveSingleItem().ShouldContain(@"nocat\netkvm.inf");
+    }
+
+    [Fact]
+    public void The_fingerprint_covers_the_WinRe_and_boot_drivers()
+    {
+        var winRe = Plan(new AddWinReDriverPackage(@"w11\netkvm.inf")).Plan!;
+        var boot = Plan(new AddBootDriverPackage(@"w11\netkvm.inf")).Plan!;
+
+        winRe.Fingerprint.ShouldNotBe(boot.Fingerprint);
+    }
+
+    [Fact]
     public void Same_content_is_added_once_and_the_other_paths_are_shown()
     {
         var drivers = Plan(new AddDriverPackage(@"w10\netkvm.inf"), new AddDriverPackage(@"2k22\netkvm.inf"), new AddDriverPackage(@"w10\netkvm.inf")).Plan!.Drivers!;

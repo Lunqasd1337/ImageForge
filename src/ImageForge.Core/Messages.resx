@@ -19,6 +19,7 @@
   <data name="CabNoSignature" xml:space="preserve"><value>нет подписи MSCF: это не файл cabinet</value></data>
   <data name="CabTableTruncated" xml:space="preserve"><value>файл обрезан: таблица файлов не дочитана</value></data>
   <data name="CabTruncated" xml:space="preserve"><value>файл обрезан: в заголовке {0} байт, на диске {1}</value></data>
+  <data name="CleanupPending" xml:space="preserve"><value>В образе есть незавершённые действия обслуживания ({0}): {1}. С ними DISM может отказаться очищать хранилище компонентов.</value></data>
   <data name="CapabilityInventoryMissing" xml:space="preserve"><value>Список дополнительных компонентов (Capabilities) не прочитан; изменить их нельзя.</value></data>
   <data name="CapabilityNotInstalled" xml:space="preserve"><value>Дополнительный компонент {0} не установлен в образе.</value></data>
   <data name="CapabilityNotListed" xml:space="preserve"><value>Дополнительного компонента {0} нет в списке образа.</value></data>

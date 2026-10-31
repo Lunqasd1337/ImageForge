@@ -71,7 +71,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
             else if (request.Changes[i] is CleanupComponentStore clean)
             {
                 // Asked for twice, it runs once; ResetBase if either asked for it.
-                cleanup = PlanCleanup(clean.ResetBase || cleanup?.ResetBase == true);
+                cleanup = PlanCleanup(clean.ResetBase || cleanup?.ResetBase == true, request.Packages?.Pending ?? []);
             }
             else if (request.Changes[i] is RemoveProvisionedAppx remove)
             {
@@ -581,9 +581,12 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
         return diagnostics.Count != count || add.Count == 0 ? null : add;
     }
 
-    private static CleanupPlan PlanCleanup(bool resetBase) => new(resetBase, resetBase
-        ? [Messages.ResetBaseWarning]
-        : []);
+    // DISM refuses a component store cleanup while actions are pending (0x800F0806); the run names them if it fails.
+    private static CleanupPlan PlanCleanup(bool resetBase, IReadOnlyList<string> pending) => new(resetBase,
+    [
+        .. resetBase ? [Messages.ResetBaseWarning] : Array.Empty<string>(),
+        .. pending.Count > 0 ? [Messages.CleanupPending(pending.Count, string.Join(", ", pending))] : Array.Empty<string>(),
+    ]);
 
     private static string Describe(UpdatePackageInfo p) =>
         $"{p.FileName}: {(p.Kb is { } kb ? $"KB{kb}" : Messages.UpdateNoKb)}, {p.Kind.ToString().ToUpperInvariant()}" +

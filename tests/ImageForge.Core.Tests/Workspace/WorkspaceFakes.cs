@@ -231,9 +231,17 @@ internal sealed class FakeServicing : IImageServicing
     }
 
     /// <summary>Drops the superseded packages, as /ResetBase does; without it they stay.</summary>
+    /// <summary>The HRESULT the component store cleanup fails with; null when it succeeds.</summary>
+    public int? FailCleanup { get; set; }
+
     public Task CleanupComponentStoreAsync(string mountDir, bool resetBase, CancellationToken ct)
     {
         Calls.Add(resetBase ? "cleanup resetbase" : "cleanup");
+        if (FailCleanup is { } hresult)
+        {
+            throw new IOException($"Dism.exe /Cleanup-Image failed: 0x{hresult:X8}") { HResult = hresult };
+        }
+
         if (resetBase)
         {
             Packages.RemoveAll(p => p.State == "Superseded");

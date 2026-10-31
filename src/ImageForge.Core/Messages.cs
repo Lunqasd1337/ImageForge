@@ -29,6 +29,7 @@ public static class Messages
     public static string CabNoSignature => Get(nameof(CabNoSignature));
     public static string CabTableTruncated => Get(nameof(CabTableTruncated));
     public static string CabTruncated(object? a0, object? a1) => Format(nameof(CabTruncated), a0, a1);
+    public static string CleanupPending(object? a0, object? a1) => Format(nameof(CleanupPending), a0, a1);
     public static string CapabilityInventoryMissing => Get(nameof(CapabilityInventoryMissing));
     public static string CapabilityNotInstalled(object? a0) => Format(nameof(CapabilityNotInstalled), a0);
     public static string CapabilityNotListed(object? a0) => Format(nameof(CapabilityNotListed), a0);

@@ -142,6 +142,9 @@ public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<App
     public int PackageCount { get; init; }
 
     public IReadOnlyList<string> PackageProblems { get; init; } = [];
+
+    /// <summary>Packages with an unfinished action (Install Pending and the like).</summary>
+    public IReadOnlyList<string> PendingPackages { get; init; } = [];
 }
 
 public sealed record RunOutcome(
@@ -275,6 +278,7 @@ public sealed class WorkspaceSession(
                 ServicingStack = inventory.Packages.ServicingStack,
                 PackageCount = inventory.Packages.Packages.Count,
                 PackageProblems = inventory.Packages.Problems,
+                PendingPackages = inventory.Packages.Pending,
             };
         }
     }
@@ -371,6 +375,7 @@ public sealed class WorkspaceSession(
                     Drivers = _inventory?.Drivers,
                     DriverSource = fod?.Drivers,
                     UpdateSource = fod?.Updates,
+                    Packages = _inventory?.Packages,
                 });
             _plan = result.Plan;
             return result.Plan is { } plan

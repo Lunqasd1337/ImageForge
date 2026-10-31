@@ -906,7 +906,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         UpdatesStatus = inspection.PackageProblems.Count > 0
             ? (Ui.PackagesNotRead + " ") + string.Join("; ", inspection.PackageProblems)
-            : Ui.PackagesStatus(inspection.PackageCount, inspection.Rollup ?? Ui.None, inspection.ServicingStack ?? Ui.None);
+            : Ui.PackagesStatus(inspection.PackageCount, inspection.Rollup ?? Ui.None, inspection.ServicingStack ?? Ui.None)
+                + (inspection.PendingPackages.Count > 0 ? " " + Ui.PackagesPending(inspection.PendingPackages.Count, string.Join(", ", inspection.PendingPackages)) : string.Empty);
     }
 
     private void ShowUpdatePackagesStatus() =>

@@ -34,6 +34,9 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 
     /// <summary>The scanned update folder; updates are added only from it.</summary>
     public UpdateFolder? UpdateSource { get; init; }
+
+    /// <summary>The servicing packages read from the image; its pending actions are shown with the cleanup.</summary>
+    public PackageInventory? Packages { get; init; }
 }
 
 public abstract record PlannedStep;

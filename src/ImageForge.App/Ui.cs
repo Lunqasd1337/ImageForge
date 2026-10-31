@@ -101,6 +101,7 @@ internal static class Ui
     public static string NoRuns => Get(nameof(NoRuns));
     public static string None => Get(nameof(None));
     public static string PackagesNotRead => Get(nameof(PackagesNotRead));
+    public static string PackagesPending(object? a0, object? a1) => Format(nameof(PackagesPending), a0, a1);
     public static string PackagesStatus(object? a0, object? a1, object? a2) => Format(nameof(PackagesStatus), a0, a1, a2);
     public static string PlanApps(object? a0) => Format(nameof(PlanApps), a0);
     public static string PlanBoot(object? a0) => Format(nameof(PlanBoot), a0);

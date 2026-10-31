@@ -595,6 +595,21 @@ public sealed class RunPipelineTests : IDisposable
         log.ShouldContain("cleanup: packages 2 -> 1, superseded 1 -> 0; rollup 26100.9725.1.0, servicing stack -");
     }
 
+    [Fact]
+    public async Task Pending_actions_are_logged_before_the_cleanup_and_named_when_it_fails()
+    {
+        _servicing.Packages.Add(new InstalledPackage("Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1", "Install Pending", "Feature Pack"));
+        _servicing.FailCleanup = unchecked((int)0x800F0806);
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(UpdatePackages(), new CleanupComponentStore(ResetBase: true)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("cleanup");
+        result.Error.ShouldNotBeNull().ShouldContain("pending: Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1");
+        log.ShouldContain("pending before cleanup: Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1 (Install Pending)");
+    }
+
     private const string BootXml = "<WIM><IMAGE INDEX=\"1\"><NAME>Microsoft Windows PE (amd64)</NAME></IMAGE><IMAGE INDEX=\"2\"><NAME>Microsoft Windows Setup (amd64)</NAME></IMAGE></WIM>";
 
     private void BootMedia()

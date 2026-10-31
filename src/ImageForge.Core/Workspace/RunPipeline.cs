@@ -633,8 +633,22 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     {
         var before = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
         Log?.Invoke($"packages: {before.Packages.Count}, superseded {Superseded(before)}");
+        var pending = before.Packages.Where(p => p.IsPending).ToList();
+        if (pending.Count > 0)
+        {
+            Log?.Invoke($"pending before cleanup: {string.Join(", ", pending.Select(p => $"{p.Name} ({p.State})"))}");
+        }
+
         Log?.Invoke(plan.ResetBase ? "cleanup component store (ResetBase)" : "cleanup component store");
-        await servicing.CleanupComponentStoreAsync(mountDir, plan.ResetBase, ct).ConfigureAwait(false);
+        try
+        {
+            await servicing.CleanupComponentStoreAsync(mountDir, plan.ResetBase, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (pending.Count > 0 && ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException($"{ex.Message} The image has pending: {string.Join(", ", pending.Select(p => p.Name))}.", ex);
+        }
+
         var after = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
         Log?.Invoke($"cleanup: packages {before.Packages.Count} -> {after.Packages.Count}, superseded {Superseded(before)} -> {Superseded(after)}; " +
             $"rollup {after.Rollup ?? "-"}, servicing stack {after.ServicingStack ?? "-"}");

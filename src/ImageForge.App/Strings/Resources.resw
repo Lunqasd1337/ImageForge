@@ -137,6 +137,7 @@
   <data name="NoRuns" xml:space="preserve"><value>запусков не было</value></data>
   <data name="None" xml:space="preserve"><value>нет</value></data>
   <data name="PackagesNotRead" xml:space="preserve"><value>Пакеты образа не прочитаны:</value></data>
+  <data name="PackagesPending" xml:space="preserve"><value>Незавершённых действий обслуживания: {0} ({1}).</value></data>
   <data name="PackagesStatus" xml:space="preserve"><value>Пакетов обслуживания: {0}. Накопительное обновление: {1}, стек обслуживания: {2}.</value></data>
   <data name="PlanApps" xml:space="preserve"><value>Удаляемых приложений: {0}.</value></data>
   <data name="PlanBoot" xml:space="preserve"><value>Обновлений в boot.wim: {0}.</value></data>

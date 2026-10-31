@@ -181,14 +181,28 @@ public sealed record CleanupPlan(bool ResetBase, IReadOnlyList<string> Warnings)
 /// Servicing of Winre.wim inside the image: <paramref name="Add"/> in order (cumulative updates first, which bring only
 /// the servicing stack there), cleanup with /ResetBase, commit and export, then the file goes back into the image.
 /// </summary>
-public sealed record WinRePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
+public sealed record WinRePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings)
+{
+    /// <summary>Driver packages added after the updates, before the cleanup.</summary>
+    public IReadOnlyList<DriverAddition> Drivers { get; init; } = [];
+
+    /// <summary>The driver folder the packages are in; null when there are none.</summary>
+    public string? DriverSource { get; init; }
+}
 
 /// <summary>
 /// Servicing of sources\boot.wim: <paramref name="Add"/> in order (servicing stack first) into every image, cleanup with
 /// /ResetBase and commit; then every image is exported in order, the boot image stays bootable, and the setup files of
 /// the boot image replace those in the media's sources.
 /// </summary>
-public sealed record BootPlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
+public sealed record BootPlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings)
+{
+    /// <summary>Driver packages added to every image after the updates, before the cleanup.</summary>
+    public IReadOnlyList<DriverAddition> Drivers { get; init; } = [];
+
+    /// <summary>The driver folder the packages are in; null when there are none.</summary>
+    public string? DriverSource { get; init; }
+}
 
 /// <param name="FileName">Relative to the update folder.</param>
 /// <param name="Sha256">The run adds the file only while it still has this hash.</param>

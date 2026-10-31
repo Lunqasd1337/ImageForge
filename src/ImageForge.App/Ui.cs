@@ -42,7 +42,7 @@ internal static class Ui
     public static string DriverFolderPrompt => Get(nameof(DriverFolderPrompt));
     public static string DriverNoCatalog => Get(nameof(DriverNoCatalog));
     public static string DriverNotInf => Get(nameof(DriverNotInf));
-    public static string DriverPackagesCount(object? a0, object? a1, object? a2) => Format(nameof(DriverPackagesCount), a0, a1, a2);
+    public static string DriverPackagesCount(object? a0, object? a1, object? a2, object? a3, object? a4) => Format(nameof(DriverPackagesCount), a0, a1, a2, a3, a4);
     public static string DriverSameContent(object? a0) => Format(nameof(DriverSameContent), a0);
     public static string DriverUnsignedNote => Get(nameof(DriverUnsignedNote));
     public static string DriversNotRead => Get(nameof(DriversNotRead));
@@ -111,7 +111,7 @@ internal static class Ui
     public static string PackagesPending(object? a0, object? a1) => Format(nameof(PackagesPending), a0, a1);
     public static string PackagesStatus(object? a0, object? a1, object? a2) => Format(nameof(PackagesStatus), a0, a1, a2);
     public static string PlanApps(object? a0) => Format(nameof(PlanApps), a0);
-    public static string PlanBoot(object? a0) => Format(nameof(PlanBoot), a0);
+    public static string PlanBoot(object? a0, object? a1) => Format(nameof(PlanBoot), a0, a1);
     public static string PlanCapabilityAdditions(object? a0) => Format(nameof(PlanCapabilityAdditions), a0);
     public static string PlanCapabilityRemovals(object? a0) => Format(nameof(PlanCapabilityRemovals), a0);
     public static string PlanCleanup(object? a0) => Format(nameof(PlanCleanup), a0);
@@ -122,12 +122,14 @@ internal static class Ui
     public static string PlanReady(object? a0, object? a1, object? a2, object? a3, object? a4, object? a5, object? a6) => Format(nameof(PlanReady), a0, a1, a2, a3, a4, a5, a6);
     public static string PlanResetBase => Get(nameof(PlanResetBase));
     public static string PlanUpdates(object? a0) => Format(nameof(PlanUpdates), a0);
-    public static string PlanWinRe(object? a0) => Format(nameof(PlanWinRe), a0);
+    public static string PlanWinRe(object? a0, object? a1) => Format(nameof(PlanWinRe), a0, a1);
     public static string Present => Get(nameof(Present));
     public static string PreviewAppx(object? a0, object? a1) => Format(nameof(PreviewAppx), a0, a1);
     public static string PreviewBeforePrepare => Get(nameof(PreviewBeforePrepare));
     public static string PreviewBoot => Get(nameof(PreviewBoot));
     public static string PreviewBootAdd(object? a0) => Format(nameof(PreviewBootAdd), a0);
+
+    public static string PreviewBootDriverAdd(object? a0, object? a1) => Format(nameof(PreviewBootDriverAdd), a0, a1);
     public static string PreviewCapabilityAdd(object? a0) => Format(nameof(PreviewCapabilityAdd), a0);
     public static string PreviewCapabilityAddNamed(object? a0, object? a1) => Format(nameof(PreviewCapabilityAddNamed), a0, a1);
     public static string PreviewCapabilityDependencies => Get(nameof(PreviewCapabilityDependencies));
@@ -154,6 +156,8 @@ internal static class Ui
     public static string PreviewUpdateSameContent(object? a0) => Format(nameof(PreviewUpdateSameContent), a0);
     public static string PreviewWinRe => Get(nameof(PreviewWinRe));
     public static string PreviewWinReAdd(object? a0) => Format(nameof(PreviewWinReAdd), a0);
+
+    public static string PreviewWinReDriverAdd(object? a0, object? a1) => Format(nameof(PreviewWinReDriverAdd), a0, a1);
     public static string Recovering => Get(nameof(Recovering));
     public static string RecoveryDone => Get(nameof(RecoveryDone));
     public static string RecoveryFailed => Get(nameof(RecoveryFailed));

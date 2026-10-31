@@ -144,6 +144,12 @@ public sealed record AddWinReUpdatePackage(string FileName) : ImageChange;
 /// </summary>
 public sealed record AddBootUpdatePackage(string FileName) : ImageChange;
 
+/// <summary>Adds a driver package from the scanned driver folder to WinRE: storage drivers first of all (plan, section 12).</summary>
+public sealed record AddWinReDriverPackage(string InfPath, bool ForceUnsigned = false) : ImageChange;
+
+/// <summary>Adds a driver package from the scanned driver folder to every image of boot.wim: storage and network drivers (plan, section 12).</summary>
+public sealed record AddBootDriverPackage(string InfPath, bool ForceUnsigned = false) : ImageChange;
+
 /// <summary>Cleans up the component store (Dism.exe /Cleanup-Image /StartComponentCleanup) after the other servicing.</summary>
 /// <param name="ResetBase">Also removes superseded component versions, so installed updates can no longer be removed.</param>
 public sealed record CleanupComponentStore(bool ResetBase) : ImageChange;

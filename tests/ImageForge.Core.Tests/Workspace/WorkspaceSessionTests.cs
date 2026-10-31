@@ -25,18 +25,34 @@ public sealed class WorkspaceSessionTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public void Dispose() => _dir.Dispose();
+    public void Dispose()
+    {
+        _session.Dispose();
+        _dir.Dispose();
+    }
+
+    [Fact]
+    public void A_work_folder_has_one_writer_until_its_session_moves_on()
+    {
+        _session.Open(_folders).Problems.ShouldBeEmpty();
+        using var second = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => []);
+
+        second.Open(_folders).Problems.ShouldHaveSingleItem().Kind.ShouldBe(LocationProblemKind.InUse);
+
+        _session.Open(_folders with { WorkDir = _dir.Combine("work2") }).Problems.ShouldBeEmpty();
+        second.Open(_folders).Problems.ShouldBeEmpty();
+    }
 
     [Fact]
     public void A_work_folder_on_a_network_drive_is_refused_and_a_synced_source_is_a_warning()
     {
-        var network = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        using var network = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
         {
             Volumes = _ => new VolumeFacts(VolumeKind.Network, "NTFS"),
         };
         network.Open(_folders).Problems.ShouldContain(p => p.Kind == LocationProblemKind.NetworkVolume && p.Location == WorkspaceLocations.WorkDir);
 
-        var synced = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        using var synced = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
         {
             IsSynced = path => path == _folders.SourceDir,
         };

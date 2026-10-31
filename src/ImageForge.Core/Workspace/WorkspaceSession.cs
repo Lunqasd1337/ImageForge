@@ -166,7 +166,7 @@ public sealed class WorkspaceSession(
     Func<Action<string>, IImageServicing> servicingFactory,
     Func<Guid> newId,
     Func<string, IWorkspacePaths>? layoutFactory = null,
-    Func<string, string, string, IReadOnlyList<LocationProblem>>? validateLocations = null)
+    Func<string, string, string, IReadOnlyList<LocationProblem>>? validateLocations = null) : IDisposable
 {
     /// <summary>Free bytes of a volume by its root; null when unknown. The engine reads the disk; tests leave it unknown.</summary>
     public Func<string, long?> FreeSpace { get; init; } = _ => null;
@@ -178,6 +178,12 @@ public sealed class WorkspaceSession(
     public Func<string, bool> IsSynced { get; init; } = _ => false;
 
     private IReadOnlyList<LocationProblem> _warnings = [];
+
+    // Held while the work folder is open in this session: a second engine cannot open it (one writer per workspace).
+    private FileStream? _lock;
+
+    /// <summary>The file a session keeps open, without sharing, while it has the work folder.</summary>
+    public const string LockFileName = "workspace.lock";
 
     private readonly Func<string, IWorkspacePaths> _layoutFactory = layoutFactory ?? (dir => WorkspaceLayout.Create(dir));
     private readonly Func<string, string, string, IReadOnlyList<LocationProblem>> _validate = validateLocations ?? WorkspaceLocations.Validate;
@@ -191,6 +197,16 @@ public sealed class WorkspaceSession(
     private long _revision;
     private bool _busy;
     private Task _current = Task.CompletedTask;
+
+    /// <summary>Lets another engine open the work folder.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _lock?.Dispose();
+            _lock = null;
+        }
+    }
 
     /// <summary>Test hook for the manual failure experiments; the product UI never sets it.</summary>
     public InjectedFailure Failure { get; set; }
@@ -210,12 +226,24 @@ public sealed class WorkspaceSession(
             var volumes = problems.Count > 0 ? [] : WorkspaceLocations.CheckVolumes(request.SourceDir, request.WorkDir, request.OutputDir, Volumes, IsSynced);
             problems = [.. problems, .. volumes.Where(p => !p.IsWarning)];
             _warnings = [.. volumes.Where(p => p.IsWarning)];
+            _lock?.Dispose();
+            _lock = null;
             if (problems.Count > 0)
             {
                 return new WorkspaceSummary(Guid.Empty, _revision, TargetStatus.Pending, null, false, problems);
             }
 
             var paths = _layoutFactory(request.WorkDir);
+            try
+            {
+                Directory.CreateDirectory(paths.Root);
+                _lock = new FileStream(Path.Combine(paths.Root, LockFileName), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                return new WorkspaceSummary(Guid.Empty, _revision, TargetStatus.Pending, null, false, [new LocationProblem(LocationProblemKind.InUse, WorkspaceLocations.WorkDir, null)]);
+            }
+
             var state = new StateStore<WorkspaceState>(paths.StateFile).Load();
             var workspaceId = state.State?.WorkspaceId ?? newId();
             _editions = ImageEditions.Read(request.SourceDir);

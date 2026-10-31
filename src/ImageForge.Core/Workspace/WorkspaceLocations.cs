@@ -16,6 +16,9 @@ public enum LocationProblemKind
 
     /// <summary>OneDrive, Dropbox, Google Drive or iCloud: files may be online-only or be uploaded while they are written.</summary>
     SyncedFolder,
+
+    /// <summary>Another ImageForge engine has the work folder open: one writer per workspace (plan, section 6).</summary>
+    InUse,
 }
 
 /// <summary>A problem with the chosen folders. For <see cref="LocationProblemKind.Nested"/>, <see cref="Location"/> lies inside <see cref="Other"/>.</summary>

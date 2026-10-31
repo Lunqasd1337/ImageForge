@@ -11,6 +11,11 @@ public sealed partial record EngineLaunchArguments(string PipeName, int ClientPr
 {
     private const string PipePrefix = "ImageForge.Engine.";
 
+    /// <summary>Held by the running engine; a second engine exits with <see cref="AlreadyRunningExitCode"/>.</summary>
+    public const string SingleInstanceMutex = @"Global\ImageForge.Engine";
+
+    public const int AlreadyRunningExitCode = 4;
+
     public static EngineLaunchArguments CreateFor(int clientProcessId, long clientStartTimeUtc) =>
         new(PipePrefix + Guid.NewGuid().ToString("N"), clientProcessId, clientStartTimeUtc);
 

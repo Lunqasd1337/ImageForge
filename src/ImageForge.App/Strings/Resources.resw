@@ -88,6 +88,8 @@
   <data name="EditionsBeforeInspect" xml:space="preserve"><value>Редакции появятся после «Прочитать образ»; по умолчанию меняется Pro, остальные остаются как есть.</value></data>
   <data name="EditionsNotRead" xml:space="preserve"><value>Редакции install.wim не прочитаны; меняется образ {0}.</value></data>
   <data name="EngineConnected" xml:space="preserve"><value>Движок подключён. Укажите папки и нажмите «Подготовить».</value></data>
+  <data name="EngineAlreadyRunning" xml:space="preserve"><value>Движок уже запущен другим окном ImageForge. Закройте то окно или продолжайте работу в нём.</value></data>
+  <data name="EngineExited" xml:space="preserve"><value>Движок завершился при запуске (код {0}); подробности в журнале движка.</value></data>
   <data name="EngineDidNotStart" xml:space="preserve"><value>Движок не запустился.</value></data>
   <data name="EngineError" xml:space="preserve"><value>Ошибка движка:</value></data>
   <data name="EngineIncompatible" xml:space="preserve"><value>Несовместимый движок: протокол {0}.</value></data>
@@ -120,6 +122,7 @@
   <data name="Inspecting" xml:space="preserve"><value>Чтение приложений и компонентов из образа...</value></data>
   <data name="LastRun" xml:space="preserve"><value>последний запуск {0:N}: {1}{2}</value></data>
   <data name="LastRunStep" xml:space="preserve"><value>на шаге {0}</value></data>
+  <data name="LocationInUse" xml:space="preserve"><value>рабочую папку уже использует другой запущенный движок ImageForge</value></data>
   <data name="LocationNetwork" xml:space="preserve"><value>{0}: сетевой диск (рабочая папка должна быть на локальном диске)</value></data>
   <data name="LocationNotNtfs" xml:space="preserve"><value>{0}: файловая система {1}, а для монтирования образа нужен NTFS</value></data>
   <data name="LocationSynced" xml:space="preserve"><value>{0}: синхронизируемая папка (OneDrive, Dropbox и т. п.)</value></data>

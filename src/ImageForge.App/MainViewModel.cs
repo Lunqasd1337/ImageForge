@@ -1085,6 +1085,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         LocationProblemKind.NetworkVolume => Ui.LocationNetwork(Name(problem.Location)),
         LocationProblemKind.NotNtfs => Ui.LocationNotNtfs(Name(problem.Location), problem.Other),
         LocationProblemKind.SyncedFolder => Ui.LocationSynced(Name(problem.Location)),
+        LocationProblemKind.InUse => Ui.LocationInUse,
         _ => Ui.LocationNested(Name(problem.Location), Name(problem.Other)),
     };
 

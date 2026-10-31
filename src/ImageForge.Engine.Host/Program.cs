@@ -36,6 +36,15 @@ try
         return ClientVerificationExitCode;
     }
 
+    // One engine on the machine: DISM, CLI and hive work go through one sequential queue (plan, section 7), and a
+    // second window would otherwise start a second engine. The window reads this exit code.
+    using var single = new Mutex(initiallyOwned: true, EngineLaunchArguments.SingleInstanceMutex, out var first);
+    if (!first)
+    {
+        Log.Warning("Another ImageForge engine is running; exiting");
+        return EngineLaunchArguments.AlreadyRunningExitCode;
+    }
+
     using (client)
     {
         var builder = Host.CreateApplicationBuilder();

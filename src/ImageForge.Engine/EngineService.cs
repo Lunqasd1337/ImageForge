@@ -185,6 +185,7 @@ public sealed class EngineService : IEngineService, IDisposable
             _dism = null;
         }
 
+        _session.Dispose();
         _stopping.Dispose();
     }
 

@@ -52,6 +52,8 @@ internal static class Ui
     public static string EditionsBeforeInspect => Get(nameof(EditionsBeforeInspect));
     public static string EditionsNotRead(object? a0) => Format(nameof(EditionsNotRead), a0);
     public static string EngineConnected => Get(nameof(EngineConnected));
+    public static string EngineAlreadyRunning => Get(nameof(EngineAlreadyRunning));
+    public static string EngineExited(object? a0) => Format(nameof(EngineExited), a0);
     public static string EngineDidNotStart => Get(nameof(EngineDidNotStart));
     public static string EngineError => Get(nameof(EngineError));
     public static string EngineIncompatible(object? a0) => Format(nameof(EngineIncompatible), a0);
@@ -84,6 +86,7 @@ internal static class Ui
     public static string Inspecting => Get(nameof(Inspecting));
     public static string LastRun(object? a0, object? a1, object? a2) => Format(nameof(LastRun), a0, a1, a2);
     public static string LastRunStep(object? a0) => Format(nameof(LastRunStep), a0);
+    public static string LocationInUse => Get(nameof(LocationInUse));
     public static string LocationNetwork(object? a0) => Format(nameof(LocationNetwork), a0);
     public static string LocationNotNtfs(object? a0, object? a1) => Format(nameof(LocationNotNtfs), a0, a1);
     public static string LocationSynced(object? a0) => Format(nameof(LocationSynced), a0);

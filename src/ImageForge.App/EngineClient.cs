@@ -68,7 +68,25 @@ public sealed partial class EngineClient : IAsyncDisposable
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 timeout.CancelAfter(ConnectTimeout);
-                await pipe.ConnectAsync(timeout.Token).ConfigureAwait(false);
+                var connect = pipe.ConnectAsync(timeout.Token);
+                var exited = process.WaitForExitAsync(timeout.Token);
+                if (await Task.WhenAny(connect, exited).ConfigureAwait(false) == exited && process.HasExited)
+                {
+                    await timeout.CancelAsync().ConfigureAwait(false);
+                    try
+                    {
+                        await connect.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+
+                    throw new EngineLaunchException(process.ExitCode == EngineLaunchArguments.AlreadyRunningExitCode
+                        ? Ui.EngineAlreadyRunning
+                        : Ui.EngineExited(process.ExitCode));
+                }
+
+                await connect.ConfigureAwait(false);
             }
 
             if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var serverPid) || serverPid != (uint)process.Id)

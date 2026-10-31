@@ -57,8 +57,8 @@ public sealed class DismImageServicing(DismImages session, Action<string>? log =
     public Task EnableFeaturesAsync(string mountDir, IReadOnlyList<string> features, string? source, CancellationToken ct) =>
         RunCliAsync(DismCliArguments.EnableFeatures(mountDir, features, source), "/Enable-Feature");
 
-    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct) =>
-        RunCliAsync(DismCliArguments.DisableFeatures(mountDir, features), "/Disable-Feature");
+    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, bool removePayload, CancellationToken ct) =>
+        RunCliAsync(DismCliArguments.DisableFeatures(mountDir, features, removePayload), "/Disable-Feature");
 
     public async Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct)
     {

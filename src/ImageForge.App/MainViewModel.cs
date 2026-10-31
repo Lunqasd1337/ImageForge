@@ -142,6 +142,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial bool AllowBootCritical { get; set; }
 
+    /// <summary>Features turned off also lose their files (/Remove); off by default (plan, section 10).</summary>
+    [ObservableProperty]
+    public partial bool RemoveFeaturePayload { get; set; }
+
     // The folder DriverPackages was found in; the engine scans it again when planning.
     private string? _scannedDriverFolder;
 
@@ -236,6 +240,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnResetBaseChanged(bool value) => DropPlan();
 
     partial void OnAllowBootCriticalChanged(bool value) => DropPlan();
+
+    partial void OnRemoveFeaturePayloadChanged(bool value) => DropPlan();
 
     /// <summary>Searches the folder for INF files here, unelevated; the engine checks the chosen packages again.</summary>
     /// <summary>Reads and hashes the .msu and .cab files here, unelevated; the engine checks the chosen ones again.</summary>
@@ -425,6 +431,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             FodSource = FodPath.Trim().Trim('"') is { Length: > 0 } fod ? fod : null,
             RemoveDrivers = [.. ImageDrivers.Where(d => d.IsSelected == true).Select(d => d.Driver.PublishedName)],
             AllowBootCritical = AllowBootCritical,
+            RemoveFeaturePayload = RemoveFeaturePayload,
             AddDrivers = [.. DriverPackages.Where(d => d.IsSelected == true).Select(d => d.Scanned.Package.InfPath)],
             DriverFolder = _scannedDriverFolder,
             ForceUnsigned = ForceUnsigned,
@@ -747,6 +754,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             yield return Ui.PreviewFeatureEnable(FeatureTitle(name), (changes.Added.Contains(name) ? (" " + Ui.PreviewFeatureAddedOn) : string.Empty));
         }
 
+        if (changes.RemovePayload && changes.Disable.Count > 0)
+        {
+            yield return "  " + Ui.PreviewFeatureRemovePayload;
+        }
+
         if (changes.UsesMediaSxs)
         {
             yield return ("  " + Ui.PreviewNetFx3Source);
@@ -992,6 +1004,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         AllowBootCritical = false;
+        RemoveFeaturePayload = false;
         ResetBase = false;
 
         // The preview described the plan for the image that is gone.

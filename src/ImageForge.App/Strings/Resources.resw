@@ -21,6 +21,7 @@
   <data name="AppsTitle.Text" xml:space="preserve"><value>Приложения</value></data>
   <data name="FeaturesTitle.Text" xml:space="preserve"><value>Компоненты Windows</value></data>
   <data name="FeaturesExpander.Header" xml:space="preserve"><value>Список компонентов</value></data>
+  <data name="RemoveFeaturePayload.Content" xml:space="preserve"><value>Удалять файлы выключаемых компонентов из образа (/Remove; включить их снова можно будет только с источником)</value></data>
   <data name="CapabilitiesTitle.Text" xml:space="preserve"><value>Дополнительные компоненты</value></data>
   <data name="CapabilitiesExpander.Header" xml:space="preserve"><value>Список установленных</value></data>
   <data name="FodTitle.Text" xml:space="preserve"><value>Добавить из Features on Demand</value></data>
@@ -171,6 +172,7 @@
   <data name="PreviewFeatureAddedOff" xml:space="preserve"><value>(добавлен планом: зависит от выключаемого)</value></data>
   <data name="PreviewFeatureAddedOn" xml:space="preserve"><value>(добавлен планом: нужен включаемому)</value></data>
   <data name="PreviewFeatureDefaults" xml:space="preserve"><value>DISM может сам включить вложенные компоненты по умолчанию; они будут перечислены в журнале запуска.</value></data>
+  <data name="PreviewFeatureRemovePayload" xml:space="preserve"><value>С /Remove: файлы выключаемых компонентов удаляются из образа; включить их снова можно будет только с источником (sources\sxs или Features on Demand).</value></data>
   <data name="PreviewFeatureDisable" xml:space="preserve"><value>Выключить компонент {0}{1}</value></data>
   <data name="PreviewFeatureEnable" xml:space="preserve"><value>Включить компонент {0}{1}</value></data>
   <data name="PreviewNetFx3Source" xml:space="preserve"><value>Файлы .NET Framework 3.5 будут взяты из sources\sxs дистрибутива.</value></data>

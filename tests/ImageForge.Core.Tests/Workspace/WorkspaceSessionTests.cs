@@ -326,6 +326,22 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.Features["IIS-WebServer"].ShouldBe("Enable Pending");
         _servicing.Features["SMB1Protocol"].ShouldBe("Disabled");
         _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"].ShouldBe("Not Present");
+        _servicing.Calls.ShouldContain("disable SMB1Protocol");
+    }
+
+    [Fact]
+    public async Task The_payload_of_disabled_features_is_removed_only_when_asked()
+    {
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _servicing.FeatureParents["SMB1Protocol"] = [];
+        _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+
+        var plan = _session.Plan(new PlanOptions(null) { DisableFeatures = ["SMB1Protocol"], RemoveFeaturePayload = true });
+
+        plan.FeatureChanges.ShouldNotBeNull().RemovePayload.ShouldBeTrue();
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Calls.ShouldContain("disable SMB1Protocol /Remove");
     }
 
     [Fact]

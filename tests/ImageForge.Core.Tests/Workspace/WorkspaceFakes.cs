@@ -115,9 +115,9 @@ internal sealed class FakeServicing : IImageServicing
         return Task.CompletedTask;
     }
 
-    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct)
+    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, bool removePayload, CancellationToken ct)
     {
-        Calls.Add($"disable {string.Join(",", features)}");
+        Calls.Add($"disable {string.Join(",", features)}{(removePayload ? " /Remove" : string.Empty)}");
         foreach (var feature in IgnoreFeatureChanges ? [] : features)
         {
             Features[feature] = "Disabled";

@@ -136,6 +136,7 @@ internal static class Ui
     public static string PreviewFeatureAddedOff => Get(nameof(PreviewFeatureAddedOff));
     public static string PreviewFeatureAddedOn => Get(nameof(PreviewFeatureAddedOn));
     public static string PreviewFeatureDefaults => Get(nameof(PreviewFeatureDefaults));
+    public static string PreviewFeatureRemovePayload => Get(nameof(PreviewFeatureRemovePayload));
     public static string PreviewFeatureDisable(object? a0, object? a1) => Format(nameof(PreviewFeatureDisable), a0, a1);
     public static string PreviewFeatureEnable(object? a0, object? a1) => Format(nameof(PreviewFeatureEnable), a0, a1);
     public static string PreviewNetFx3Source => Get(nameof(PreviewNetFx3Source));

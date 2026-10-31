@@ -726,8 +726,8 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
         if (plan.Disable.Count > 0)
         {
-            Log?.Invoke($"disable {string.Join(", ", plan.Disable)}");
-            await servicing.DisableFeaturesAsync(mountDir, plan.Disable, ct).ConfigureAwait(false);
+            Log?.Invoke($"disable {string.Join(", ", plan.Disable)}{(plan.RemovePayload ? " with /Remove" : string.Empty)}");
+            await servicing.DisableFeaturesAsync(mountDir, plan.Disable, plan.RemovePayload, ct).ConfigureAwait(false);
         }
 
         if (plan.Enable.Count > 0)

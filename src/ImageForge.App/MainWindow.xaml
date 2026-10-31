@@ -84,6 +84,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </Expander>
+      <CheckBox x:Uid="RemoveFeaturePayload" IsChecked="{x:Bind ViewModel.RemoveFeaturePayload, Mode=TwoWay}" />
 
       <TextBlock x:Uid="CapabilitiesTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock Text="{x:Bind ViewModel.CapabilitiesStatus, Mode=OneWay}" TextWrapping="Wrap" />

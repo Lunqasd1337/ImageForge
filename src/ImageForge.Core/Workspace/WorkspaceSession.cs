@@ -83,7 +83,10 @@ public sealed record PlanSummary(
 /// <param name="Enable">Turned on in this order (parents first).</param>
 /// <param name="Added">Not chosen by the user: parents and dependents the change needs.</param>
 /// <param name="UsesMediaSxs">.NET Framework 3.5 comes from sources\sxs of the media.</param>
-public sealed record FeatureChangeView(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs);
+public sealed record FeatureChangeView(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs)
+{
+    public bool RemovePayload { get; init; }
+}
 
 /// <param name="State">As DISM prints it.</param>
 /// <param name="IsOn">On now or after first boot; the window shows it as the checkbox state.</param>
@@ -284,7 +287,7 @@ public sealed class WorkspaceSession(
             .. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f)),
             .. options.RemoveCapabilities.Select(c => new RemoveCapability(c)),
             .. options.AddCapabilities.Select(c => new AddCapability(c)),
-            .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f)),
+            .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f, options.RemoveFeaturePayload)),
             .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
             .. options.RemoveDrivers.Select(d => new RemoveDriverPackage(d, options.AllowBootCritical)),
             .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
@@ -377,7 +380,7 @@ public sealed class WorkspaceSession(
                     CapabilityRemovals = [.. plan.Capabilities?.Remove.Select(c => c.FullName) ?? []],
                     CapabilityAdditions = [.. plan.Capabilities?.Add.Select(c => c.FullName) ?? []],
                     FodSource = plan.Capabilities?.Source,
-                    FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
+                    FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) { RemovePayload = f.RemovePayload } : null,
                     Drivers = plan.Drivers,
                     Updates = plan.Updates,
                     DotNetUpdates = plan.DotNetUpdates,

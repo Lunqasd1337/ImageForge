@@ -133,7 +133,11 @@ public sealed record ExecutionPlan(
 /// <param name="Added">Features in either list that the user did not ask for, to show in the preview.</param>
 /// <param name="UsesMediaSxs">An enabled feature has no payload in the image; it comes from sources\sxs of the media copy.</param>
 /// <param name="Inventory">Fingerprint of the feature list the change was worked out from; the run checks it first.</param>
-public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory);
+public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory)
+{
+    /// <summary>The disabled features lose their files (/Remove): turning them on again needs a source.</summary>
+    public bool RemovePayload { get; init; }
+}
 
 /// <param name="Remove">Removed first, in this order.</param>
 /// <param name="Inventory">Fingerprint of the capability list the changes were checked against.</param>

@@ -108,8 +108,9 @@ public sealed record RemoveProvisionedAppx(string FamilyName) : ImageChange;
 /// <summary>Turns the feature on, with every parent that is off; the planner works out and shows the parents.</summary>
 public sealed record EnableWindowsFeature(string Name) : ImageChange;
 
-/// <summary>Turns the feature off, with every feature that depends on it; the payload stays in the image.</summary>
-public sealed record DisableWindowsFeature(string Name) : ImageChange;
+/// <summary>Turns the feature off, with every feature that depends on it.</summary>
+/// <param name="RemovePayload">Also deletes its files from the image (/Remove); off by default (plan, section 10).</param>
+public sealed record DisableWindowsFeature(string Name, bool RemovePayload = false) : ImageChange;
 
 /// <summary>Removes an installed capability (Feature on Demand), named as DISM lists it.</summary>
 public sealed record RemoveCapability(string Name) : ImageChange;

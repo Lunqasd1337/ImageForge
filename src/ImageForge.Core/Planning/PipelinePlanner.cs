@@ -324,7 +324,10 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 
         return blocked || (enable.Count == 0 && disable.Count == 0)
             ? null
-            : new FeaturePlan(disable, enable, [.. disable.Concat(enable).Where(f => !asked.Contains(f))], needsSource.Count > 0, inventory.Fingerprint);
+            : new FeaturePlan(disable, enable, [.. disable.Concat(enable).Where(f => !asked.Contains(f))], needsSource.Count > 0, inventory.Fingerprint)
+            {
+                RemovePayload = disable.Count > 0 && changes.Any(c => c.Change is DisableWindowsFeature { RemovePayload: true }),
+            };
     }
 
     /// <summary>
@@ -700,7 +703,7 @@ public sealed class PipelinePlanner(IRegistryPathMapper mapper, Func<Guid> newPl
 /// <summary>SHA-256 over a length-prefixed canonical form of everything the plan will do. PlanId is excluded.</summary>
 public static class PlanFingerprint
 {
-    private const int FormatVersion = 11;
+    private const int FormatVersion = 12;
 
     public static string Compute(ExecutionPlan plan)
     {
@@ -771,7 +774,7 @@ public static class PlanFingerprint
 
         if (plan.Features is { } features)
         {
-            Append(builder, "feature-inventory", features.Inventory, features.UsesMediaSxs);
+            Append(builder, "feature-inventory", features.Inventory, features.UsesMediaSxs, features.RemovePayload);
             foreach (var feature in features.Disable)
             {
                 Append(builder, "disable-feature", feature);

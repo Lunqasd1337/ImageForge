@@ -21,6 +21,7 @@
   <data name="AppsTitle.Text" xml:space="preserve"><value>Приложения</value></data>
   <data name="FeaturesTitle.Text" xml:space="preserve"><value>Компоненты Windows</value></data>
   <data name="FeaturesExpander.Header" xml:space="preserve"><value>Список компонентов</value></data>
+  <data name="RemoveFeaturePayload.Content" xml:space="preserve"><value>Удалять файлы выключаемых компонентов из образа (/Remove; включить их снова можно будет только с источником)</value></data>
   <data name="CapabilitiesTitle.Text" xml:space="preserve"><value>Дополнительные компоненты</value></data>
   <data name="CapabilitiesExpander.Header" xml:space="preserve"><value>Список установленных</value></data>
   <data name="FodTitle.Text" xml:space="preserve"><value>Добавить из Features on Demand</value></data>
@@ -40,7 +41,7 @@
   <data name="DriverPackagesExpander.Header" xml:space="preserve"><value>Найденные пакеты</value></data>
   <data name="ForceUnsigned.Content" xml:space="preserve"><value>Разрешить пакеты без подписи (ForceUnsigned; в установленной системе такой драйвер может не загрузиться)</value></data>
   <data name="UpdatesTitle.Text" xml:space="preserve"><value>Обновления</value></data>
-  <data name="UpdatesHint.Text" xml:space="preserve"><value>Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя.</value></data>
+  <data name="UpdatesHint.Text" xml:space="preserve"><value>Папка с файлами .msu и .cab из Microsoft Update Catalog (имена не менять); вложенные папки просматриваются. «В образ» — в выбранную редакцию install.wim до драйверов; обновление .NET Framework (ndp в имени файла) ставится отдельно, после очистки хранилища. «В WinRE» — в Winre.wim внутри неё: накопительное обновление (даёт стек обслуживания) и Safe OS Dynamic Update; после них WinRE очищается с /ResetBase и экспортируется. «В boot.wim» — во все образы boot.wim (накопительное обновление); setup.exe и setuphost.exe из обновлённой программы установки заменяют файлы в sources носителя.</value></data>
   <data name="UpdateFolderBox.Header" xml:space="preserve"><value>Папка обновлений (например C:\IF\upd\lcu)</value></data>
   <data name="ChooseUpdateFolder.Content" xml:space="preserve"><value>Выбрать...</value></data>
   <data name="ScanUpdates.Content" xml:space="preserve"><value>Найти обновления</value></data>
@@ -87,6 +88,8 @@
   <data name="EditionsBeforeInspect" xml:space="preserve"><value>Редакции появятся после «Прочитать образ»; по умолчанию меняется Pro, остальные остаются как есть.</value></data>
   <data name="EditionsNotRead" xml:space="preserve"><value>Редакции install.wim не прочитаны; меняется образ {0}.</value></data>
   <data name="EngineConnected" xml:space="preserve"><value>Движок подключён. Укажите папки и нажмите «Подготовить».</value></data>
+  <data name="EngineAlreadyRunning" xml:space="preserve"><value>Движок уже запущен другим окном ImageForge. Закройте то окно или продолжайте работу в нём.</value></data>
+  <data name="EngineExited" xml:space="preserve"><value>Движок завершился при запуске (код {0}); подробности в журнале движка.</value></data>
   <data name="EngineDidNotStart" xml:space="preserve"><value>Движок не запустился.</value></data>
   <data name="EngineError" xml:space="preserve"><value>Ошибка движка:</value></data>
   <data name="EngineIncompatible" xml:space="preserve"><value>Несовместимый движок: протокол {0}.</value></data>
@@ -119,6 +122,11 @@
   <data name="Inspecting" xml:space="preserve"><value>Чтение приложений и компонентов из образа...</value></data>
   <data name="LastRun" xml:space="preserve"><value>последний запуск {0:N}: {1}{2}</value></data>
   <data name="LastRunStep" xml:space="preserve"><value>на шаге {0}</value></data>
+  <data name="LocationInUse" xml:space="preserve"><value>рабочую папку уже использует другой запущенный движок ImageForge</value></data>
+  <data name="LocationNetwork" xml:space="preserve"><value>{0}: сетевой диск (рабочая папка должна быть на локальном диске)</value></data>
+  <data name="LocationNotNtfs" xml:space="preserve"><value>{0}: файловая система {1}, а для монтирования образа нужен NTFS</value></data>
+  <data name="LocationSynced" xml:space="preserve"><value>{0}: синхронизируемая папка (OneDrive, Dropbox и т. п.)</value></data>
+  <data name="FoldersWarning" xml:space="preserve"><value>Внимание: {0}. Работать можно, но копирование будет медленнее, а синхронизация может мешать чтению и записи.</value></data>
   <data name="LocationNested" xml:space="preserve"><value>{0} находится внутри папки «{1}»</value></data>
   <data name="LocationNotLocal" xml:space="preserve"><value>{0}: нужен полный путь на локальном диске</value></data>
   <data name="LocationOutputDir" xml:space="preserve"><value>папка результата</value></data>
@@ -136,6 +144,7 @@
   <data name="NoRuns" xml:space="preserve"><value>запусков не было</value></data>
   <data name="None" xml:space="preserve"><value>нет</value></data>
   <data name="PackagesNotRead" xml:space="preserve"><value>Пакеты образа не прочитаны:</value></data>
+  <data name="PackagesPending" xml:space="preserve"><value>Незавершённых действий обслуживания: {0} ({1}).</value></data>
   <data name="PackagesStatus" xml:space="preserve"><value>Пакетов обслуживания: {0}. Накопительное обновление: {1}, стек обслуживания: {2}.</value></data>
   <data name="PlanApps" xml:space="preserve"><value>Удаляемых приложений: {0}.</value></data>
   <data name="PlanBoot" xml:space="preserve"><value>Обновлений в boot.wim: {0}.</value></data>
@@ -162,6 +171,7 @@
   <data name="PreviewCapabilityRemoveNamed" xml:space="preserve"><value>Удалить дополнительный компонент {0} ({1})</value></data>
   <data name="PreviewCleanup" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup) после остальных изменений</value></data>
   <data name="PreviewCleanupResetBase" xml:space="preserve"><value>Очистить хранилище компонентов (StartComponentCleanup /ResetBase) после остальных изменений</value></data>
+  <data name="PreviewDotNet" xml:space="preserve"><value>Обновления .NET Framework: после очистки хранилища компонентов, отдельным шагом</value></data>
   <data name="PreviewDriverAdd" xml:space="preserve"><value>Добавить драйвер {0}{1}</value></data>
   <data name="PreviewDriverBootCritical" xml:space="preserve"><value>(нужен для загрузки)</value></data>
   <data name="PreviewDriverRemove" xml:space="preserve"><value>Удалить драйвер {0}{1}</value></data>
@@ -170,6 +180,7 @@
   <data name="PreviewFeatureAddedOff" xml:space="preserve"><value>(добавлен планом: зависит от выключаемого)</value></data>
   <data name="PreviewFeatureAddedOn" xml:space="preserve"><value>(добавлен планом: нужен включаемому)</value></data>
   <data name="PreviewFeatureDefaults" xml:space="preserve"><value>DISM может сам включить вложенные компоненты по умолчанию; они будут перечислены в журнале запуска.</value></data>
+  <data name="PreviewFeatureRemovePayload" xml:space="preserve"><value>С /Remove: файлы выключаемых компонентов удаляются из образа; включить их снова можно будет только с источником (sources\sxs или Features on Demand).</value></data>
   <data name="PreviewFeatureDisable" xml:space="preserve"><value>Выключить компонент {0}{1}</value></data>
   <data name="PreviewFeatureEnable" xml:space="preserve"><value>Включить компонент {0}{1}</value></data>
   <data name="PreviewNetFx3Source" xml:space="preserve"><value>Файлы .NET Framework 3.5 будут взяты из sources\sxs дистрибутива.</value></data>

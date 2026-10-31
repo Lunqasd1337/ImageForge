@@ -46,6 +46,13 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial string EditionStatus { get; set; } = Ui.EditionsBeforeInspect;
 
+    /// <summary>A network or synced source or output; empty when there is none.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFoldersWarning))]
+    public partial string FoldersWarning { get; set; } = string.Empty;
+
+    public bool HasFoldersWarning => FoldersWarning.Length > 0;
+
     /// <summary>The .reg file to apply; empty plans the M1 validation marker.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasRegFile))]
@@ -142,6 +149,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty]
     public partial bool AllowBootCritical { get; set; }
 
+    /// <summary>Features turned off also lose their files (/Remove); off by default (plan, section 10).</summary>
+    [ObservableProperty]
+    public partial bool RemoveFeaturePayload { get; set; }
+
     // The folder DriverPackages was found in; the engine scans it again when planning.
     private string? _scannedDriverFolder;
 
@@ -236,6 +247,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnResetBaseChanged(bool value) => DropPlan();
 
     partial void OnAllowBootCriticalChanged(bool value) => DropPlan();
+
+    partial void OnRemoveFeaturePayloadChanged(bool value) => DropPlan();
 
     /// <summary>Searches the folder for INF files here, unelevated; the engine checks the chosen packages again.</summary>
     /// <summary>Reads and hashes the .msu and .cab files here, unelevated; the engine checks the chosen ones again.</summary>
@@ -425,6 +438,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             FodSource = FodPath.Trim().Trim('"') is { Length: > 0 } fod ? fod : null,
             RemoveDrivers = [.. ImageDrivers.Where(d => d.IsSelected == true).Select(d => d.Driver.PublishedName)],
             AllowBootCritical = AllowBootCritical,
+            RemoveFeaturePayload = RemoveFeaturePayload,
             AddDrivers = [.. DriverPackages.Where(d => d.IsSelected == true).Select(d => d.Scanned.Package.InfPath)],
             DriverFolder = _scannedDriverFolder,
             ForceUnsigned = ForceUnsigned,
@@ -463,13 +477,15 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
             HasPlan = true;
             string[] lines =
             [
-                .. plan.AppxRemovals.Select(DescribeRemoval),
+                // The order of the run (plan, section 11).
                 .. plan.CapabilityRemovals.Select(DescribeCapabilityRemoval),
                 .. DescribeCapabilityAdditions(plan),
                 .. DescribeFeatureChanges(plan.FeatureChanges),
-                .. DescribeDrivers(plan.Drivers),
                 .. DescribeUpdates(plan.Updates),
+                .. DescribeDrivers(plan.Drivers),
+                .. plan.AppxRemovals.Select(DescribeRemoval),
                 .. DescribeCleanup(plan.Cleanup),
+                .. DescribeDotNet(plan.DotNetUpdates),
                 .. DescribeWinRe(plan.WinRe),
                 .. DescribeBoot(plan.Boot),
                 .. plan.Preview.Select(RegistryPreviewText.Describe),
@@ -480,7 +496,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
                 + (plan.CapabilityAdditions.Count > 0 ? (" " + Ui.PlanCapabilityAdditions(plan.CapabilityAdditions.Count)) : string.Empty);
             var features = plan.FeatureChanges is { } f ? (" " + Ui.PlanFeatures(f.Enable.Count, f.Disable.Count)) : string.Empty;
             var drivers = plan.Drivers is { } driverPlan ? (" " + Ui.PlanDrivers(driverPlan.Remove.Count, driverPlan.Add.Count)) : string.Empty;
-            var updates = (plan.Updates is { } updatePlan ? (" " + Ui.PlanUpdates(updatePlan.Add.Count)) : string.Empty)
+            var updates = ((plan.Updates?.Add.Count ?? 0) + (plan.DotNetUpdates?.Add.Count ?? 0) is > 0 and var updateCount ? (" " + Ui.PlanUpdates(updateCount)) : string.Empty)
                 + (plan.Cleanup is { } cleanupPlan ? (" " + Ui.PlanCleanup((cleanupPlan.ResetBase ? (" " + Ui.PlanResetBase) : string.Empty))) : string.Empty)
                 + (plan.WinRe is { } winRePlan ? (" " + Ui.PlanWinRe(winRePlan.Add.Count)) : string.Empty)
                 + (plan.Boot is { } bootPlan ? (" " + Ui.PlanBoot(bootPlan.Add.Count)) : string.Empty);
@@ -676,6 +692,12 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void ShowWorkspace(WorkspaceSummary workspace)
     {
         RecoveryRequired = workspace.RecoveryRequired;
+        FoldersWarning = workspace.Warnings.Count > 0 ? Ui.FoldersWarning(string.Join("; ", workspace.Warnings.Select(Describe))) : string.Empty;
+        if (FoldersWarning.Length > 0)
+        {
+            Append(FoldersWarning);
+        }
+
         var last = workspace.LastRun is { } run ? Ui.LastRun(run.RunId, run.Status, (run.FailedStep is null ? string.Empty : (" " + Ui.LastRunStep(run.FailedStep)))) : Ui.NoRuns;
         Append(Ui.LogWorkspace(workspace.WorkspaceId, workspace.Revision, workspace.Target, last));
     }
@@ -743,6 +765,11 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var name in changes.Enable)
         {
             yield return Ui.PreviewFeatureEnable(FeatureTitle(name), (changes.Added.Contains(name) ? (" " + Ui.PreviewFeatureAddedOn) : string.Empty));
+        }
+
+        if (changes.RemovePayload && changes.Disable.Count > 0)
+        {
+            yield return "  " + Ui.PreviewFeatureRemovePayload;
         }
 
         if (changes.UsesMediaSxs)
@@ -820,6 +847,20 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    private static IEnumerable<string> DescribeDotNet(UpdatePlan? dotNet)
+    {
+        if (dotNet is null)
+        {
+            yield break;
+        }
+
+        yield return Ui.PreviewDotNet;
+        foreach (var addition in dotNet.Add)
+        {
+            yield return "  " + Ui.PreviewUpdateAdd(addition.Description);
+        }
+    }
+
     private static IEnumerable<string> DescribeWinRe(WinRePlan? winRe)
     {
         if (winRe is null)
@@ -878,7 +919,8 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         UpdatesStatus = inspection.PackageProblems.Count > 0
             ? (Ui.PackagesNotRead + " ") + string.Join("; ", inspection.PackageProblems)
-            : Ui.PackagesStatus(inspection.PackageCount, inspection.Rollup ?? Ui.None, inspection.ServicingStack ?? Ui.None);
+            : Ui.PackagesStatus(inspection.PackageCount, inspection.Rollup ?? Ui.None, inspection.ServicingStack ?? Ui.None)
+                + (inspection.PendingPackages.Count > 0 ? " " + Ui.PackagesPending(inspection.PendingPackages.Count, string.Join(", ", inspection.PendingPackages)) : string.Empty);
     }
 
     private void ShowUpdatePackagesStatus() =>
@@ -976,6 +1018,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         AllowBootCritical = false;
+        RemoveFeaturePayload = false;
         ResetBase = false;
 
         // The preview described the plan for the image that is gone.
@@ -1008,6 +1051,7 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             ClearInventory();
             AppsStatus = Ui.FoldersChangedApps;
+            FoldersWarning = string.Empty;
             FeaturesStatus = Ui.FeaturesNotRead;
             CapabilitiesStatus = Ui.CapabilitiesNotRead;
             DriversStatus = Ui.DriversNotRead;
@@ -1038,6 +1082,10 @@ public sealed partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         LocationProblemKind.NotLocalPath => Ui.LocationNotLocal(Name(problem.Location)),
         LocationProblemKind.Same => Ui.LocationSame(Name(problem.Location), Name(problem.Other)),
+        LocationProblemKind.NetworkVolume => Ui.LocationNetwork(Name(problem.Location)),
+        LocationProblemKind.NotNtfs => Ui.LocationNotNtfs(Name(problem.Location), problem.Other),
+        LocationProblemKind.SyncedFolder => Ui.LocationSynced(Name(problem.Location)),
+        LocationProblemKind.InUse => Ui.LocationInUse,
         _ => Ui.LocationNested(Name(problem.Location), Name(problem.Other)),
     };
 

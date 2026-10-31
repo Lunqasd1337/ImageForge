@@ -55,6 +55,9 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
     public Action<string>? Log { get; init; }
 
+    /// <summary>Free bytes of the volume with the given root; null when unknown, which skips the check. The engine reads the disk.</summary>
+    public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
     public async Task<RunResult> RunAsync(RunRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -92,6 +95,15 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 throw new InvalidDataException(@"The source has no sources\install.wim; M1 supports only a WIM source.");
             }
 
+            var sourceBytes = source.Entries.Sum(e => e.Length);
+            await context.Step("space-check", () =>
+            {
+                var estimate = DiskSpace.Estimate(SpaceInputs(request, source, Directory.Exists(paths.Base) && state.SourceFingerprint == source.Fingerprint));
+                Log?.Invoke($"space: work folder volume needs {Gb(estimate.WorkBytes)}, output volume {Gb(estimate.OutputBytes)}");
+                EnsureSpace(estimate, request.OutputDir);
+                return Task.FromResult(true);
+            }, ct).ConfigureAwait(false);
+
             var baseManifest = await context.Step("base-copy", () => PrepareBaseAsync(paths, request.SourceDir, source, state.SourceFingerprint, Log, ct), ct).ConfigureAwait(false);
             state = state with { SourceFingerprint = source.Fingerprint };
             store.Save(state);
@@ -112,6 +124,12 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 return true;
             }, ct).ConfigureAwait(false);
 
+            if (HasInputs(request.Plan))
+            {
+                var stagedPlan = await context.Step("stage-inputs", () => StageInputsAsync(request.Plan, Path.Combine(run.Root, "inputs"), ct), ct).ConfigureAwait(false);
+                request = request with { Plan = stagedPlan };
+            }
+
             await context.Step("mount", async () =>
             {
                 PrepareEmptyDirectory(mountDir);
@@ -120,11 +138,6 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 mounted = true;
                 return true;
             }, ct).ConfigureAwait(false);
-            if (request.Plan.AppxRemovals.Count > 0)
-            {
-                await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
-            }
-
             if (request.Plan.Capabilities is { } capabilities)
             {
                 await context.Step("capabilities", () => ChangeCapabilitiesAsync(capabilities, mountDir, ct), ct).ConfigureAwait(false);
@@ -145,9 +158,20 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                 await context.Step("drivers", () => ChangeDriversAsync(drivers, mountDir, ct), ct).ConfigureAwait(false);
             }
 
+            // Plan, section 11 (install): final LCU, then drivers and removals, cleanup, then .NET.
+            if (request.Plan.AppxRemovals.Count > 0)
+            {
+                await context.Step("appx", () => RemoveAppxAsync(request.Plan, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
             if (request.Plan.Cleanup is { } cleanup)
             {
                 await context.Step("cleanup", () => CleanupAsync(cleanup, mountDir, ct), ct).ConfigureAwait(false);
+            }
+
+            if (request.Plan.DotNetUpdates is { } dotNet)
+            {
+                await context.Step("dotnet", () => AddUpdatesAsync(dotNet, mountDir, ct), ct).ConfigureAwait(false);
             }
 
             if (request.Plan.WinRe is { } winRe)
@@ -177,6 +201,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             var completedEntry = await context.Step("export", async () =>
             {
                 Directory.CreateDirectory(run.Completed);
+                EnsureSpace(new SpaceEstimate(new FileInfo(working).Length + DiskSpace.Reserve, 0), request.OutputDir);
 
                 // DISM appends to an existing destination, so a repeated step must not find a partial file.
                 File.Delete(completed);
@@ -214,6 +239,7 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
                     throw new IOException($"Staging folder '{publication.Staging}' already exists.");
                 }
 
+                EnsureSpace(new SpaceEstimate(0, sourceBytes + DiskSpace.Reserve), request.OutputDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(publication.Staging)!);
                 // Hashing while copying checks every staged file against the source manifest, which also covers a
                 // base copy that was reused on metadata alone.
@@ -627,8 +653,22 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
     {
         var before = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
         Log?.Invoke($"packages: {before.Packages.Count}, superseded {Superseded(before)}");
+        var pending = before.Packages.Where(p => p.IsPending).ToList();
+        if (pending.Count > 0)
+        {
+            Log?.Invoke($"pending before cleanup: {string.Join(", ", pending.Select(p => $"{p.Name} ({p.State})"))}");
+        }
+
         Log?.Invoke(plan.ResetBase ? "cleanup component store (ResetBase)" : "cleanup component store");
-        await servicing.CleanupComponentStoreAsync(mountDir, plan.ResetBase, ct).ConfigureAwait(false);
+        try
+        {
+            await servicing.CleanupComponentStoreAsync(mountDir, plan.ResetBase, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (pending.Count > 0 && ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException($"{ex.Message} The image has pending: {string.Join(", ", pending.Select(p => p.Name))}.", ex);
+        }
+
         var after = await ReadPackagesAsync(mountDir, ct).ConfigureAwait(false);
         Log?.Invoke($"cleanup: packages {before.Packages.Count} -> {after.Packages.Count}, superseded {Superseded(before)} -> {Superseded(after)}; " +
             $"rollup {after.Rollup ?? "-"}, servicing stack {after.ServicingStack ?? "-"}");
@@ -720,8 +760,8 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
 
         if (plan.Disable.Count > 0)
         {
-            Log?.Invoke($"disable {string.Join(", ", plan.Disable)}");
-            await servicing.DisableFeaturesAsync(mountDir, plan.Disable, ct).ConfigureAwait(false);
+            Log?.Invoke($"disable {string.Join(", ", plan.Disable)}{(plan.RemovePayload ? " with /Remove" : string.Empty)}");
+            await servicing.DisableFeaturesAsync(mountDir, plan.Disable, plan.RemovePayload, ct).ConfigureAwait(false);
         }
 
         if (plan.Enable.Count > 0)
@@ -771,6 +811,142 @@ public sealed class RunPipeline(IWorkspacePaths paths, IImageServicing servicing
             ? throw new WorkspaceRecoveryRequiredException($"Run {state.LastRun.RunId:N} did not finish ({state.LastRun.Status}); recover the workspace first.")
             : state;
     }
+
+    private static bool HasInputs(ExecutionPlan plan) =>
+        plan.Updates is not null || plan.DotNetUpdates is not null || plan.WinRe is not null || plan.Boot is not null || plan.Drivers?.Add.Count > 0;
+
+    /// <summary>
+    /// Copies the update and driver packages into the run folder and checks them against the plan's hashes (plan, section 6:
+    /// inputs are used from the protected workspace). DISM then reads only the copies, so a later change in the user's
+    /// folders cannot reach the image. The Features on Demand folder is read in place: it is large and usually a mounted ISO.
+    /// </summary>
+    private async Task<ExecutionPlan> StageInputsAsync(ExecutionPlan plan, string root, CancellationToken ct)
+    {
+        var folders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string Staged(string source) => folders.TryGetValue(source, out var folder) ? folder : folders[source] = Path.Combine(root, $"updates{folders.Count + 1}");
+
+        var updates = new[] { plan.Updates, plan.DotNetUpdates }.OfType<UpdatePlan>().SelectMany(u => u.Add.Select(a => (u.Source, Addition: a)))
+            .Concat(plan.WinRe?.Add.Select(a => (plan.WinRe.Source, Addition: a)) ?? [])
+            .Concat(plan.Boot?.Add.Select(a => (plan.Boot.Source, Addition: a)) ?? [])
+            .DistinctBy(u => (u.Source.ToUpperInvariant(), u.Addition.FileName.ToUpperInvariant()))
+            .ToList();
+        var changed = new List<string>();
+        long bytes = 0;
+        foreach (var (source, addition) in updates)
+        {
+            var from = UpdateFolder.Full(source, addition.FileName);
+            var to = UpdateFolder.Full(Staged(source), addition.FileName);
+            if (!File.Exists(from))
+            {
+                changed.Add(addition.FileName);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            var copy = await TreeCopy.CopyFileAsync(from, to, ct).ConfigureAwait(false);
+            bytes += copy.Length;
+            if (!string.Equals(copy.Sha256, addition.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                changed.Add(addition.FileName);
+            }
+        }
+
+        if (changed.Count > 0)
+        {
+            throw new InvalidDataException($"Update packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+        }
+
+        if (updates.Count > 0)
+        {
+            Log?.Invoke($"staged {updates.Count} update package(s), {Gb(bytes)}");
+        }
+
+        var drivers = plan.Drivers;
+        if (drivers is { Source: { } driverSource, Add.Count: > 0 })
+        {
+            var staged = Path.Combine(root, "drivers");
+            foreach (var addition in drivers.Add)
+            {
+                if (DriverFolder.CurrentPackage(driverSource, addition.InfPath) is not { } package)
+                {
+                    changed.Add(addition.InfPath);
+                    continue;
+                }
+
+                foreach (var file in DriverFolder.PackageFiles(package).Where(f => File.Exists(DriverFolder.Full(driverSource, f))))
+                {
+                    var to = DriverFolder.Full(staged, file);
+                    if (!File.Exists(to))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                        await TreeCopy.CopyFileAsync(DriverFolder.Full(driverSource, file), to, ct).ConfigureAwait(false);
+                    }
+                }
+
+                if (DriverFolder.CurrentHash(staged, addition.InfPath) != addition.ContentHash)
+                {
+                    changed.Add(addition.InfPath);
+                }
+            }
+
+            if (changed.Count > 0)
+            {
+                throw new InvalidDataException($"Driver packages changed or went missing since the preview: {string.Join(", ", changed)}.");
+            }
+
+            Log?.Invoke($"staged {drivers.Add.Count} driver package(s)");
+            drivers = drivers with { Source = staged };
+        }
+
+        return plan with
+        {
+            Updates = plan.Updates is { } u ? u with { Source = Staged(u.Source) } : null,
+            DotNetUpdates = plan.DotNetUpdates is { } d ? d with { Source = Staged(d.Source) } : null,
+            WinRe = plan.WinRe is { } w ? w with { Source = Staged(w.Source) } : null,
+            Boot = plan.Boot is { } b ? b with { Source = Staged(b.Source) } : null,
+            Drivers = drivers,
+        };
+    }
+
+    private void EnsureSpace(SpaceEstimate need, string outputDir)
+    {
+        var problems = DiskSpace.Check(need, paths.Root, outputDir, FreeSpace);
+        if (problems.Count > 0)
+        {
+            throw new IOException(string.Join(" ", problems));
+        }
+    }
+
+    private SpaceInputs SpaceInputs(RunRequest request, SourceManifest source, bool baseReused)
+    {
+        var install = source.Entries.Single(e => string.Equals(e.RelativePath, InstallImage, StringComparison.OrdinalIgnoreCase));
+        long? expanded = null;
+        try
+        {
+            using var stream = File.OpenRead(Path.Combine(request.SourceDir, InstallImage));
+            var wim = WimArchive.Read(stream);
+            expanded = wim.Images.ElementAtOrDefault(request.SourceIndex - 1)?.TotalBytes;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log?.Invoke($"space: install.wim XML not read ({ex.Message}); the mount is counted as {Gb(DiskSpace.DefaultExpandedBytes)}");
+        }
+
+        var plan = request.Plan;
+        var updates = new[] { plan.Updates, plan.DotNetUpdates }.OfType<UpdatePlan>().SelectMany(u => u.Add.Select(a => (u.Source, a.FileName)))
+            .Concat(plan.WinRe?.Add.Select(a => (plan.WinRe.Source, a.FileName)) ?? [])
+            .Concat(plan.Boot?.Add.Select(a => (plan.Boot.Source, a.FileName)) ?? [])
+            .Sum(u => File.Exists(UpdateFolder.Full(u.Source, u.FileName)) ? new FileInfo(UpdateFolder.Full(u.Source, u.FileName)).Length : 0);
+        var boot = plan.Boot is null ? 0 : source.Entries.FirstOrDefault(e => string.Equals(e.RelativePath, BootImage, StringComparison.OrdinalIgnoreCase))?.Length ?? 0;
+        return new SpaceInputs(source.Entries.Sum(e => e.Length), baseReused, install.Length, expanded)
+        {
+            UpdateBytes = updates,
+            ServicesWinRe = plan.WinRe is not null,
+            BootWimBytes = boot,
+        };
+    }
+
+    private static string Gb(long bytes) => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (double)(1L << 30):0.0} GB");
 
     internal static async Task<SourceManifest> PrepareBaseAsync(
         IWorkspacePaths paths, string sourceDir, SourceManifest source, string? baseFingerprint, Action<string>? log, CancellationToken ct)

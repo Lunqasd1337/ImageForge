@@ -25,7 +25,41 @@ public sealed class WorkspaceSessionTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public void Dispose() => _dir.Dispose();
+    public void Dispose()
+    {
+        _session.Dispose();
+        _dir.Dispose();
+    }
+
+    [Fact]
+    public void A_work_folder_has_one_writer_until_its_session_moves_on()
+    {
+        _session.Open(_folders).Problems.ShouldBeEmpty();
+        using var second = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => []);
+
+        second.Open(_folders).Problems.ShouldHaveSingleItem().Kind.ShouldBe(LocationProblemKind.InUse);
+
+        _session.Open(_folders with { WorkDir = _dir.Combine("work2") }).Problems.ShouldBeEmpty();
+        second.Open(_folders).Problems.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_work_folder_on_a_network_drive_is_refused_and_a_synced_source_is_a_warning()
+    {
+        using var network = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        {
+            Volumes = _ => new VolumeFacts(VolumeKind.Network, "NTFS"),
+        };
+        network.Open(_folders).Problems.ShouldContain(p => p.Kind == LocationProblemKind.NetworkVolume && p.Location == WorkspaceLocations.WorkDir);
+
+        using var synced = new WorkspaceSession(_ => _servicing, Guid.NewGuid, dir => new TestPaths(dir), (_, _, _) => [])
+        {
+            IsSynced = path => path == _folders.SourceDir,
+        };
+        var summary = synced.Open(_folders);
+        summary.Problems.ShouldBeEmpty();
+        summary.Warnings.ShouldHaveSingleItem().Kind.ShouldBe(LocationProblemKind.SyncedFolder);
+    }
 
     [Fact]
     public async Task The_shown_plan_runs_and_reports_progress()
@@ -326,6 +360,22 @@ public sealed class WorkspaceSessionTests : IDisposable
         _servicing.Features["IIS-WebServer"].ShouldBe("Enable Pending");
         _servicing.Features["SMB1Protocol"].ShouldBe("Disabled");
         _servicing.Capabilities["MathRecognizer~~~~0.0.1.0"].ShouldBe("Not Present");
+        _servicing.Calls.ShouldContain("disable SMB1Protocol");
+    }
+
+    [Fact]
+    public async Task The_payload_of_disabled_features_is_removed_only_when_asked()
+    {
+        _servicing.Features["SMB1Protocol"] = "Enabled";
+        _servicing.FeatureParents["SMB1Protocol"] = [];
+        _session.Open(_folders);
+        await _session.InspectAsync(null, Ct);
+
+        var plan = _session.Plan(new PlanOptions(null) { DisableFeatures = ["SMB1Protocol"], RemoveFeaturePayload = true });
+
+        plan.FeatureChanges.ShouldNotBeNull().RemovePayload.ShouldBeTrue();
+        (await _session.StartAsync(Start(plan), null, Ct)).Status.ShouldBe(RunStatus.Published);
+        _servicing.Calls.ShouldContain("disable SMB1Protocol /Remove");
     }
 
     [Fact]

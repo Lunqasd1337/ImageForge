@@ -21,7 +21,11 @@ public sealed class EngineService : IEngineService, IDisposable
     {
         _requestShutdown = requestShutdown;
         _log = log ?? (_ => { });
-        _session = new WorkspaceSession(line => new DismImageServicing(Dism(), line), Guid.NewGuid);
+        _session = new WorkspaceSession(line => new DismImageServicing(Dism(), line), Guid.NewGuid) {
+            FreeSpace = DiskSpace.FreeBytes,
+            Volumes = LocalVolumes.Facts,
+            IsSynced = LocalVolumes.IsSynced,
+        };
     }
 
     public Task<EngineInfo> GetInfoAsync(CancellationToken ct)
@@ -116,7 +120,7 @@ public sealed class EngineService : IEngineService, IDisposable
         var plan = _session.Plan(options);
         _log($"plan {plan.PlanId} revision {plan.WorkspaceRevision} fingerprint {plan.Fingerprint}, " +
             $"{plan.Preview.Count} changes, {plan.Diagnostics.Count + plan.FileDiagnostics.Count} problems");
-        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []).Concat(plan.Boot?.Warnings ?? []))
+        foreach (var warning in (plan.Drivers?.Warnings ?? []).Concat(plan.Updates?.Warnings ?? []).Concat(plan.DotNetUpdates?.Warnings ?? []).Concat(plan.Cleanup?.Warnings ?? []).Concat(plan.WinRe?.Warnings ?? []).Concat(plan.Boot?.Warnings ?? []))
         {
             _log($"plan warning: {warning}");
         }
@@ -181,6 +185,7 @@ public sealed class EngineService : IEngineService, IDisposable
             _dism = null;
         }
 
+        _session.Dispose();
         _stopping.Dispose();
     }
 

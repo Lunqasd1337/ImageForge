@@ -27,7 +27,7 @@ public interface IImageServicing
     /// <param name="source">A local folder for features without payload, or null; never Windows Update.</param>
     Task EnableFeaturesAsync(string mountDir, IReadOnlyList<string> features, string? source, CancellationToken ct);
 
-    Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct);
+    Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, bool removePayload, CancellationToken ct);
 
     Task<CapabilityInventory> GetCapabilitiesAsync(string mountDir, CancellationToken ct);
 

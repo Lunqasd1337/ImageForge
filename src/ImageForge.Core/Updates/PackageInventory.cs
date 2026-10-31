@@ -8,6 +8,9 @@ public sealed record InstalledPackage(string Name, string State, string ReleaseT
     public string Version => Name[(Name.LastIndexOf('~') + 1)..];
 
     public bool IsInstalled => State.Equals("Installed", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Install Pending, Uninstall Pending and the like: an action waits for the first boot or another servicing pass.</summary>
+    public bool IsPending => State.Contains("Pending", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <param name="Added">Names that were not in the image before, sorted.</param>
@@ -26,6 +29,9 @@ public sealed record PackageInventory(IReadOnlyList<InstalledPackage> Packages, 
 
     /// <summary>The version of the installed servicing stack (Package_for_ServicingStack_…); null when none is installed.</summary>
     public string? ServicingStack => Latest("Package_for_ServicingStack");
+
+    /// <summary>Packages with an unfinished action (plan, section 11: pending servicing is checked before the steps that do not allow it).</summary>
+    public IReadOnlyList<string> Pending => [.. Packages.Where(p => p.IsPending).Select(p => p.Name)];
 
     public static PackageChange Compare(PackageInventory before, PackageInventory after)
     {

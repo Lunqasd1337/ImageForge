@@ -43,17 +43,9 @@ public sealed record DriverFolder(string Folder, IReadOnlyList<ScannedDriver> Pa
     public static string? ContentHash(string folder, DriverPackageInfo package)
     {
         ArgumentNullException.ThrowIfNull(package);
-        var slash = package.InfPath.LastIndexOf('\\');
-        var infFolder = slash < 0 ? string.Empty : package.InfPath[..(slash + 1)];
-        var files = new List<string> { package.InfPath };
-        if (package.Inf?.CatalogFile is { } catalog)
-        {
-            files.Add(infFolder + catalog);
-        }
-
-        files.AddRange(package.Files);
+        var infFolder = InfFolder(package);
         var lines = new List<string>();
-        foreach (var file in files.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var file in PackageFiles(package))
         {
             var full = Full(folder, file);
             if (!File.Exists(full))
@@ -83,6 +75,40 @@ public sealed record DriverFolder(string Folder, IReadOnlyList<ScannedDriver> Pa
         {
             return null;
         }
+    }
+
+    /// <summary>The INF, its catalog and the files it copies, relative to the scanned folder: what DISM reads to add the package.</summary>
+    public static IReadOnlyList<string> PackageFiles(DriverPackageInfo package)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        var files = new List<string> { package.InfPath };
+        if (package.Inf?.CatalogFile is { } catalog)
+        {
+            files.Add(InfFolder(package) + catalog);
+        }
+
+        files.AddRange(package.Files);
+        return [.. files.Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>Reads the INF as it is now; null when it is gone or cannot be read.</summary>
+    public static DriverPackageInfo? CurrentPackage(string folder, string infPath)
+    {
+        try
+        {
+            var full = Full(folder, infPath);
+            return File.Exists(full) ? DriverPackage.Analyze(infPath, InfText.Decode(File.ReadAllBytes(full)), p => File.Exists(Full(folder, p))) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static string InfFolder(DriverPackageInfo package)
+    {
+        var slash = package.InfPath.LastIndexOf('\\');
+        return slash < 0 ? string.Empty : package.InfPath[..(slash + 1)];
     }
 
     /// <summary>The full path of a package path relative to the folder.</summary>

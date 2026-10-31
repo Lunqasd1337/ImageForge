@@ -2,6 +2,7 @@ using ImageForge.Core.Changes;
 using ImageForge.Core.Planning;
 using ImageForge.Core.Registry;
 using ImageForge.Core.Servicing;
+using ImageForge.Core.Updates;
 
 namespace ImageForge.Core.Tests.Updates;
 
@@ -12,6 +13,24 @@ public sealed class CleanupPlanningTests
         {
             UpdateSource = UpdatePlanningTests.Source,
         });
+
+    [Fact]
+    public void Pending_actions_in_the_image_are_shown_with_the_cleanup()
+    {
+        var packages = new PackageInventory(
+        [
+            new InstalledPackage("Package_for_RollupFix~31bf3856ad364e35~amd64~~26100.9457.1.0", "Installed", "SecurityUpdate"),
+            new InstalledPackage("Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1", "Install Pending", "Feature Pack"),
+        ], []);
+        packages.Pending.ShouldBe(["Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1"]);
+
+        var cleanup = new PipelinePlanner(new RegistryPathMapper(), Guid.NewGuid)
+            .Plan(new PlanRequest(Guid.NewGuid(), 1, Guid.NewGuid(), [new CleanupComponentStore(false)]) { Packages = packages })
+            .Plan.ShouldNotBeNull().Cleanup.ShouldNotBeNull();
+
+        cleanup.Warnings.ShouldHaveSingleItem().ShouldContain("Microsoft-Windows-Foo-Package");
+        Plan(new CleanupComponentStore(false)).Plan.ShouldNotBeNull().Cleanup.ShouldNotBeNull().Warnings.ShouldBeEmpty();
+    }
 
     [Fact]
     public void A_cleanup_alone_is_a_plan()

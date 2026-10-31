@@ -284,6 +284,37 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_without_enough_space_stops_before_copying_anything()
+    {
+        var log = new List<string>();
+
+        var result = await Pipeline(log, freeSpace: _ => 1L << 30).RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("space-check");
+        result.Error.ShouldNotBeNull().ShouldContain("Not enough space");
+        Directory.Exists(_paths.Base).ShouldBeFalse();
+        _servicing.Calls.ShouldBeEmpty();
+        log.ShouldContain(l => l.StartsWith("space: work folder volume needs ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Space_is_checked_again_before_the_export_and_the_assembly()
+    {
+        var free = 1L << 50;
+        var result = await Pipeline(beforeStep: step => free = step == "export" ? 1L << 20 : free, freeSpace: _ => free).RunAsync(Request(), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("export");
+        result.Error.ShouldNotBeNull().ShouldContain("Not enough space");
+
+        free = 1L << 50;
+        var assemble = await Pipeline(beforeStep: step => free = step == "assemble" ? 1L << 20 : free, freeSpace: _ => free).RunAsync(Request(), Ct);
+        assemble.FailedStep.ShouldBe("assemble");
+        Directory.Exists(_output).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Recovery_without_an_interrupted_run_does_nothing()
     {
         (await new RunRecovery(_paths, _servicing).RecoverAsync(Ct)).Outcome.ShouldBe(RecoveryOutcome.NothingToDo);
@@ -496,10 +527,9 @@ public sealed class RunPipelineTests : IDisposable
         var result = await Pipeline().RunAsync(request, Ct);
 
         result.Status.ShouldBe(RunStatus.Failed);
-        result.FailedStep.ShouldBe("drivers");
+        result.FailedStep.ShouldBe("stage-inputs");
         result.Error.ShouldNotBeNull().ShouldContain(@"net\netkvm.inf");
-        _servicing.Calls.ShouldNotContain(c => c.StartsWith("driver-add", StringComparison.Ordinal));
-        _servicing.Calls.ShouldContain("unmount discard");
+        _servicing.Calls.ShouldBeEmpty();
     }
 
     [Fact]
@@ -531,6 +561,27 @@ public sealed class RunPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task The_install_steps_follow_the_recipe_dotnet_after_the_cleanup_and_apps_after_the_updates()
+    {
+        _servicing.Provisioned.Add(Clipchamp);
+        var folder = UpdatePackages();
+        File.WriteAllBytes(Path.Combine(folder, DotNetCu), Updates.WimArchiveTests.BuildWim("<WIM><IMAGE INDEX=\"1\"><NAME>dotnet</NAME></IMAGE></WIM>"));
+        var request = UpdateRequest(folder, new AddUpdatePackage(DotNetCu), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"),
+            new AddDriverPackage(@"net\netkvm.inf"), new CleanupComponentStore(false));
+        var appx = AppxRequest(Clipchamp, Clipchamp).Plan;
+        request = request with { Plan = request.Plan with { AppxRemovals = appx.AppxRemovals, AppxInventory = appx.AppxInventory } };
+
+        var result = await Pipeline().RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        var steps = _servicing.Calls.Where(c => c is "cleanup" || c.StartsWith("package-add", StringComparison.Ordinal)
+            || c.StartsWith("driver-add", StringComparison.Ordinal) || c.StartsWith("appx-remove", StringComparison.Ordinal)).ToList();
+        steps.ShouldBe(["package-add Windows11.0-KB5134133-x64.msu", "driver-add netkvm.inf", "appx-remove Clipchamp.Clipchamp", "cleanup", "package-add " + DotNetCu]);
+    }
+
+    private const string DotNetCu = "windows11.0-kb5054979-x64-ndp481.msu";
+
+    [Fact]
     public async Task An_update_that_changes_nothing_is_logged_and_the_run_goes_on()
     {
         var request = UpdateRequest(UpdatePackages(), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"));
@@ -551,10 +602,34 @@ public sealed class RunPipelineTests : IDisposable
         var result = await Pipeline().RunAsync(request, Ct);
 
         result.Status.ShouldBe(RunStatus.Failed);
-        result.FailedStep.ShouldBe("updates");
+        result.FailedStep.ShouldBe("stage-inputs");
         result.Error.ShouldNotBeNull().ShouldContain("Windows11.0-KB5134133-x64.msu");
-        _servicing.Calls.ShouldNotContain(c => c.StartsWith("package-add", StringComparison.Ordinal));
-        _servicing.Calls.ShouldContain("unmount discard");
+        _servicing.Calls.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Packages_are_copied_into_the_workspace_before_the_mount_and_used_from_there()
+    {
+        var folder = UpdatePackages();
+        var drivers = DriverPackages();
+        var request = UpdateRequest(folder, new AddUpdatePackage("Windows11.0-KB5134133-x64.msu"), new AddDriverPackage(@"net\netkvm.inf"));
+        var log = new List<string>();
+
+        // A change to the user's folders after the copy no longer reaches the image.
+        var result = await Pipeline(log, beforeStep: step =>
+        {
+            if (step == "mount")
+            {
+                File.AppendAllText(Path.Combine(folder, "Windows11.0-KB5134133-x64.msu"), "more");
+                File.WriteAllText(Path.Combine(drivers, "net", "amd64", "viostor.sys"), "replaced");
+            }
+        }).RunAsync(request, Ct);
+
+        result.Status.ShouldBe(RunStatus.Published, result.Error);
+        _servicing.AddedPaths.ShouldNotBeEmpty();
+        _servicing.AddedPaths.ShouldAllBe(p => p.StartsWith(_paths.Root, StringComparison.Ordinal) && p.Contains("inputs", StringComparison.Ordinal));
+        log.ShouldContain(l => l.StartsWith("staged 1 update package", StringComparison.Ordinal));
+        log.ShouldContain(l => l.StartsWith("staged 1 driver package", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -572,6 +647,21 @@ public sealed class RunPipelineTests : IDisposable
             "driver-list", "driver-list", "package-list", "cleanup resetbase", "package-list", "registry", "unmount commit", "export"]);
         log.ShouldContain("cleanup component store (ResetBase)");
         log.ShouldContain("cleanup: packages 2 -> 1, superseded 1 -> 0; rollup 26100.9725.1.0, servicing stack -");
+    }
+
+    [Fact]
+    public async Task Pending_actions_are_logged_before_the_cleanup_and_named_when_it_fails()
+    {
+        _servicing.Packages.Add(new InstalledPackage("Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1", "Install Pending", "Feature Pack"));
+        _servicing.FailCleanup = unchecked((int)0x800F0806);
+        var log = new List<string>();
+
+        var result = await Pipeline(log).RunAsync(UpdateRequest(UpdatePackages(), new CleanupComponentStore(ResetBase: true)), Ct);
+
+        result.Status.ShouldBe(RunStatus.Failed);
+        result.FailedStep.ShouldBe("cleanup");
+        result.Error.ShouldNotBeNull().ShouldContain("pending: Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1");
+        log.ShouldContain("pending before cleanup: Microsoft-Windows-Foo-Package~31bf3856ad364e35~amd64~~10.0.26100.1 (Install Pending)");
     }
 
     private const string BootXml = "<WIM><IMAGE INDEX=\"1\"><NAME>Microsoft Windows PE (amd64)</NAME></IMAGE><IMAGE INDEX=\"2\"><NAME>Microsoft Windows Setup (amd64)</NAME></IMAGE></WIM>";
@@ -776,9 +866,10 @@ public sealed class RunPipelineTests : IDisposable
 
     private WorkspaceState State() => new StateStore<WorkspaceState>(_paths.StateFile).Load().State!;
 
-    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null) =>
+    private RunPipeline Pipeline(List<string>? log = null, Action<string>? beforeStep = null, Func<string, long?>? freeSpace = null) =>
         new(_paths, _servicing, Guid.NewGuid)
         {
+            FreeSpace = freeSpace ?? (_ => null),
             Log = log is null ? null : log.Add,
             BeforeStep = beforeStep is null ? null : (step, _) =>
             {

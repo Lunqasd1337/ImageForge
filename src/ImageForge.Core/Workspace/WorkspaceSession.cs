@@ -30,6 +30,9 @@ public sealed record WorkspaceSummary(
 
     /// <summary>The image this workspace services; the other editions are kept unchanged.</summary>
     public int ImageIndex { get; init; }
+
+    /// <summary>A network or synced source or output: allowed, shown before the copy.</summary>
+    public IReadOnlyList<LocationProblem> Warnings { get; init; } = [];
 }
 
 /// <param name="FileDiagnostics">Problems in the .reg file itself (decoding, syntax); the plan is not built then.</param>
@@ -66,6 +69,9 @@ public sealed record PlanSummary(
     /// <summary>Update packages to add, in order, with their warnings; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
 
+    /// <summary>.NET Framework cumulative updates, added after the cleanup; null when there are none.</summary>
+    public UpdatePlan? DotNetUpdates { get; init; }
+
     /// <summary>The component store cleanup, with its warnings; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
 
@@ -80,7 +86,10 @@ public sealed record PlanSummary(
 /// <param name="Enable">Turned on in this order (parents first).</param>
 /// <param name="Added">Not chosen by the user: parents and dependents the change needs.</param>
 /// <param name="UsesMediaSxs">.NET Framework 3.5 comes from sources\sxs of the media.</param>
-public sealed record FeatureChangeView(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs);
+public sealed record FeatureChangeView(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs)
+{
+    public bool RemovePayload { get; init; }
+}
 
 /// <param name="State">As DISM prints it.</param>
 /// <param name="IsOn">On now or after first boot; the window shows it as the checkbox state.</param>
@@ -136,6 +145,9 @@ public sealed record InspectionSummary(long WorkspaceRevision, IReadOnlyList<App
     public int PackageCount { get; init; }
 
     public IReadOnlyList<string> PackageProblems { get; init; } = [];
+
+    /// <summary>Packages with an unfinished action (Install Pending and the like).</summary>
+    public IReadOnlyList<string> PendingPackages { get; init; } = [];
 }
 
 public sealed record RunOutcome(
@@ -154,8 +166,25 @@ public sealed class WorkspaceSession(
     Func<Action<string>, IImageServicing> servicingFactory,
     Func<Guid> newId,
     Func<string, IWorkspacePaths>? layoutFactory = null,
-    Func<string, string, string, IReadOnlyList<LocationProblem>>? validateLocations = null)
+    Func<string, string, string, IReadOnlyList<LocationProblem>>? validateLocations = null) : IDisposable
 {
+    /// <summary>Free bytes of a volume by its root; null when unknown. The engine reads the disk; tests leave it unknown.</summary>
+    public Func<string, long?> FreeSpace { get; init; } = _ => null;
+
+    /// <summary>The kind and file system of a volume by its root; null when unknown. The engine reads the disk.</summary>
+    public Func<string, VolumeFacts?> Volumes { get; init; } = _ => null;
+
+    /// <summary>Whether a folder is synced by OneDrive or a similar client. The engine knows the user's sync roots.</summary>
+    public Func<string, bool> IsSynced { get; init; } = _ => false;
+
+    private IReadOnlyList<LocationProblem> _warnings = [];
+
+    // Held while the work folder is open in this session: a second engine cannot open it (one writer per workspace).
+    private FileStream? _lock;
+
+    /// <summary>The file a session keeps open, without sharing, while it has the work folder.</summary>
+    public const string LockFileName = "workspace.lock";
+
     private readonly Func<string, IWorkspacePaths> _layoutFactory = layoutFactory ?? (dir => WorkspaceLayout.Create(dir));
     private readonly Func<string, string, string, IReadOnlyList<LocationProblem>> _validate = validateLocations ?? WorkspaceLocations.Validate;
     private readonly StartRequestLedger _ledger = new(newId);
@@ -168,6 +197,16 @@ public sealed class WorkspaceSession(
     private long _revision;
     private bool _busy;
     private Task _current = Task.CompletedTask;
+
+    /// <summary>Lets another engine open the work folder.</summary>
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _lock?.Dispose();
+            _lock = null;
+        }
+    }
 
     /// <summary>Test hook for the manual failure experiments; the product UI never sets it.</summary>
     public InjectedFailure Failure { get; set; }
@@ -184,12 +223,27 @@ public sealed class WorkspaceSession(
             _revision++;
 
             var problems = _validate(request.SourceDir, request.WorkDir, request.OutputDir);
+            var volumes = problems.Count > 0 ? [] : WorkspaceLocations.CheckVolumes(request.SourceDir, request.WorkDir, request.OutputDir, Volumes, IsSynced);
+            problems = [.. problems, .. volumes.Where(p => !p.IsWarning)];
+            _warnings = [.. volumes.Where(p => p.IsWarning)];
+            _lock?.Dispose();
+            _lock = null;
             if (problems.Count > 0)
             {
                 return new WorkspaceSummary(Guid.Empty, _revision, TargetStatus.Pending, null, false, problems);
             }
 
             var paths = _layoutFactory(request.WorkDir);
+            try
+            {
+                Directory.CreateDirectory(paths.Root);
+                _lock = new FileStream(Path.Combine(paths.Root, LockFileName), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                return new WorkspaceSummary(Guid.Empty, _revision, TargetStatus.Pending, null, false, [new LocationProblem(LocationProblemKind.InUse, WorkspaceLocations.WorkDir, null)]);
+            }
+
             var state = new StateStore<WorkspaceState>(paths.StateFile).Load();
             var workspaceId = state.State?.WorkspaceId ?? newId();
             _editions = ImageEditions.Read(request.SourceDir);
@@ -219,7 +273,7 @@ public sealed class WorkspaceSession(
         string? error = null;
         try
         {
-            var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log };
+            var inspection = new ImageInspection(open.Paths, servicingFactory(log)) { Log = log, FreeSpace = FreeSpace };
             var task = inspection.InspectAsync(open.Request.SourceDir, open.WorkspaceId, open.Request.ImageIndex, ct);
             lock (_gate)
             {
@@ -269,6 +323,7 @@ public sealed class WorkspaceSession(
                 ServicingStack = inventory.Packages.ServicingStack,
                 PackageCount = inventory.Packages.Packages.Count,
                 PackageProblems = inventory.Packages.Problems,
+                PendingPackages = inventory.Packages.Pending,
             };
         }
     }
@@ -281,7 +336,7 @@ public sealed class WorkspaceSession(
             .. options.RemoveAppx.Select(f => new RemoveProvisionedAppx(f)),
             .. options.RemoveCapabilities.Select(c => new RemoveCapability(c)),
             .. options.AddCapabilities.Select(c => new AddCapability(c)),
-            .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f)),
+            .. options.DisableFeatures.Select(f => new DisableWindowsFeature(f, options.RemoveFeaturePayload)),
             .. options.EnableFeatures.Select(f => new EnableWindowsFeature(f)),
             .. options.RemoveDrivers.Select(d => new RemoveDriverPackage(d, options.AllowBootCritical)),
             .. options.AddDrivers.Select(d => new AddDriverPackage(d, options.ForceUnsigned)),
@@ -365,6 +420,7 @@ public sealed class WorkspaceSession(
                     Drivers = _inventory?.Drivers,
                     DriverSource = fod?.Drivers,
                     UpdateSource = fod?.Updates,
+                    Packages = _inventory?.Packages,
                 });
             _plan = result.Plan;
             return result.Plan is { } plan
@@ -374,9 +430,10 @@ public sealed class WorkspaceSession(
                     CapabilityRemovals = [.. plan.Capabilities?.Remove.Select(c => c.FullName) ?? []],
                     CapabilityAdditions = [.. plan.Capabilities?.Add.Select(c => c.FullName) ?? []],
                     FodSource = plan.Capabilities?.Source,
-                    FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) : null,
+                    FeatureChanges = plan.Features is { } f ? new FeatureChangeView(f.Disable, f.Enable, f.Added, f.UsesMediaSxs) { RemovePayload = f.RemovePayload } : null,
                     Drivers = plan.Drivers,
                     Updates = plan.Updates,
+                    DotNetUpdates = plan.DotNetUpdates,
                     Cleanup = plan.Cleanup,
                     WinRe = plan.WinRe,
                     Boot = plan.Boot,
@@ -476,6 +533,7 @@ public sealed class WorkspaceSession(
             {
                 Editions = _editions,
                 ImageIndex = open.Request.ImageIndex,
+                Warnings = _warnings,
             };
         }
     }
@@ -487,7 +545,7 @@ public sealed class WorkspaceSession(
         try
         {
             var log = Report(progress);
-            var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log };
+            var pipeline = new RunPipeline(paths, servicingFactory(log), newId) { Log = log, FreeSpace = FreeSpace };
             var result = await pipeline.RunAsync(new RunRequest(open.SourceDir, open.OutputDir, open.ImageIndex, plan, Failure) { ImageCount = imageCount }, ct).ConfigureAwait(false);
             return new RunOutcome(operationId, StartPlanRejection.None, result.Status, result.FailedStep, result.Error, result.PublishedPath);
         }

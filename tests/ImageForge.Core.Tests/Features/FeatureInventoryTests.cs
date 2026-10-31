@@ -157,6 +157,8 @@ public sealed class FeatureInventoryTests
                 @"/Source:C:\IF\media\sources\sxs", "/LimitAccess"]);
         DismCliArguments.DisableFeatures(@"C:\IF\m", ["TelnetClient"])
             .ShouldBe(["/English", @"/Image:C:\IF\m", "/Disable-Feature", "/FeatureName:TelnetClient"]);
+        DismCliArguments.DisableFeatures(@"C:\IF\m", ["TelnetClient"], removePayload: true)
+            .ShouldBe(["/English", @"/Image:C:\IF\m", "/Disable-Feature", "/FeatureName:TelnetClient", "/Remove"]);
         DismCliArguments.GetFeatures(@"C:\IF\m").ShouldBe(["/English", @"/Image:C:\IF\m", "/Get-Features"]);
         DismCliArguments.GetFeatureInfo(@"C:\IF\m", "NetFx3")
             .ShouldBe(["/English", @"/Image:C:\IF\m", "/Get-FeatureInfo", "/FeatureName:NetFx3"]);

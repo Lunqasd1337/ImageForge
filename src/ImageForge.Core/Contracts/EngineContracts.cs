@@ -7,7 +7,7 @@ namespace ImageForge.Core.Contracts;
 
 public static class EngineProtocol
 {
-    public const int Version = 12;
+    public const int Version = 14;
 }
 
 public sealed record EngineInfo(int ProtocolVersion, string EngineVersion, Guid InstanceId, int ProcessId, IReadOnlyList<string> Capabilities);
@@ -70,6 +70,9 @@ public sealed record PlanOptions(RegFileInput? RegFile, IReadOnlyList<string>? R
 
     /// <summary>Features to turn off; the plan adds the features that depend on them and shows them.</summary>
     public IReadOnlyList<string> DisableFeatures { get; init; } = [];
+
+    /// <summary>The disabled features also lose their files (/Remove).</summary>
+    public bool RemoveFeaturePayload { get; init; }
 
     /// <summary>Installed capabilities to remove, named as DISM lists them.</summary>
     public IReadOnlyList<string> RemoveCapabilities { get; init; } = [];

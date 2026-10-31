@@ -34,6 +34,9 @@ public sealed record PlanRequest(Guid WorkspaceId, long WorkspaceRevision, Guid 
 
     /// <summary>The scanned update folder; updates are added only from it.</summary>
     public UpdateFolder? UpdateSource { get; init; }
+
+    /// <summary>The servicing packages read from the image; its pending actions are shown with the cleanup.</summary>
+    public PackageInventory? Packages { get; init; }
 }
 
 public abstract record PlannedStep;
@@ -115,6 +118,9 @@ public sealed record ExecutionPlan(
     /// <summary>Update packages to add, after the feature changes and before the drivers; null when there are none.</summary>
     public UpdatePlan? Updates { get; init; }
 
+    /// <summary>.NET Framework cumulative updates, added after the component store cleanup (plan, section 11); null when there are none.</summary>
+    public UpdatePlan? DotNetUpdates { get; init; }
+
     /// <summary>The component store cleanup, after all other servicing and before the registry; null when not asked for.</summary>
     public CleanupPlan? Cleanup { get; init; }
 
@@ -130,7 +136,11 @@ public sealed record ExecutionPlan(
 /// <param name="Added">Features in either list that the user did not ask for, to show in the preview.</param>
 /// <param name="UsesMediaSxs">An enabled feature has no payload in the image; it comes from sources\sxs of the media copy.</param>
 /// <param name="Inventory">Fingerprint of the feature list the change was worked out from; the run checks it first.</param>
-public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory);
+public sealed record FeaturePlan(IReadOnlyList<string> Disable, IReadOnlyList<string> Enable, IReadOnlyList<string> Added, bool UsesMediaSxs, string Inventory)
+{
+    /// <summary>The disabled features lose their files (/Remove): turning them on again needs a source.</summary>
+    public bool RemovePayload { get; init; }
+}
 
 /// <param name="Remove">Removed first, in this order.</param>
 /// <param name="Inventory">Fingerprint of the capability list the changes were checked against.</param>
@@ -160,6 +170,7 @@ public sealed record DriverAddition(string InfPath, string ContentHash, bool For
 /// <param name="Add">One DISM call each, in this order: servicing stack packages first.</param>
 /// <param name="Source">The update folder the files are in.</param>
 /// <param name="Warnings">Shown in the preview.</param>
+/// <summary>Packages to add, in order; for <see cref="ExecutionPlan.DotNetUpdates"/>, after the component store cleanup.</summary>
 public sealed record UpdatePlan(IReadOnlyList<UpdateAddition> Add, string Source, IReadOnlyList<string> Warnings);
 
 /// <param name="ResetBase">Superseded component versions are removed too; updates in the image can no longer be uninstalled.</param>

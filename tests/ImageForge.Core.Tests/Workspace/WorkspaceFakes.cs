@@ -115,9 +115,9 @@ internal sealed class FakeServicing : IImageServicing
         return Task.CompletedTask;
     }
 
-    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, CancellationToken ct)
+    public Task DisableFeaturesAsync(string mountDir, IReadOnlyList<string> features, bool removePayload, CancellationToken ct)
     {
-        Calls.Add($"disable {string.Join(",", features)}");
+        Calls.Add($"disable {string.Join(",", features)}{(removePayload ? " /Remove" : string.Empty)}");
         foreach (var feature in IgnoreFeatureChanges ? [] : features)
         {
             Features[feature] = "Disabled";
@@ -172,8 +172,12 @@ internal sealed class FakeServicing : IImageServicing
         return Task.FromResult(new DriverInventory([.. Drivers], []));
     }
 
+    /// <summary>Full paths of every package and driver INF handed to DISM.</summary>
+    public List<string> AddedPaths { get; } = [];
+
     public Task AddDriverAsync(string mountDir, string infPath, bool forceUnsigned, CancellationToken ct)
     {
+        AddedPaths.Add(infPath);
         Calls.Add($"driver-add {Path.GetFileName(infPath)}{(forceUnsigned ? " force-unsigned" : string.Empty)}");
         if (!DriverAlreadyPresent)
         {
@@ -207,6 +211,7 @@ internal sealed class FakeServicing : IImageServicing
     /// <summary>Supersedes the installed rollup and adds rollup 26100.9725.1.0, whatever the file.</summary>
     public Task AddPackageAsync(string mountDir, string packagePath, CancellationToken ct)
     {
+        AddedPaths.Add(packagePath);
         Calls.Add("package-add " + Path.GetFileName(packagePath));
         if (FailPackage.TryGetValue(Path.GetFileName(packagePath), out var hresult))
         {
@@ -231,9 +236,17 @@ internal sealed class FakeServicing : IImageServicing
     }
 
     /// <summary>Drops the superseded packages, as /ResetBase does; without it they stay.</summary>
+    /// <summary>The HRESULT the component store cleanup fails with; null when it succeeds.</summary>
+    public int? FailCleanup { get; set; }
+
     public Task CleanupComponentStoreAsync(string mountDir, bool resetBase, CancellationToken ct)
     {
         Calls.Add(resetBase ? "cleanup resetbase" : "cleanup");
+        if (FailCleanup is { } hresult)
+        {
+            throw new IOException($"Dism.exe /Cleanup-Image failed: 0x{hresult:X8}") { HResult = hresult };
+        }
+
         if (resetBase)
         {
             Packages.RemoveAll(p => p.State == "Superseded");

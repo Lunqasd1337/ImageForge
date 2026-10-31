@@ -89,11 +89,16 @@ public static class DismCliArguments
         return arguments;
     }
 
-    /// <summary>Without /Remove: the payload stays in the image unless the user explicitly asks otherwise (plan, section 10).</summary>
-    public static IReadOnlyList<string> DisableFeatures(string mountDirectory, IReadOnlyList<string> featureNames)
+    /// <summary>/Remove only when the user explicitly asks: otherwise the payload stays in the image (plan, section 10).</summary>
+    public static IReadOnlyList<string> DisableFeatures(string mountDirectory, IReadOnlyList<string> featureNames, bool removePayload = false)
     {
         List<string> arguments = ["/English", "/Image:" + LocalPath(mountDirectory, nameof(mountDirectory)), "/Disable-Feature"];
         AddFeatureNames(arguments, featureNames);
+        if (removePayload)
+        {
+            arguments.Add("/Remove");
+        }
+
         return arguments;
     }
 

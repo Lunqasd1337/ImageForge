@@ -52,6 +52,8 @@ internal static class Ui
     public static string EditionsBeforeInspect => Get(nameof(EditionsBeforeInspect));
     public static string EditionsNotRead(object? a0) => Format(nameof(EditionsNotRead), a0);
     public static string EngineConnected => Get(nameof(EngineConnected));
+    public static string EngineAlreadyRunning => Get(nameof(EngineAlreadyRunning));
+    public static string EngineExited(object? a0) => Format(nameof(EngineExited), a0);
     public static string EngineDidNotStart => Get(nameof(EngineDidNotStart));
     public static string EngineError => Get(nameof(EngineError));
     public static string EngineIncompatible(object? a0) => Format(nameof(EngineIncompatible), a0);
@@ -84,6 +86,11 @@ internal static class Ui
     public static string Inspecting => Get(nameof(Inspecting));
     public static string LastRun(object? a0, object? a1, object? a2) => Format(nameof(LastRun), a0, a1, a2);
     public static string LastRunStep(object? a0) => Format(nameof(LastRunStep), a0);
+    public static string LocationInUse => Get(nameof(LocationInUse));
+    public static string LocationNetwork(object? a0) => Format(nameof(LocationNetwork), a0);
+    public static string LocationNotNtfs(object? a0, object? a1) => Format(nameof(LocationNotNtfs), a0, a1);
+    public static string LocationSynced(object? a0) => Format(nameof(LocationSynced), a0);
+    public static string FoldersWarning(object? a0) => Format(nameof(FoldersWarning), a0);
     public static string LocationNested(object? a0, object? a1) => Format(nameof(LocationNested), a0, a1);
     public static string LocationNotLocal(object? a0) => Format(nameof(LocationNotLocal), a0);
     public static string LocationOutputDir => Get(nameof(LocationOutputDir));
@@ -101,6 +108,7 @@ internal static class Ui
     public static string NoRuns => Get(nameof(NoRuns));
     public static string None => Get(nameof(None));
     public static string PackagesNotRead => Get(nameof(PackagesNotRead));
+    public static string PackagesPending(object? a0, object? a1) => Format(nameof(PackagesPending), a0, a1);
     public static string PackagesStatus(object? a0, object? a1, object? a2) => Format(nameof(PackagesStatus), a0, a1, a2);
     public static string PlanApps(object? a0) => Format(nameof(PlanApps), a0);
     public static string PlanBoot(object? a0) => Format(nameof(PlanBoot), a0);
@@ -127,6 +135,7 @@ internal static class Ui
     public static string PreviewCapabilityRemoveNamed(object? a0, object? a1) => Format(nameof(PreviewCapabilityRemoveNamed), a0, a1);
     public static string PreviewCleanup => Get(nameof(PreviewCleanup));
     public static string PreviewCleanupResetBase => Get(nameof(PreviewCleanupResetBase));
+    public static string PreviewDotNet => Get(nameof(PreviewDotNet));
     public static string PreviewDriverAdd(object? a0, object? a1) => Format(nameof(PreviewDriverAdd), a0, a1);
     public static string PreviewDriverBootCritical => Get(nameof(PreviewDriverBootCritical));
     public static string PreviewDriverRemove(object? a0, object? a1) => Format(nameof(PreviewDriverRemove), a0, a1);
@@ -135,6 +144,7 @@ internal static class Ui
     public static string PreviewFeatureAddedOff => Get(nameof(PreviewFeatureAddedOff));
     public static string PreviewFeatureAddedOn => Get(nameof(PreviewFeatureAddedOn));
     public static string PreviewFeatureDefaults => Get(nameof(PreviewFeatureDefaults));
+    public static string PreviewFeatureRemovePayload => Get(nameof(PreviewFeatureRemovePayload));
     public static string PreviewFeatureDisable(object? a0, object? a1) => Format(nameof(PreviewFeatureDisable), a0, a1);
     public static string PreviewFeatureEnable(object? a0, object? a1) => Format(nameof(PreviewFeatureEnable), a0, a1);
     public static string PreviewNetFx3Source => Get(nameof(PreviewNetFx3Source));

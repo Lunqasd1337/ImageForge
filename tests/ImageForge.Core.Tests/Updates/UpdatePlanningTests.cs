@@ -18,6 +18,7 @@ public sealed class UpdatePlanningTests
         Scanned(@"copy\Windows11.0-KB5134133-x64.msu", "aaa"),
         Scanned("SSU-26100.9703-x64.cab", "bbb", UpdateKind.Cab, ssu: true),
         Scanned("Windows11.0-KB5134200-x64.msu", "ccc"),
+        Scanned("windows11.0-kb5054979-x64-ndp481.msu", "eee") with { Package = Scanned("windows11.0-kb5054979-x64-ndp481.msu", "eee").Package with { IsDotNet = true } },
         Scanned("broken.msu", "ddd", UpdateKind.Msu, false, "нет подписи MSCF: это не файл cabinet"),
     ], null);
 
@@ -46,6 +47,27 @@ public sealed class UpdatePlanningTests
         updates.Add[1].Sha256.ShouldBe("aaa");
         updates.Add[1].Description.ShouldContain("KB5134133");
         plan.Steps.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_dotnet_update_goes_after_the_cleanup_and_is_not_a_second_cumulative_update()
+    {
+        var plan = Plan(Source, new AddUpdatePackage("windows11.0-kb5054979-x64-ndp481.msu"), new AddUpdatePackage("Windows11.0-KB5134133-x64.msu")).Plan!;
+
+        plan.Updates.ShouldNotBeNull().Add.Select(a => a.FileName).ShouldBe(["Windows11.0-KB5134133-x64.msu"]);
+        plan.Updates.Warnings.ShouldBeEmpty();
+        var dotNet = plan.DotNetUpdates.ShouldNotBeNull();
+        dotNet.Add.Select(a => a.FileName).ShouldBe(["windows11.0-kb5054979-x64-ndp481.msu"]);
+        dotNet.Source.ShouldBe(Folder);
+    }
+
+    [Fact]
+    public void Only_dotnet_updates_leave_the_main_update_step_empty()
+    {
+        var plan = Plan(Source, new AddUpdatePackage("windows11.0-kb5054979-x64-ndp481.msu")).Plan!;
+
+        plan.Updates.ShouldBeNull();
+        plan.DotNetUpdates.ShouldNotBeNull().Add.ShouldHaveSingleItem();
     }
 
     [Fact]

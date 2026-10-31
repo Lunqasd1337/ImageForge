@@ -52,7 +52,11 @@ public sealed record UpdatePackageInfo(
     bool HasServicingStack,
     IReadOnlyList<string> Problems,
     UpdateContainer Container = UpdateContainer.Cabinet,
-    WimInfo? Wim = null);
+    WimInfo? Wim = null)
+{
+    /// <summary>A .NET Framework cumulative update (NDP in the name or in a package inside); it goes after the cleanup.</summary>
+    public bool IsDotNet { get; init; }
+}
 
 /// <summary>
 /// Previews a local update package before DISM sees it (plan, section 11): its kind, KB and architecture from the name, and
@@ -105,7 +109,10 @@ public static class UpdatePackage
             problems.Add(Messages.UpdateCabNoMum);
         }
 
-        return new(fileName, kind, name.Kb, name.Architecture, name.Sha1, listing.Entries, payloads, servicingStack, problems);
+        return new(fileName, kind, name.Kb, name.Architecture, name.Sha1, listing.Entries, payloads, servicingStack, problems)
+        {
+            IsDotNet = IsDotNetName(leaf) || payloads.Any(IsDotNetName),
+        };
     }
 
     /// <summary>An MSU in WIM format: its contents are in compressed metadata, so only the header and images are checked.</summary>
@@ -134,8 +141,14 @@ public static class UpdatePackage
 
         return new(
             fileName, isMsu ? UpdateKind.Msu : UpdateKind.Unknown, name.Kb, name.Architecture, name.Sha1, [], [], IsServicingStack(leaf), problems,
-            UpdateContainer.Wim, wim);
+            UpdateContainer.Wim, wim)
+        {
+            IsDotNet = IsDotNetName(leaf),
+        };
     }
+
+    // Catalog names .NET Framework cumulative updates …-x64-ndp481_<sha1>.msu, and the package inside …-x64-NDP481.cab.
+    private static bool IsDotNetName(string name) => Regex.IsMatch(name, @"(?i)-ndp\d+(?=[_.\-])");
 
     private static bool IsServicingStack(string name) => name.StartsWith("SSU-", StringComparison.OrdinalIgnoreCase);
 
